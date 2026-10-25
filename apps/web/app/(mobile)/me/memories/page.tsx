@@ -1,0 +1,150 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { Brain, Pencil } from "lucide-react";
+
+import { useDemo } from "@/components/mobile/providers";
+import { EmptyState, PageShell, SwitchRow } from "@/components/mobile/ui";
+
+export default function MemoriesPage() {
+  const demo = useDemo();
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const enabledCount = demo.memories.filter((memory) => memory.enabled).length;
+
+  return (
+    <PageShell
+      title="个人记忆"
+      subtitle="演示模式下可以查看、修改和停用本地经验；服务器暂无记忆管理接口。"
+      action={
+        <Link href="/me/lesson" className="page-bar__action">
+          记一条
+        </Link>
+      }
+    >
+      {!demo.enabled ? (
+        <>
+          <EmptyState
+            title="没有可管理的记忆接口"
+            body="当前 PA 后端没有新增、编辑、停用或自动学习记忆的接口，因此正常模式不展示示例经验，也不会假装已同步到 AI 平台。"
+          >
+            <div style={{ display: "grid", gap: 8 }}>
+              <Link href="/me/memory-search" className="btn btn--secondary">
+                只读检索（遗留接口）
+              </Link>
+              <button
+                type="button"
+                className="btn btn--quiet"
+                onClick={() => demo.setEnabled(true)}
+              >
+                显式开启演示模式查看本地经验
+              </button>
+            </div>
+          </EmptyState>
+          <div className="notice mt-16">
+            <strong>记忆和原文是两件事</strong>
+            <p style={{ margin: "4px 0 0" }}>
+              原文用于追溯事实，个人经验是你主动留下的判断。这里不能编辑设备原文，也不能把经验写回 AI 平台。
+            </p>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="card card--mist">
+            <div className="flex items-center gap-10">
+              <Brain size={18} className="fog" />
+              <p className="card-title grow" style={{ fontSize: 15 }}>
+                {enabledCount} 条正在使用
+              </p>
+            </div>
+            <p className="caption" style={{ margin: "6px 0 0" }}>
+              停用后仍保留原记录，但不再用于出门清单等本地建议。修改只影响这次演示会话。
+            </p>
+          </div>
+
+          <div className="m-stack-10 mt-14">
+            {demo.memories.map((memory) => (
+              <div className="card" key={memory.id}>
+                <div className="flex items-start justify-between gap-10">
+                  <div className="grow">
+                    <span className="micro">
+                      {memory.place} · {memory.dateText}
+                    </span>
+                    {editing === memory.id ? (
+                      <>
+                        <textarea
+                          className="textarea mt-8"
+                          rows={3}
+                          value={draft}
+                          onChange={(event) => setDraft(event.target.value)}
+                          aria-label="编辑个人经验"
+                        />
+                        <div className="flex gap-10 mt-8">
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => {
+                              if (draft.trim()) demo.updateMemory(memory.id, draft.trim());
+                              setEditing(null);
+                            }}
+                          >
+                            保存修改
+                          </button>
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => setEditing(null)}
+                          >
+                            放弃
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="body-text mt-6" style={{ marginBottom: 0 }}>
+                        {memory.text}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {editing !== memory.id ? (
+                  <button
+                    type="button"
+                    className="link-button link-button--inline mt-8"
+                    onClick={() => {
+                      setEditing(memory.id);
+                      setDraft(memory.text);
+                    }}
+                  >
+                    <Pencil size={12} /> 编辑这条经验
+                  </button>
+                ) : null}
+
+                <hr className="divider mt-10" />
+                <SwitchRow
+                  title={memory.enabled ? "正在使用" : "已停用"}
+                  detail={
+                    memory.enabled
+                      ? "会参与本地演示中的准备清单"
+                      : "原记录保留，不再参与建议"
+                  }
+                  checked={memory.enabled}
+                  onChange={() => demo.toggleMemory(memory.id)}
+                />
+                <p className="micro" style={{ margin: "4px 0 0", lineHeight: 1.6 }}>
+                  依据：{memory.source}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <p className="micro mt-14" style={{ lineHeight: 1.7 }}>
+            演示模式 · 这些经验和修改都只保存在当前页面内，刷新后恢复；没有写入 AI 平台，
+            也没有自动学习。
+          </p>
+        </>
+      )}
+    </PageShell>
+  );
+}

@@ -1,0 +1,141 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { Search } from "lucide-react";
+
+import type { MemoryResults } from "@/lib/mobile/api";
+import { ApiError, apiRequest } from "@/lib/mobile/api";
+import { uuid } from "@/lib/mobile/format";
+import { useAuth } from "@/components/mobile/providers";
+import { EmptyState, Notice, PageShell, Pill } from "@/components/mobile/ui";
+import { PrimaryButton } from "@/components/mobile/buttons";
+
+export default function MemorySearchPage() {
+  const { state } = useAuth();
+  const signedIn = state === "signedIn";
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<MemoryResults | null>(null);
+
+  const search = async () => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setError("先写一句要检索的内容。");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setResults(null);
+    try {
+      const data = await apiRequest<MemoryResults>("/api/pa/memory/search", {
+        method: "POST",
+        body: {
+          query_text: trimmed,
+          memory_types: [],
+          limit: 10,
+          idempotency_key: uuid(),
+        },
+      });
+      setResults(data);
+    } catch (caught) {
+      if (caught instanceof ApiError) {
+        setError(
+          caught.status === 401
+            ? "登录状态已失效，请重新登录。"
+            : caught.status >= 500
+              ? "上游记忆服务不可用。这不等于“没有记录”，请稍后再试。"
+              : caught.message,
+        );
+      } else {
+        setError("请求未能完成。");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <PageShell
+      title="记忆检索"
+      subtitle="遗留只读代理；结果可能不可用，且不能用来证明“从来没有记录”。"
+    >
+      {!signedIn && state !== "loading" ? (
+        <EmptyState title="登录后才能检索" body="检索使用当前 PA 账号，不会跨账号查询。">
+          <Link href="/login" className="btn btn--primary">登录</Link>
+        </EmptyState>
+      ) : null}
+
+      {signedIn ? (
+        <>
+          <label className="field" htmlFor="memory-query">
+            <span className="field__label">检索内容</span>
+            <input
+              id="memory-query"
+              className="input"
+              value={query}
+              maxLength={2000}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="例如：江边散步时要注意什么"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void search();
+                }
+              }}
+            />
+          </label>
+          <PrimaryButton onClick={() => void search()} busy={busy} disabled={busy}>
+            <Search size={14} /> {busy ? "正在检索…" : "检索"}
+          </PrimaryButton>
+
+          {error ? (
+            <div className="card card--red mt-14">
+              <p className="card-title red" style={{ fontSize: 15 }}>检索没有完成</p>
+              <p className="caption red" style={{ margin: "4px 0 0" }}>{error}</p>
+            </div>
+          ) : null}
+
+          {results ? (
+            results.items.length === 0 ? (
+              <EmptyState
+                title="上游返回了空结果"
+                body="空结果只表示这次检索没有命中；不能据此推断记忆被删除或从未存在。"
+              />
+            ) : (
+              <div className="m-stack-10 mt-14">
+                {results.items.map((hit) => (
+                  <div className="card" key={hit.memory_id}>
+                    <div className="flex items-center gap-8" style={{ flexWrap: "wrap" }}>
+                      <Pill tone="fog">{hit.memory_type || "记忆"}</Pill>
+                      {typeof hit.score === "number" ? (
+                        <span className="micro">相关度 {hit.score.toFixed(2)}</span>
+                      ) : null}
+                    </div>
+                    <p className="body-text mt-8" style={{ marginBottom: 0 }}>
+                      {hit.content}
+                    </p>
+                    {hit.source_reference ? (
+                      <p className="micro" style={{ margin: "8px 0 0" }}>
+                        来源：{hit.source_reference}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )
+          ) : null}
+
+          <Notice tone="amber" title="这是遗留代理">
+            当前 App Run 契约不包含记忆接口；这个端点把请求转发给上游记忆服务，只有上游可用时才有结果。
+            这里不提供新增、编辑、停用或自动学习。
+          </Notice>
+          <Link href="/me/memories" className="link-button mt-6">
+            查看本地演示经验
+          </Link>
+        </>
+      ) : null}
+    </PageShell>
+  );
+}

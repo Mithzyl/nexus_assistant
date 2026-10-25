@@ -1,0 +1,78 @@
+{
+  "id": "fixture-advisory",
+  "plan_id": "fixture-plan",
+  "plan_revision": 1,
+  "local_service_date": "2026-10-23",
+  "generated_at": "2026-10-23T07:48:15.709194Z",
+  "expires_at": "2026-10-23T10:00:00Z",
+  "quality": "fresh",
+  "title": "建议 17:14 出发",
+  "summary": "建议 17:14 出发，驾车约 26 分钟，基础预留 10 分钟，计划于 18:00 前到达；降雨概率最高约 55%，已加入 10 分钟雨天预留。",
+  "target_arrival_at": "2026-10-23T10:00:00Z",
+  "recommended_departure_at": "2026-10-23T09:14:00Z",
+  "departure_status": "upcoming",
+  "eta_seconds": 1560,
+  "buffer_seconds": 600,
+  "weather_extra_buffer_seconds": 600,
+  "weather": {
+    "forecast_start": "2026-10-23T09:14:00Z",
+    "forecast_end": "2026-10-23T10:00:00Z",
+    "temperature_c": 22.0,
+    "precipitation_probability_max": 0.55,
+    "precipitation_probability_known": true,
+    "rain_probability_threshold": 0.4,
+    "rain_risk": true,
+    "coverage": "full",
+    "locations": [
+      {
+        "role": "origin",
+        "coverage": "full",
+        "max_probability": 0.55
+      },
+      {
+        "role": "destination",
+        "coverage": "full",
+        "max_probability": 0.55
+      }
+    ]
+  },
+  "sources": [
+    {
+      "kind": "weather",
+      "provider": "mock",
+      "fetched_at": "2026-10-23T07:48:15.715765Z",
+      "valid_from": "2026-10-23T08:00:00Z",
+      "valid_to": "2026-10-23T12:00:00Z",
+      "freshness": "fresh",
+      "attribution": {
+        "text": "开发/测试天气数据，非 Apple Weather",
+        "url": "https://example.invalid/mock-weather"
+      },
+      "request_depart_at": null,
+      "target_arrival_at": null,
+      "note": "按出发地/目的地相关预报时段估算，不代表整条道路逐点天气。"
+    },
+    {
+      "kind": "route",
+      "provider": "mock",
+      "fetched_at": "2026-10-23T07:48:15.715701Z",
+      "valid_from": null,
+      "valid_to": "2026-10-23T10:00:00Z",
+      "freshness": "fresh",
+      "attribution": {
+        "text": "开发/测试路线数据，非 Apple Maps",
+        "url": "https://example.invalid/mock-route"
+      },
+      "request_depart_at": "2026-10-23T09:50:00Z",
+      "target_arrival_at": "2026-10-23T10:00:00Z",
+      "note": "ETA 请求使用计划中的未来时间基准，不是无条件使用“现在出发”。"
+    }
+  ],
+  "reason_codes": [
+    "ROUTE_FRESH",
+    "WEATHER_FRESH",
+    "WEATHER_RAIN_THRESHOLD_MET",
+    "DEPARTURE_UPCOMING"
+  ],
+  "explanation_source": "template"
+}

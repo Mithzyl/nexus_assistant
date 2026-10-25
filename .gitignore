@@ -1,0 +1,38 @@
+node_modules/
+dist/
+out/
+.next/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.local
+.env.*.local
+.pnpm-store/
+.DS_Store
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+*.tsbuildinfo
+
+# Local scratch area (venvs, uv cache, dev DBs, ad-hoc scripts, screenshots).
+# Valuable scripts were promoted to tests/e2e/; .tmp is not versioned.
+.tmp/
+
+# iOS (XcodeGen project, generated artifacts)
+ios/LifeAssistant/build/
+ios/build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Materials intentionally kept out of the repository for now (not deleted):
+# external handoff package, HTML prototypes, design session exports,
+# product screenshots (may contain real user data), and agent scratch memory.
+v3-kit/
+prototype/
+design/
+docs/screenshots/
+.workbuddy/

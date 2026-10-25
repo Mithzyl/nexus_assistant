@@ -1,0 +1,24 @@
+{
+  "name": "superapp-next",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal super app: kanban board + LLM chat with function calling",
+  "scripts": {
+    "dev:web": "pnpm --filter @superapp/web dev",
+    "dev:desktop": "concurrently -k \"pnpm dev:web\" \"wait-on http://localhost:3000 && pnpm --filter @superapp/desktop dev\"",
+    "build:web": "pnpm --filter @superapp/web build",
+    "build:desktop": "pnpm build:web && pnpm --filter @superapp/desktop build",
+    "db:migrate": "pnpm --filter @superapp/web db:migrate",
+    "db:generate": "pnpm --filter @superapp/web db:generate",
+    "db:studio": "pnpm --filter @superapp/web db:studio"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "wait-on": "^8.0.3",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

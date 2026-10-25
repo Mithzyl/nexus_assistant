@@ -1,0 +1,87 @@
+name: LifeAssistant
+options:
+  bundleIdPrefix: com.mith
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    OTHER_SWIFT_FLAGS: "-disable-sandbox"
+    DEVELOPMENT_TEAM: ""
+targets:
+  LifeAssistant:
+    type: application
+    platform: iOS
+    sources:
+      - path: LifeAssistant
+        excludes:
+          - "**/.DS_Store"
+    resources:
+      - path: LifeAssistant/Assets.xcassets
+    info:
+      path: LifeAssistant/Info.plist
+      properties:
+        NSCalendarsFullAccessUsageDescription: 读取你选择的日程，用于今天的安排；当前版本不会修改原日程。
+        NSRemindersFullAccessUsageDescription: 读取你选择的未完成提醒，用于今天的待办；当前版本不会勾选或修改。
+        CFBundleDisplayName: 生活助手
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSLocationWhenInUseUsageDescription: 只在选择“使用当前位置”时读取位置，用于设置通勤地点。
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        PAApiBaseURL: http://127.0.0.1:8010
+        CFBundleURLTypes:
+          - CFBundleURLName: com.mith.lifeassistant
+            CFBundleURLSchemes:
+              - lifeassistant
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mith.lifeassistant
+        PRODUCT_NAME: LifeAssistant
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGNING_REQUIRED: YES
+        CODE_SIGNING_ALLOWED: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_ENTITLEMENTS: LifeAssistant/LifeAssistant.entitlements
+  LifeAssistantUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: LifeAssistantUITests
+    dependencies:
+      - target: LifeAssistant
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mith.lifeassistant.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: LifeAssistant
+  LifeAssistantTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: LifeAssistantTests
+    resources:
+      - path: LifeAssistantTests/Fixtures
+    dependencies:
+      - target: LifeAssistant
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mith.lifeassistant.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  LifeAssistant:
+    build:
+      targets:
+        LifeAssistant: all
+        LifeAssistantTests: [test]
+    test:
+      targets:
+        - LifeAssistantTests
+        - LifeAssistantUITests

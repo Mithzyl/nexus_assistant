@@ -1,0 +1,63 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "darwin-arm64", "darwin"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Board {
+  id        String   @id @default(cuid())
+  name      String
+  columns   Column[]
+  createdAt DateTime @default(now())
+}
+
+model Column {
+  id        String   @id @default(cuid())
+  name      String
+  order     Int
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id])
+  cards     Card[]
+  createdAt DateTime @default(now())
+}
+
+model Card {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?  // TipTap JSON as string (SQLite doesn't support Json)
+  columnId  String
+  column    Column   @relation(fields: [columnId], references: [id])
+  parentId  String?
+  parent    Card?    @relation("Subtasks", fields: [parentId], references: [id])
+  children  Card[]   @relation("Subtasks")
+  labels    String   @default("[]") // JSON array as string
+  dueDate   DateTime?
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String
+  messages  Message[]
+  createdAt DateTime  @default(now())
+}
+
+model Message {
+  id              String       @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  role            String
+  content         String
+  toolCalls       String?      // JSON string
+  affectedCardIds String       @default("[]") // JSON array as string
+  model           String?
+  tokensIn        Int?
+  tokensOut       Int?
+  createdAt       DateTime     @default(now())
+}
