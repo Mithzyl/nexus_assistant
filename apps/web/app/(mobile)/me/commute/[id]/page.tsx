@@ -10,7 +10,6 @@ import type {
   CommuteCheck,
   CommutePlan,
   CommutePlanDraft,
-  CommuteRuntime,
 } from "@/lib/mobile/api";
 import { ApiError, apiRequest } from "@/lib/mobile/api";
 import { formatDateTime, uuid } from "@/lib/mobile/format";
@@ -34,6 +33,10 @@ import {
   rememberAdvisory,
 } from "@/lib/mobile/advisory-history";
 import { useApiResource, errorText } from "@/lib/mobile/use-api-resource";
+import {
+  describeCommuteRuntime,
+  useCommuteRuntime,
+} from "@/lib/mobile/commute-runtime";
 import { useAuth, useUI } from "@/components/mobile/providers";
 import { AdvisoryCard } from "@/components/mobile/advisory-card";
 import { CommuteForm } from "@/components/mobile/commute-form";
@@ -78,7 +81,7 @@ function checkTone(status: PendingCommuteCheck["status"]): "fog" | "amber" | "gr
 
 export default function CommuteDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const { state, user } = useAuth();
+  const { state, user, refresh: refreshAuth } = useAuth();
   const { toast } = useUI();
   const signedIn = state === "signedIn";
   const accountId = user?.user_id ?? null;
@@ -92,12 +95,6 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     signedIn ? "/api/pa/commute-plans" : null,
     { enabled: signedIn },
   );
-  // Process liveness is separate from this check's progress; both are useful.
-  const runtime = useApiResource<CommuteRuntime>(
-    signedIn ? "/api/pa/commute/runtime" : null,
-    { enabled: signedIn },
-  );
-
   const [tab, setTab] = useState<"advice" | "settings">("advice");
   const [polling, setPolling] = useState(false);
   const [pending, setPending] = useState<PendingCommuteCheck | null>(null);
@@ -114,6 +111,17 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
   const [skipBusy, setSkipBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // The runtime endpoint is account-wide, but its status is shown only for the
+  // current check. A plan/account switch resets the hook's key.
+  const active = Boolean(pending?.checkId) && pending !== null && !TERMINAL.has(pending.status);
+  const runtime = useCommuteRuntime({
+    enabled: signedIn,
+    accountId,
+    planId,
+    active,
+    onUnauthorized: refreshAuth,
+  });
 
   const mounted = useRef(true);
   const pollToken = useRef(0);
@@ -276,7 +284,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
           persist(current);
           if (TERMINAL.has(read.status)) {
             await settle(current);
-            runtime.reload();
+            runtime.refresh();
             setMessage(
               read.status === "degraded"
                 ? "分析完成，但部分数据不可用。"
@@ -340,9 +348,9 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         setViewMode("check");
         if (TERMINAL.has(read.status)) {
           await settle(next);
-          runtime.reload();
+          runtime.refresh();
         } else {
-          runtime.reload();
+          runtime.refresh();
           void pollCheck(next);
         }
       } catch (caught) {
@@ -648,7 +656,6 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     return Array.from(map.values());
   }, [allPlans.data, plan.data]);
 
-  const active = Boolean(pending?.checkId) && pending !== null && !TERMINAL.has(pending.status);
   const planRevision = plan.data?.revision;
   const applicability =
     advisory && planRevision !== undefined
@@ -668,17 +675,20 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
   const unconfiguredRoute =
     routeUnconfigured(advisory, pending?.errorCode ?? null) ||
     historyRows.some((item) => routeUnconfigured(item));
-  const routeProviderUnavailable = runtime.data?.route_provider_available === false;
+  // A stale/failed runtime response must not be treated as a current route
+  // answer. Only a successful response can make the route-negative claim.
+  const routeProviderUnavailable =
+    !runtime.error && runtime.data?.route_provider_available === false;
   const routeNeedsNotice =
     routeProviderUnavailable || unconfiguredRoute || detectedRoute === "unavailable";
-  const workerState = runtime.data?.worker.state ?? null;
-  const workerOffline = Boolean(runtime.data && workerState !== "online");
-  const workerStateLabel =
-    workerState === "online"
-      ? "后台执行程序在线"
-      : workerState === "stale"
-        ? "后台执行程序暂时没有响应"
-        : "尚未发现后台执行程序";
+  const runtimeView = describeCommuteRuntime({
+    data: runtime.data,
+    error: runtime.error,
+    serverNow: runtime.serverNow,
+    lastSuccessAt: runtime.lastSuccessAt,
+    loading: runtime.loading,
+  });
+  const runtimeNeedsAttention = runtimeView.kind !== "recent";
   const currentPhaseLabel = pending?.phase ? CHECK_PHASE_LABEL[pending.phase] : null;
   const historyHasSnapshot = historyRows.some(usesClientSnapshot);
   const showCheckFailure =
@@ -848,9 +858,9 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                         <span className="micro">本次操作状态</span>
                         <span style={{ fontSize: 13 }}>{CHECK_STATUS_LABEL[pending.status]}</span>
                       </div>
-                      {pending.phase ? (
+                      {active && pending.phase ? (
                         <div className="flex items-start justify-between gap-12">
-                          <span className="micro">后台步骤</span>
+                          <span className="micro">当前步骤</span>
                           <span style={{ fontSize: 13, textAlign: "right" }}>
                             {CHECK_PHASE_LABEL[pending.phase]}
                             {pending.phaseUpdatedAt
@@ -859,19 +869,6 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                           </span>
                         </div>
                       ) : null}
-                      <div className="flex items-start justify-between gap-12">
-                        <span className="micro">后台服务</span>
-                        <span
-                          style={{
-                            fontSize: 13,
-                            textAlign: "right",
-                            color:
-                              workerState === "online" ? "inherit" : "var(--m-amber)",
-                          }}
-                        >
-                          {runtime.loading ? "正在确认" : workerStateLabel}
-                        </span>
-                      </div>
                       <div className="flex items-start justify-between gap-12">
                         <span className="micro">服务器创建</span>
                         <span style={{ fontSize: 13, textAlign: "right" }}>
@@ -1046,15 +1043,15 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               ) : null}
 
               {active ? (
-                <div className={`card ${workerOffline ? "card--amber" : "card--tight"}`}>
+                <div className={`card ${runtimeNeedsAttention ? "card--amber" : "card--tight"}`}>
                   <div className="ask-status">
-                    {polling && !workerOffline ? (
+                    {polling && runtimeView.kind === "recent" ? (
                       <span className="spinner" />
                     ) : (
                       <Clock size={17} className="muted" />
                     )}
                     <span style={{ fontSize: 15 }}>
-                      服务器状态“{CHECK_STATUS_LABEL[pending.status]}”
+                      任务“{CHECK_STATUS_LABEL[pending.status]}”
                       {currentPhaseLabel ? `；当前步骤：${currentPhaseLabel}` : "；服务器尚未返回具体步骤"}。
                     </span>
                   </div>
@@ -1063,22 +1060,31 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     style={{
                       margin: "6px 0 0",
                       lineHeight: 1.6,
-                      color: workerOffline ? "var(--m-amber)" : undefined,
+                      color: runtimeNeedsAttention ? "var(--m-amber)" : undefined,
                     }}
                   >
-                    {workerOffline
-                      ? "任务已保存，后台执行程序暂时没有响应；恢复后会继续读取同一个检查，页面不会取消服务器任务。"
-                      : "页面关闭后浏览器不再轮询，服务器记录仍以 PA 为准。"}
+                    {runtimeView.label}
+                    {runtimeView.kind === "unavailable" && runtime.lastSuccessAt
+                      ? ` · 上次成功查询 ${formatDateTime(
+                          new Date(runtime.lastSuccessAt).toISOString(),
+                        )}`
+                      : ""}
+                  </p>
+                  <p className="micro" style={{ margin: "3px 0 0", lineHeight: 1.6 }}>
+                    {runtimeView.detail}
                   </p>
                   <p className="micro" style={{ margin: "4px 0 0", lineHeight: 1.6 }}>
-                    本次幂等键和状态已保存在本机。刷新页面只会读取同一个 check，
-                    不会新建第二次分析。
+                    本次操作已保存在本机；刷新页面只会读取同一个 check，不会新建第二次分析，
+                    也不会取消服务器任务。
                   </p>
                   {!polling ? (
                     <button
                       type="button"
                       className="link-button mt-6"
-                      onClick={() => void viewCheckResult()}
+                      onClick={() => {
+                        runtime.refresh();
+                        void viewCheckResult();
+                      }}
                       disabled={actionBusy !== null}
                     >
                       继续核对

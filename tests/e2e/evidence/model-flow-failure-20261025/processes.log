@@ -1,0 +1,199 @@
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3411
+
+ ✓ Starting...
+ ✓ Ready in 314ms
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1958, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 258, in execute
+    self._adapt_connection._handle_exception(error)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/dialects/sqlite/aiosqlite.py", line 237, in _handle_exception_no_connection
+    super()._handle_exception_no_connection(dbapi, error)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 409, in _handle_exception_no_connection
+    raise error.with_traceback(exc_info[2])
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 256, in execute
+    return await_(self._execute_async(operation, parameters))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 279, in _execute_async
+    result = await self._cursor.execute(operation, parameters)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/aiosqlite/cursor.py", line 40, in execute
+    await self._execute(self._cursor.execute, sql, parameters)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/aiosqlite/cursor.py", line 32, in _execute
+    return await self._conn._execute(fn, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/aiosqlite/core.py", line 160, in _execute
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/aiosqlite/core.py", line 63, in _connection_worker_thread
+    result = function()
+             ^^^^^^^^^^
+sqlite3.OperationalError: no such savepoint: sa_savepoint_1
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py", line 411, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/applications.py", line 1194, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/middleware/base.py", line 203, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/services/assistant-api/src/assistant_api/main.py", line 111, in request_id_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/middleware/base.py", line 179, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/middleware/base.py", line 149, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/routing.py", line 683, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/routing.py", line 2811, in app
+    await route.handle(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/routing.py", line 1839, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/routing.py", line 2894, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/routing.py", line 1865, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/routing.py", line 1328, in handle
+    await effective_context.app(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/routing.py", line 166, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/routing.py", line 152, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/routing.py", line 745, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/fastapi/routing.py", line 372, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/services/assistant-api/src/assistant_api/commute/router.py", line 170, in create_check
+    created, replayed = await check_service.create_manual_check(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/services/assistant-api/src/assistant_api/commute/services/checks.py", line 153, in create_manual_check
+    instance = await ensure_instance(db, plan, now=now, allow_non_scheduled_day=True)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/services/assistant-api/src/assistant_api/commute/services/scheduling.py", line 79, in ensure_instance
+    async with db.begin_nested():
+               ^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/ext/asyncio/session.py", line 2206, in __aexit__
+    await greenlet_spawn(
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/util/concurrency.py", line 212, in greenlet_spawn
+    result = context.switch(value)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/util.py", line 144, in __exit__
+    with util.safe_reraise():
+         ^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py", line 166, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/util.py", line 142, in __exit__
+    self.commit()
+  File "<sqlalchemy generated _go() wrapper for sqlalchemy.orm.session.SessionTransaction.commit>", line 2, in commit
+    return target(fn, self, _to_root=_to_root)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/orm/state_changes.py", line 137, in _go
+    ret_value = fn(self, *arg, **kw)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 1337, in commit
+    trans.commit()
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2624, in commit
+    self._do_commit()
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2849, in _do_commit
+    self.connection._release_savepoint_impl(self._savepoint)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1195, in _release_savepoint_impl
+    self.engine.dialect.do_release_savepoint(self, name)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1013, in do_release_savepoint
+    connection.execute(expression.ReleaseSavepointClause(name))
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1463, in execute
+    return meth(
+           ^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1683, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1837, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1977, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2347, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1958, in _exec_single_context
+    self.dialect.do_execute(
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 258, in execute
+    self._adapt_connection._handle_exception(error)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/dialects/sqlite/aiosqlite.py", line 237, in _handle_exception_no_connection
+    super()._handle_exception_no_connection(dbapi, error)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 409, in _handle_exception_no_connection
+    raise error.with_traceback(exc_info[2])
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 256, in execute
+    return await_(self._execute_async(operation, parameters))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/sqlalchemy/connectors/asyncio.py", line 279, in _execute_async
+    result = await self._cursor.execute(operation, parameters)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/aiosqlite/cursor.py", line 40, in execute
+    await self._execute(self._cursor.execute, sql, parameters)
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/aiosqlite/cursor.py", line 32, in _execute
+    return await self._conn._execute(fn, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/aiosqlite/core.py", line 160, in _execute
+    return await future
+           ^^^^^^^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next/.tmp/devvenv/lib/python3.12/site-packages/aiosqlite/core.py", line 63, in _connection_worker_thread
+    result = function()
+             ^^^^^^^^^^
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such savepoint: sa_savepoint_1
+[SQL: RELEASE SAVEPOINT sa_savepoint_1]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)

@@ -13,9 +13,10 @@ Two flows, both against the merged code in THIS worktree and a simulated upstrea
 Heartbeat is checked separately from route availability and from task phase:
 
   * before any worker runs: worker.state == "not_seen", the queued check still
-    shows waiting, and the web says "尚未发现后台执行程序";
-  * after `worker --once`: worker.state == "online" (derived from
-    service_heartbeats.last_seen_at), and the web says "后台执行程序在线".
+    shows waiting, and the web says "尚未收到执行程序的响应";
+  * after `worker --once`: worker.state == "online" (meaning "recently
+    responded", derived from service_heartbeats.last_seen_at). The finished
+    task must not keep a prominent background banner.
 
 Nothing here calls a real model, weather, route or notification service.
 """
@@ -198,7 +199,32 @@ def main() -> int:
         "HTTPS_PROXY": "",
         "ALL_PROXY": "",
         "NO_PROXY": "127.0.0.1,localhost",
+        # The interpreter may have an editable install pointing at another
+        # checkout. Force child processes to import THIS worktree's backend.
+        "PYTHONPATH": str(API_DIR / "src")
+        + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else ""),
     }
+
+    diagnostic = subprocess.run(
+        [
+            str(PYTHON),
+            "-c",
+            "import sys, sqlite3, sqlalchemy, aiosqlite, assistant_api;"
+            "print('python=' + sys.version.split()[0]);"
+            "print('sqlalchemy=' + sqlalchemy.__version__);"
+            "print('aiosqlite=' + aiosqlite.__version__);"
+            "print('sqlite=' + sqlite3.sqlite_version);"
+            "print('assistant_api=' + assistant_api.__file__)",
+        ],
+        cwd=API_DIR,
+        env=BASE_ENV,
+        text=True,
+        capture_output=True,
+    )
+    print(diagnostic.stdout.strip(), flush=True)
+    if diagnostic.returncode != 0 or str(API_DIR / "src" / "assistant_api") not in diagnostic.stdout:
+        print(diagnostic.stderr, file=sys.stderr)
+        raise RuntimeError("acceptance backend is not imported from this worktree")
 
     logs = (RUNTIME / "processes.log").open("w")
     stub = api = web = None
@@ -337,9 +363,9 @@ def main() -> int:
             body = page.locator("body").inner_text()
             check("web shows the waiting state from the check", "等待处理" in body or "处理中" in body, body[:80].replace("\n", " / "))
             check(
-                'web shows "尚未发现后台执行程序" from the heartbeat, not from route/phase',
-                "尚未发现后台执行程序" in body,
-                "offline copy present" if "尚未发现后台执行程序" in body else body[:200].replace("\n", " / "),
+                'web says the worker has not responded, separately from the queued task',
+                "尚未收到执行程序的响应" in body and "等待处理" in body,
+                "not_seen copy present" if "尚未收到执行程序的响应" in body else body[:240].replace("\n", " / "),
             )
             page.screenshot(path=str(RUNTIME / "shots" / "01-queued-offline.png"), full_page=True)
 
@@ -379,19 +405,23 @@ def main() -> int:
                 json.dumps(runtime_after["worker"], ensure_ascii=False),
             )
 
-            page.wait_for_timeout(4000)
+            # Reload after the worker terminal state so the detail page restores
+            # the finished task rather than relying on a poll timing window.
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(1800)
             body = page.locator("body").inner_text()
             check("web shows the model title after the real worker finishes", MODEL_TITLE in body, MODEL_TITLE if MODEL_TITLE in body else body[:200].replace("\n", " / "))
-            badge_ok = (
-                "模型分析（服务端校验）" in body
-                or "模型分析（基于开发/测试数据）" in body
+            badge_ok = "模型分析（基于开发/测试数据）" in body
+            check(
+                "mock-backed advisory is labelled as test data",
+                badge_ok,
+                "test-data badge present" if badge_ok else body[:300].replace("\n", " / "),
             )
             check(
-                "web labels the advisory as model-backed",
-                badge_ok,
-                "badge present" if badge_ok else body[:240].replace("\n", " / "),
+                "completed advice does not keep a background banner",
+                "后台执行程序在线" not in body and "最近有响应" not in body,
+                body[:240].replace("\n", " / "),
             )
-            check("web now reports the worker online", "后台执行程序在线" in body, "online copy present" if "后台执行程序在线" in body else body[:200].replace("\n", " / "))
             page.screenshot(path=str(RUNTIME / "shots" / "02-valid-model.png"), full_page=True)
 
             # Flow B: the client queues another check; the stub then reports an unknown

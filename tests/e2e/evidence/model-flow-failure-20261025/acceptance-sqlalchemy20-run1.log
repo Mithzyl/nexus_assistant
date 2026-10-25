@@ -1,0 +1,35 @@
+python=3.11.9
+sqlalchemy=2.0.51
+aiosqlite=0.22.1
+sqlite=3.45.1
+assistant_api=/Users/mith/Desktop/project/superapp-next-worktrees/web/services/assistant-api/src/assistant_api/__init__.py
+==> schema + synthetic account
+==> starting simulated upstream with a structured result
+==> API http://127.0.0.1:8411
+PASS before any worker runs, heartbeat state is not_seen  {"state": "not_seen", "last_seen_at": null}
+PASS route availability is a separate signal from worker heartbeat  route=True
+==> web http://localhost:3411
+PASS client submission created one queued check  [{'check_id': '61042d36-1c01-4e7a-8dda-0213c6e32981', 'status': 'queued'}]
+PASS web shows the waiting state from the check  模型流程通勤 /  / 启用 /  / 流程起点 → 流程终点 /  / 建议 / 设置 / 计划要求 / 服务器保存 / 到达 / 23:30 · 每天 / 起终点 / 流程起点 → 流程终点 / 检查 / 07:30
+PASS web says the worker has not responded, separately from the queued task  not_seen copy present
+PASS worker --once exits cleanly  : GET http://127.0.0.1:8421/api/v1/app/agent-workflows/wf_stub_e6c5cf57507d/result "HTTP/1.1 200 OK" / 2026-10-25 20:43:28,633 INFO commute.worker worker stopped / 
+PASS check reached a terminal status  {'status': 'succeeded', 'phase': 'done'}
+PASS valid model flow stores ai_analysis.status=available  available
+PASS valid model flow keeps the model duration  1800
+PASS advisory title comes from the model result  模型建议：提前 45 分钟出发
+PASS GET /advisories returns the available model analysis  200 available
+PASS after worker runs, heartbeat state is online from last_seen_at  {"state": "online", "last_seen_at": "2026-10-25T12:43:27.411935Z"}
+PASS web shows the model title after the real worker finishes  模型建议：提前 45 分钟出发
+PASS mock-backed advisory is labelled as test data  test-data badge present
+PASS completed advice does not keep a background banner  模型流程通勤 /  / 启用 /  / 流程起点 → 流程终点 /  / 建议 / 设置 / 计划要求 / 服务器保存 / 到达 / 23:30 · 每天 / 起终点 / 流程起点 → 流程终点 / 检查 / 07:30 · 驾车 · 缓冲 10 分钟 / 提醒 / 关 · 计划 revision 1 /  / 计划更新于 10月25日 20:43。 /  / 最新天气 / 数据新鲜 / 22°C / 降雨 20% /  / mock · 取得于 10月25日 20:43 · 有效至 10月26日 1:00 /  / 服务日期 2026-10-25 · 计划 revision 1 /  / 天
+PASS second client submission queued another check  [{'check_id': 'fa631fc1-b55d-4186-8f1c-06e6e976ae30', 'status': 'queued'}, {'check_id': '61042d36-1c01-4e7a-8dda-0213c6e32981', 'status': 'succeeded'}]
+PASS worker --once exits cleanly for the unknown flow  : GET http://127.0.0.1:8421/api/v1/app/agent-workflows/wf_stub_56989cb5902e/result "HTTP/1.1 200 OK" / 2026-10-25 20:43:33,283 INFO commute.worker worker stopped / 
+PASS unknown model flow stores ai_analysis.status=unknown  unknown
+PASS unknown model flow still stores an advisory  7ec5ca75-1ce6-404e-8e76-98d15ec03ed5
+PASS unknown analysis is readable instead of 500  200 unknown
+PASS web shows the unknown-analysis copy  unknown copy present
+PASS heartbeat stays online after both flows  online
+PASS queue is empty after both checks (no duplicate execution)  {"queued": 0, "running": 0}
+
+23/23 checks passed
+artifacts: /Users/mith/Desktop/project/superapp-next-worktrees/web/.tmp/model-flows

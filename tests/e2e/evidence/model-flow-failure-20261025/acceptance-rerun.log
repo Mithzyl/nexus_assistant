@@ -1,0 +1,36 @@
+python=3.12.12
+sqlalchemy=2.1.6
+aiosqlite=0.22.1
+sqlite=3.50.4
+assistant_api=/Users/mith/Desktop/project/superapp-next-worktrees/web/services/assistant-api/src/assistant_api/__init__.py
+==> schema + synthetic account
+==> starting simulated upstream with a structured result
+==> API http://127.0.0.1:8411
+PASS before any worker runs, heartbeat state is not_seen  {"state": "not_seen", "last_seen_at": null}
+PASS route availability is a separate signal from worker heartbeat  route=True
+==> web http://localhost:3411
+Traceback (most recent call last):
+  File "/Users/mith/Desktop/project/superapp-next-worktrees/web/tests/e2e/acceptance_model_flows.py", line 514, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/mith/Desktop/project/superapp-next-worktrees/web/tests/e2e/acceptance_model_flows.py", line 351, in main
+    page.get_by_role("button", name="重新分析").first.click()
+  File "/Users/mith/Library/Python/3.11/lib/python/site-packages/playwright/sync_api/_generated.py", line 15631, in click
+    self._sync(
+  File "/Users/mith/Library/Python/3.11/lib/python/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+    return task.result()
+           ^^^^^^^^^^^^^
+  File "/Users/mith/Library/Python/3.11/lib/python/site-packages/playwright/_impl/_locator.py", line 162, in click
+    return await self._frame._click(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Library/Python/3.11/lib/python/site-packages/playwright/_impl/_frame.py", line 566, in _click
+    await self._channel.send("click", self._timeout, locals_to_params(locals()))
+  File "/Users/mith/Library/Python/3.11/lib/python/site-packages/playwright/_impl/_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mith/Library/Python/3.11/lib/python/site-packages/playwright/_impl/_connection.py", line 559, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for get_by_role("button", name="重新分析").first
+

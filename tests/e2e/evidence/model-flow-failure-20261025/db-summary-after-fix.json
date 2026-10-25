@@ -1,0 +1,30 @@
+{
+  "counts": {
+    "users": 1,
+    "commute_plans": 1,
+    "commute_instances": 1,
+    "commute_checks": 2,
+    "commute_idempotency_keys": 2,
+    "commute_advisories": 2
+  },
+  "plans": [
+    [
+      "7a59cffd-bf9a-42c6-9fda-766c301904f1",
+      "模型流程通勤",
+      1,
+      1
+    ]
+  ],
+  "checks": [
+    [
+      "75b0753f-8eb7-428f-a6db-1c50992914af",
+      "succeeded",
+      "done"
+    ],
+    [
+      "3bb1679f-5394-45e1-9fad-d3546929a4d2",
+      "succeeded",
+      "done"
+    ]
+  ]
+}

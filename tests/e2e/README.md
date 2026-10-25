@@ -15,7 +15,7 @@ python3 -m playwright install chromium
 python3 -m venv .tmp/backend-venv
 .tmp/backend-venv/bin/pip install -e services/assistant-api
 
-# 3. Build + seed + run
+# 3. Build + seed + run (both browser suites)
 ASSISTANT_PYTHON=.tmp/backend-venv/bin/python \
   pnpm --filter @superapp/web test:e2e
 ```
@@ -44,10 +44,27 @@ depend on an old advisory happening to still be valid.
 - latest weather and the weather stored with an old advisory are displayed
   separately, including “weather updated, advice not recomputed” copy; missing
   weather is honest; old-plan and expired advice are muted history.
-- real check phases (`fetching_weather` etc.), worker-not-responding copy with
-  no infinite spinner, unknown results, route-unconfigured copy, and a pending
-  operation retired when the plan revision changes.
+- real check phases (`fetching_weather` etc.), unknown results,
+  route-unconfigured copy, and a pending operation retired when the plan
+  revision changes.
+- `runtime_state_check.py` (run by the same runner) fulfills only
+  `/api/pa/commute/runtime` with controlled responses while the plan/check stay
+  on the isolated real backend. It asserts:
+  - route availability, worker heartbeat and task phase stay separate;
+  - `not_seen` says the worker has not responded and the task is still waiting;
+  - a recent heartbeat says "最近有响应", not permanent online, and does not
+    claim the queued task started;
+  - an online state whose `last_seen_at` is older than `stale_after_seconds`
+    becomes "近期未响应" without changing the task to failed;
+  - a failed runtime request shows "暂时无法获取后台状态" and the last successful
+    query time, not the previous online claim;
+  - a long-open page ages a heartbeat into stale without a new request;
+  - hidden pages do not poll and becoming visible refreshes once;
+  - an account switch does not inherit the previous account's runtime state;
+  - these reads create no checks and make no model calls.
 - 360 px overflow, long Markdown/text, and dark mode.
+- mock-backed advisories are asserted to carry the 开发/测试数据 label; the
+  acceptance model flow no longer accepts a plain "服务端校验" badge.
 
 ## Fixed test accounts
 
@@ -64,3 +81,19 @@ They are not real credentials and must not be reused.
 earlier scratch area. They expect older hand-made fixtures (a specific account
 and plan) and are **not** part of `test:e2e`; use the runner above for repeatable
 results.
+
+
+## Extra model flow
+
+`acceptance_model_flows.py` is the heavier "valid model / unknown model" flow. It starts
+its own stub, API and web on 8411/3411/8421. The script forces `PYTHONPATH` to this
+worktree's `services/assistant-api/src` and prints the actual Python/SQLAlchemy/aiosqlite/
+SQLite versions and `assistant_api.__file__` before starting anything; do not point
+`ASSISTANT_PYTHON` at a venv whose editable install belongs to another checkout.
+
+As of 2026-10-25 this flow is **intermittent, not a stable pass**: the create-check step
+sometimes returns 500 from `ensure_instance()` with
+`sqlite3.OperationalError: no such savepoint: sa_savepoint_1`. It reproduced with both
+SQLAlchemy 2.0.51 and 2.1.6 after the worktree import fix. Failure evidence and the exact
+commands are in `tests/e2e/evidence/model-flow-failure-20261025/`. Do not claim this flow
+passed from a single green run; wait for the backend fix and rerun both model outcomes.

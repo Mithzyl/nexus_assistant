@@ -145,5 +145,15 @@ PA_API_URL=http://127.0.0.1:8010 pnpm dev:web
 - 服务端新增的 `matches_current_plan` / `is_current_service_date` / `is_expired` 优先用于适用性判断；旧缓存缺少这些字段时回退到 plan revision 与有效期。计划修改显示“修改前结果”，跨日记录显示“历史建议”。
 - check 详情新增 `phase`、`analysis_mode`、`phase_updated_at`；页面显示真实后台步骤（更新天气、查询路线、分析建议、保存结果等）与后台心跳。后台无响应时说明任务已保存，不再无限显示分析中的旋转图标；结果未知单独提示。
 - 只读恢复、单次重新分析、刷新恢复同一 check、按 `advisory_id` 读取本次建议、计划版本冲突、路线未配置和过期历史均有隔离环境浏览器覆盖。
-- 可重复测试：`ASSISTANT_PYTHON=... pnpm --filter @superapp/web test:e2e`（独立 SQLite、固定时钟、3300/8300 端口、合成账号，详见 `tests/e2e/README.md`）。最近一次 **90/90 通过、0 pageerror**。
+- 可重复测试：`ASSISTANT_PYTHON=... pnpm --filter @superapp/web test:e2e`（独立 SQLite、固定时钟、3300/8300 端口、合成账号，详见 `tests/e2e/README.md`）。最近一次主流程 **90/90**、后台状态 **23/23** 通过，0 pageerror。
 - 边界未变：共享 8010 后端本轮未启动、未连接；真实 Nexus、真实地图 Provider、Bark 送达、APNs/Web Push、HTTPS/Safari 实机仍未验证。测试中的 mock 天气/路线不是真实路况或预报。
+
+
+## 9. 2026-10-25 后台状态语义修正
+
+- `worker.state=online` 只表示服务器最近收到过心跳，不等于进程此刻持续在线。页面用 `server_time` 加本地单调时钟换算 `last_seen_at` 的年龄；超过 `stale_after_seconds` 后即使响应里仍是 `online`，也显示“近期未响应”。
+- 状态文案：`online` → “最近有响应”（带约 X 秒/分钟前）；`stale` → “近期未响应（上次响应…）”；`not_seen` → “尚未收到执行程序的响应”；请求失败 → “暂时无法获取后台状态”，并显示上次成功查询时间。以上都不把任务判为失败。
+- 三个信号保持分离：`route_provider_available` 只回答路线是否可用；`check.status/phase` 只回答当前任务做什么；`worker.last_seen_at` 只回答后台最近是否报到。`latest_check` 不替换当前打开的 check。
+- 被查看的任务仍在等待/处理时，后台状态只作为辅助说明；任务完成后不再保留醒目的后台横幅。页面不因状态变化自动重新分析、取消或创建检查。
+- 活动任务时每 20 秒刷新一次；失败后按 20→40→60 秒退避；页面隐藏时停止轮询，重新可见时立即核对。旧请求用序号和 AbortController 丢弃，账号/计划切换会重置状态。
+- 浏览器测试使用受控 `/commute/runtime` 响应覆盖上述场景，同时保留隔离真实后端读取计划/检查；主流程 90/90 + 后台状态 23/23 通过。

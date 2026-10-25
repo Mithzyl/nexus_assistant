@@ -174,6 +174,8 @@ export interface CommuteCheck {
 
 /** Server process liveness; it is not the progress of one check. */
 export interface CommuteRuntime {
+  /** Server clock at response time; used to age heartbeats on the client. */
+  server_time: string;
   scheduler: { state: "online" | "stale" | "not_seen"; last_seen_at: string | null };
   worker: { state: "online" | "stale" | "not_seen"; last_seen_at: string | null };
   stale_after_seconds: number;
