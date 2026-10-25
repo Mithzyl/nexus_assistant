@@ -1,29 +1,66 @@
-# End-to-end smoke scripts (manual)
+# Mobile web end-to-end checks
 
-These scripts were preserved from the local scratch area (`.tmp/`) so the flows they
-cover are not lost. They are **manual** checks, not part of an automated CI run: they
-require a running web app, a running backend, and Playwright + a Chromium build.
+The canonical runner is `run_web_e2e.py`. It creates a **fresh SQLite database**,
+seeds synthetic accounts/plans/chats/weather, starts the real `assistant-api`
+with a fixed clock, starts the production Next.js build, and runs
+`web_flow_check.py` with Playwright. It never starts or writes the shared
+backend and never calls a real model or sends a notification.
 
-## Prerequisites
+```bash
+# 1. Browser test dependency (the Python that runs run_web_e2e.py)
+python3 -m pip install playwright
+python3 -m playwright install chromium
 
-- Web: `pnpm dev:web` (scripts default to `http://localhost:3200`, override with `SMOKE_BASE_URL`)
-- Backend: `services/assistant-api` listening on `127.0.0.1:8001` (the Nexus stub), plus
-  `services/nexus-stub` where a phase-4 flow needs it
-- Python deps for the backend in `.tmp/devvenv` (phase-4 scripts call the commute worker
-  through that interpreter; override the database with `SMOKE_DB`)
-- `playwright` with Chromium installed for the Python that runs these scripts
+# 2. Isolated backend dependency (used only for the child API process)
+python3 -m venv .tmp/backend-venv
+.tmp/backend-venv/bin/pip install -e services/assistant-api
 
-## Scripts
+# 3. Build + seed + run
+ASSISTANT_PYTHON=.tmp/backend-venv/bin/python \
+  pnpm --filter @superapp/web test:e2e
+```
 
-| Script | Flow |
-| --- | --- |
-| `web_smoke_mobile_home.py` | Mobile web home/ask/memory/me pages, console-error check |
-| `web_smoke_mobile_home_390.py` | Same at 390x844, light/dark |
-| `web_smoke_mobile_home_360.py` | Same at 360x844 (narrowest supported width) |
-| `phase4_assistant_smoke.py` | Commute plan -> queued check -> worker -> advisory history/expiry |
-| `phase4_assistant_continue.py` | Continuation of the phase-4 flow after a manual step |
+`ASSISTANT_PYTHON` is required. The runner builds `apps/web` unless
+`--skip-build` is passed; `--web-port` (default `3300`) and `--api-port`
+(default `8300`) are checked for conflicts before anything starts.
 
-Screenshots go to `.tmp/shots` by default (git-ignored); override with `SMOKE_SHOT_DIR`.
-The phase-4 scripts expect the development fixtures created by earlier manual runs
-(a local test account and seeded plans); they are development-only values and must not
-be reused as real credentials.
+## What it proves
+
+The flow stores its own fixture in `.tmp/e2e/fixture.json` and writes logs plus
+screenshots to `.tmp/e2e/`. The fixed clock is tomorrow 08:00 Asia/Shanghai, and
+all advisory/weather timestamps are relative to it, so the result does not
+depend on an old advisory happening to still be valid.
+
+- login failure/success, HttpOnly/Secure/SameSite cookies, renewal, logout,
+  account switch, and a rejected cross-site write that keeps the session.
+- chat history from the server, old local-cache verification via
+  `POST /api/v1/asks/verify`, internal commute prompts removed, unknown records
+  kept locally but hidden and non-resubmittable, verified chats readable while
+  the history request fails, and records older than the server's newest 20 not
+  being deleted.
+- commute detail loads without creating a check; an explicit reanalysis creates
+  exactly one check and reload restores the same id; a terminal check is read by
+  its own `advisory_id`, not `latest`.
+- latest weather and the weather stored with an old advisory are displayed
+  separately, including “weather updated, advice not recomputed” copy; missing
+  weather is honest; old-plan and expired advice are muted history.
+- real check phases (`fetching_weather` etc.), worker-not-responding copy with
+  no infinite spinner, unknown results, route-unconfigured copy, and a pending
+  operation retired when the plan revision changes.
+- 360 px overflow, long Markdown/text, and dark mode.
+
+## Fixed test accounts
+
+These exist only in the temporary database created by the runner:
+
+- `web-e2e-a@example.com` / `e2e-password-2026`
+- `web-e2e-b@example.com` / `e2e-password-2026`
+
+They are not real credentials and must not be reused.
+
+## Legacy manual probes
+
+`web_smoke_mobile_home*.py` and `phase4_assistant_*.py` were preserved from the
+earlier scratch area. They expect older hand-made fixtures (a specific account
+and plan) and are **not** part of `test:e2e`; use the runner above for repeatable
+results.

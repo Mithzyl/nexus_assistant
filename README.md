@@ -14,6 +14,7 @@
 - 事务、退款等页面在明确开启演示模式后显示本地示例；未开启时显示真实空状态和能力说明。
 - 启动、接口对应表、验证结果与剩余依赖见 [`docs/移动Web实现与验证.md`](docs/移动Web实现与验证.md)。
 - 通勤分析、路线来源、会话 Cookie 与本轮验证见 [`docs/移动Web通勤分析推进记录.md`](docs/移动Web通勤分析推进记录.md)。
+- 可重复浏览器验收：`ASSISTANT_PYTHON=<隔离后端解释器> pnpm --filter @superapp/web test:e2e`。它使用临时 SQLite、固定时钟和合成账号，不连接共享后端；命令细节见 [`tests/e2e/README.md`](tests/e2e/README.md)。
 
 ```bash
 # 单独启动 PA API 后（默认 http://127.0.0.1:8010）

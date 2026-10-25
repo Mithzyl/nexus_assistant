@@ -140,12 +140,29 @@ export type CheckStatus =
   | "succeeded"
   | "degraded"
   | "failed"
+  | "cancelled"
+  | "unknown";
+
+export type CheckPhase =
+  | "queued"
+  | "fetching_route"
+  | "fetching_weather"
+  | "analyzing"
+  | "saving"
+  | "retry_wait"
+  | "done"
+  | "failed"
   | "cancelled";
 
 export interface CommuteCheck {
   check_id: string;
   plan_id: string;
   status: CheckStatus;
+  phase: CheckPhase | null;
+  analysis_mode: "full" | "weather_only" | null;
+  phase_updated_at: string | null;
+  attempt_count: number | null;
+  next_attempt_at: string | null;
   trigger: "manual" | "auto";
   plan_revision: number;
   advisory_id: string | null;
@@ -153,6 +170,24 @@ export interface CommuteCheck {
   error: { code: string; message: string; retryable: boolean } | null;
   created_at: string;
   finished_at: string | null;
+}
+
+/** Server process liveness; it is not the progress of one check. */
+export interface CommuteRuntime {
+  scheduler: { state: "online" | "stale" | "not_seen"; last_seen_at: string | null };
+  worker: { state: "online" | "stale" | "not_seen"; last_seen_at: string | null };
+  stale_after_seconds: number;
+  queue: { queued?: number; running?: number };
+  latest_check: {
+    check_id: string;
+    status: CheckStatus;
+    phase: CheckPhase | null;
+    phase_updated_at: string | null;
+  } | null;
+  last_progress_at: string | null;
+  route_provider_available: boolean;
+  auto_analysis_enabled: boolean;
+  auto_analysis_mode: "full" | "weather_only";
 }
 
 export interface AdvisorySource {
@@ -177,6 +212,26 @@ export interface WeatherSummary {
   rain_probability_threshold: number;
   rain_risk: boolean | null;
   coverage: "full" | "partial" | "unavailable";
+}
+
+/** Latest stored provider weather; never borrowed for an older advisory. */
+export interface PlanWeather {
+  plan_id: string;
+  plan_revision: number;
+  local_service_date: string;
+  check_id: string;
+  provider: string;
+  fetched_at: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  quality: "fresh" | "degraded" | "unavailable";
+  freshness: "fresh" | "stale" | "unavailable";
+  coverage: "full" | "partial" | "unavailable";
+  summary: WeatherSummary | null;
+  stale_after_seconds: number;
+  is_stale: boolean;
+  matches_current_plan: boolean;
+  current_plan_revision: number;
 }
 
 export interface Advisory {
@@ -213,6 +268,22 @@ export interface Advisory {
     missing_information: string[];
     reason: string | null;
   } | null;
+  /** Read-time annotations added 2026-10-25; optional for cached older records. */
+  matches_current_plan?: boolean;
+  is_current_service_date?: boolean;
+  is_expired?: boolean;
+  current_plan_revision?: number | null;
+}
+
+export type AskClassification = "chat" | "not_chat" | "unknown";
+
+export interface AskVerifyItem {
+  local_run_id: string;
+  classification: AskClassification;
+}
+
+export interface AskVerifyResponse {
+  results: AskVerifyItem[];
 }
 
 export interface BarkStatus {

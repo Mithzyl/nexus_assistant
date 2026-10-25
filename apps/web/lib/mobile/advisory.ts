@@ -125,20 +125,40 @@ export function advisoryApplicability(
   planRevision: number,
   now = Date.now(),
 ): AdvisoryApplicability {
+  // Newer servers annotate these at read time. Cached pre-2026-10-25 records
+  // omit them, so fall back to the facts the browser already holds.
   const expires = Date.parse(advisory.expires_at);
-  if (Number.isFinite(expires) && expires <= now) {
+  const expired =
+    advisory.is_expired ?? (Number.isFinite(expires) && expires <= now);
+  const planMatches =
+    advisory.matches_current_plan ?? advisory.plan_revision === planRevision;
+  const currentServiceDate = advisory.is_current_service_date ?? true;
+  const currentRevision = advisory.current_plan_revision ?? planRevision;
+
+  if (!planMatches) {
     return {
       applicable: false,
-      label: "已过期",
-      detail: "已超过服务器给出的有效期，不适用于当前出行；服务器记录仍保留。",
+      label: "修改前结果",
+      detail:
+        `建议属于计划 revision ${advisory.plan_revision}，当前为 revision ${currentRevision}，` +
+        "不能当作当前计划的结果。" +
+        (expired ? " 它同时也已超过有效期。" : ""),
       tone: "neutral",
     };
   }
-  if (advisory.plan_revision !== planRevision) {
+  if (expired) {
     return {
       applicable: false,
-      label: "旧计划版本",
-      detail: `建议属于计划 revision ${advisory.plan_revision}，当前为 revision ${planRevision}，不能当作当前计划的结果。`,
+      label: "已过期",
+      detail: "这是历史建议，已超过服务器给出的有效期，不适用于当前出行；服务器记录仍保留。",
+      tone: "neutral",
+    };
+  }
+  if (!currentServiceDate) {
+    return {
+      applicable: false,
+      label: "历史建议",
+      detail: `这条建议产生于 ${advisory.local_service_date}，不是今天的结果；服务器记录仍保留。`,
       tone: "neutral",
     };
   }

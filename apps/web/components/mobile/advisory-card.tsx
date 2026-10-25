@@ -49,13 +49,15 @@ export function AdvisoryCard({
   onSkip?: () => void;
   skipBusy?: boolean;
 }) {
-  const expired = Date.parse(advisory.expires_at) <= Date.now();
+  const expired =
+    advisory.is_expired ?? Date.parse(advisory.expires_at) <= Date.now();
   const quality = QUALITY[advisory.quality];
   const weather = advisory.weather;
   const ai = advisory.ai_analysis;
   const baseAiBadge = aiStatus(advisory);
   const aiReason = aiReasonText(advisory);
   const mock = mockProviders(advisory);
+  const weatherSource = advisory.sources.find((source) => source.kind === "weather") ?? null;
   const aiBadge = mock.length > 0
     ? {
         ...baseAiBadge,
@@ -218,7 +220,13 @@ export function AdvisoryCard({
 
       {weather ? (
         <div className="card card--mist mt-12" style={{ padding: 12 }}>
-          <div className="flex items-center gap-8" style={{ flexWrap: "wrap" }}>
+          <div className="flex items-center justify-between gap-8" style={{ flexWrap: "wrap" }}>
+            <span className="micro">上次分析采用的天气</span>
+            {weatherSource?.fetched_at ? (
+              <span className="micro">取得于 {formatDateTime(weatherSource.fetched_at)}</span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-8 mt-6" style={{ flexWrap: "wrap" }}>
             {weather.temperature_c !== null ? (
               <span className="flex items-center gap-4" style={{ fontSize: 14 }}>
                 <Thermometer size={14} className="fog" /> {Math.round(weather.temperature_c)}°C
@@ -246,9 +254,12 @@ export function AdvisoryCard({
               不完整时不把它当作确定天气。
             </p>
           ) : null}
+          <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
+            这是建议生成时保存的天气，不随上方“最新天气”更新。
+          </p>
         </div>
       ) : (
-        <p className="micro mt-10">没有可用的天气摘要。</p>
+        <p className="micro mt-10">这条建议没有保存可用的天气摘要。</p>
       )}
 
       {expired ? (

@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { ArrowUpRight, CloudSun, MapPin, RefreshCw } from "lucide-react";
 
-import type { Advisory, CommuteCheck, CommutePlan } from "@/lib/mobile/api";
+import type { Advisory, CommuteCheck, CommutePlan, PlanWeather } from "@/lib/mobile/api";
 import { ApiError } from "@/lib/mobile/api";
 import { formatDateTime, formatDuration, formatTime } from "@/lib/mobile/format";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
@@ -16,6 +16,7 @@ import {
   routeUnconfigured,
 } from "@/lib/mobile/advisory";
 import {
+  CHECK_PHASE_LABEL,
   CHECK_STATUS_LABEL,
   loadPendingCheck,
 } from "@/lib/mobile/commute-check";
@@ -58,6 +59,10 @@ export function TodayCommuteCard() {
   const check = useApiResource<CommuteCheck>(
     pending?.checkId ? `/api/pa/checks/${pending.checkId}` : null,
     { enabled: Boolean(pending?.checkId) },
+  );
+  const latestWeather = useApiResource<PlanWeather>(
+    plan ? `/api/pa/commute-plans/${plan.id}/weather` : null,
+    { enabled: Boolean(plan) },
   );
 
   const noAdvisory =
@@ -177,6 +182,7 @@ export function TodayCommuteCard() {
             {checkStatus ? (
               <p className="micro" style={{ margin: "7px 0 0" }}>
                 上次重新分析：{CHECK_STATUS_LABEL[checkStatus]}
+                {check.data?.phase ? ` · ${CHECK_PHASE_LABEL[check.data.phase]}` : ""}
                 {check.data?.finished_at
                   ? ` · 服务器完成于 ${formatDateTime(check.data.finished_at)}`
                   : ""}
@@ -184,6 +190,24 @@ export function TodayCommuteCard() {
                 <Link href={`/me/commute/${plan.id}`} className="link-button link-button--inline">
                   查看进度
                 </Link>
+              </p>
+            ) : null}
+
+            {latestWeather.data?.summary ? (
+              <p className="micro" style={{ margin: "5px 0 0", lineHeight: 1.6 }}>
+                最新天气：{latestWeather.data.summary.temperature_c !== null
+                  ? `${Math.round(latestWeather.data.summary.temperature_c)}°C`
+                  : "温度未记录"}
+                {latestWeather.data.summary.precipitation_probability_known &&
+                latestWeather.data.summary.precipitation_probability_max !== null
+                  ? ` · 降雨 ${Math.round(
+                      latestWeather.data.summary.precipitation_probability_max * 100,
+                    )}%`
+                  : " · 降雨概率未知"}
+                {" · 取得于 "}
+                {formatDateTime(latestWeather.data.fetched_at) || "时间未记录"}
+                {latestWeather.data.is_stale ? " · 已过期" : ""}
+                {latestWeather.data.matches_current_plan ? "" : " · 旧计划版本"}
               </p>
             ) : null}
 
@@ -223,7 +247,7 @@ export function TodayCommuteCard() {
             {!advisory.loading && !current && applicability ? (
               <div className="mt-10">
                 <p className="caption" style={{ margin: 0 }}>
-                  服务器已保存一条建议，但{applicability.label === "已过期" ? "已经过期" : applicability.label === "旧计划版本" ? "属于旧计划版本" : "当前没有可用结果"}，不能作为今天的出发时间。
+                  服务器已保存一条建议，但{applicability.label === "已过期" ? "已经过期" : applicability.label === "修改前结果" ? "属于修改前的计划版本" : applicability.label === "历史建议" ? "是历史建议" : "当前没有可用结果"}，不能作为今天的出发时间。
                 </p>
                 <p className="micro" style={{ margin: "4px 0 0" }}>
                   {applicability.detail}

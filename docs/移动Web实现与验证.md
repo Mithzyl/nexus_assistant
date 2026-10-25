@@ -1,11 +1,14 @@
 # 移动 Web 实现与验证
 
-更新时间：2026-10-24。本文记录本次移动 Web 复刻的实际实现、真实接入、演示范围、验证证据与剩余依赖。
+更新时间：2026-10-25。本文记录移动 Web 的实际实现、真实接入、演示范围、验证证据与剩余依赖；2026-10-25 新增聊天缓存核对、最新天气、后台步骤与可重复浏览器测试。
 
 ## 1. 结论
 
 - 页面与交互：四个主入口（今天、事务、助手、我的）、详情页、底部导航、录入弹层、深色模式与手机断点已实现。
 - 真实接入：PA 登录/续期/退出、问答提交与查询、SSE 事件与刷新恢复、内容来源与云端内容、笔记导入、通勤计划/检查/建议、Bark 绑定/开关/解除。
+- 聊天历史以服务器聊天接口为准；旧版本地缓存用 `POST /asks/verify` 批量核对。内部通勤分析记录不再进入聊天，已确认 `not_chat` 的记录从展示与重新提问入口移除，`unknown` 保留本机记录但隐藏正文并禁止直接重提。
+- 最新天气使用独立的 `GET /commute-plans/{plan_id}/weather`，与建议生成时保存的天气分开展示；“天气已更新”不等于建议已重新分析。
+- 通勤详情展示服务器 check 的真实阶段（更新天气、查询路线、分析建议、保存结果等）与后台服务心跳；后台无响应时说明任务已保存，不会用无限旋转图标冒充分析中。
 - 本地或演示：本机“收下内容/记一句”记录、事务详情（退款/订单/票据/心愿/项目/行程）、个人记忆与经验。均需显式开启演示模式，页面有明确标注。
 - 原生限制：浏览器没有 EventKit、MapKit、APNs、系统分享和 Apple 备忘录读取；没有用虚构坐标、路线快照或送达回执替代。
 - AI 平台目录未做任何写入。本任务没有启动、修改或迁移 `/Users/mith/Desktop/project/llm_fusion_platform/`。
@@ -22,13 +25,13 @@
 | 出门准备、票据 | 本地演示 | `/matters/prepare`、`/matters/movie` | 无 | 清单勾选、记忆停用后移除条目、票据信息 | 浏览器实测勾选/记忆开关 |
 | 心愿、项目、行程、订单、待整理 | 本地演示 | `/matters/wish`、`/matters/project`、`/matters/travel`、`/matters/lamp`、动态 `/matters/[id]` | 无 | 安排确认/取消、步骤推进、改期冲突与待联系清单 | 浏览器实测 |
 | 原始依据 | 本地演示 | `/matters/evidence/[id]` | 无 | 等宽原文与来源范围说明 | 浏览器实测 |
-| 助手问答 | PA API | `/ask` | `POST /asks`、`GET /asks`、`GET /asks/{id}`、`GET /asks/{id}/events`、`POST /asks/{id}/cancel` | httpOnly Cookie + 同源代理；SSE 读取，终态后以详情接口的 `answer` 为准；失败回退有界轮询；稳定幂等键 | 真实 HTTP + 契约桩实测答案、刷新、单条记录 |
+| 助手问答 | PA API | `/ask` | `POST /asks`、`GET /asks`、`GET /asks/{id}`、`GET /asks/{id}/events`、`POST /asks/{id}/cancel`、`POST /asks/verify` | httpOnly Cookie + 同源代理；SSE 读取，终态后以详情接口的 `answer` 为准；失败回退有界轮询；稳定幂等键；旧缓存按 50 个一批核对，内部记录移除、未知记录隐藏且不可重提 | 隔离后端 + Playwright 实测登录/历史核对/刷新/账号切换 |
 | 登录、续期、退出、过期 | PA API | `/login`、`/me` | `POST /auth/login`、`GET /auth/me`、`POST /auth/session/renew`、`POST /auth/logout` | 服务端转发，令牌只存 httpOnly Cookie；续期沿用固定 Bearer；退出撤销当前设备 | 浏览器实测错误密码/登录/续期/退出 |
 | 内容来源 | PA API | `/me/sources` | `GET/POST/PATCH/DELETE /data-sources`、`DELETE /items` | 列表、开关、字段授权、删除副本/来源语义 | 浏览器实测来源列表/开关/字段/删除 |
 | 云端内容 | PA API | `/me/sources` 云端内容、`/me/sources/content/[id]` | `GET /content`、`GET /content/{id}` | 搜索、类型筛选、详情；字段为空不推断为删除 | 浏览器实测导入后搜索/详情 |
 | 笔记导入 | 浏览器文件 + PA API | `/me/sources/import` | `POST /data-sources`、`POST /data-sources/{id}/sync` | 仅纯文本/Markdown；确认后上传；稳定内容哈希去重；显示新建/更新/未改动 | 浏览器实测落库与搜索 |
 | 通勤设置 | PA API | `/me/commute`、`/new`、`/[id]` | `GET/POST/PUT/DELETE /commute-plans` | 手动坐标、完整表单校验、If-Match 冲突提示；不生成路线快照 | 浏览器实测创建/编辑/删除 |
-| 手动检查、建议 | PA API + worker | `/me/commute/[id]` | `POST /commute-plans/{id}/checks`、`GET /checks/{id}`、`GET /advisories/latest`、`POST /advisories/{id}/actions` | 幂等键、有限轮询、质量/过期/来源展示、跳过今天 | mock provider + worker 实测生成建议 |
+| 手动检查、建议 | PA API + worker | `/me/commute/[id]` | `POST /commute-plans/{id}/checks`、`GET /checks/{id}`、`GET /advisories/latest`、`GET /advisories/{id}`、`GET /commute-plans/{id}/weather`、`GET /commute/runtime`、`POST /advisories/{id}/actions` | 幂等键、真实阶段与后台心跳、最新天气与建议天气分开、按 advisory_id 读取本次结果、服务器适用性标注、跳过今天 | 隔离后端 + 固定时钟实测只读恢复/单次创建/关联读取/过期与旧版本 |
 | Bark | PA API | `/me/commute/bark` | `GET/PATCH /commute/bark`、`POST/DELETE /bark/binding`、`POST /bark/test` | 绑定/替换/解绑、自动提醒开关、显式测试；区分“接受”与“送达” | 浏览器实测绑定/开关/解绑（未真实发送） |
 | 个人记忆、经验 | 本地演示 | `/me/memories`、`/me/lesson` | 无 | 显式演示；可编辑/停用；正常模式说明无写入接口 | 浏览器实测 |
 | 记忆检索 | PA 遗留代理 | `/me/memory-search` | `POST /memory/search` | 只读，错误不显示为空结果；不新增管理能力 | 契约桩实测返回 2 条 |
@@ -59,6 +62,21 @@
 - 注册、找回密码、第三方登录。
 
 ## 4. 验证记录
+
+### 4.1 2026-10-25 可重复验收（本轮）
+
+`tests/e2e/run_web_e2e.py` 会新建独立 SQLite、写入合成账号/计划/聊天/天气，以固定时钟启动真实 `assistant-api`，再启动生产构建并用 Chromium 执行 `web_flow_check.py`。共享后端、真实模型和通知均不参与。
+
+```bash
+python3 -m pip install playwright && python3 -m playwright install chromium
+python3 -m venv .tmp/backend-venv
+.tmp/backend-venv/bin/pip install -e services/assistant-api
+ASSISTANT_PYTHON=.tmp/backend-venv/bin/python pnpm --filter @superapp/web test:e2e
+```
+
+默认端口：网页 3300，隔离 API 8300；测试账号仅存在于临时库，见 `tests/e2e/README.md`。最近一次结果：**90/90 通过，0 pageerror**，`tsc --noEmit` 与 `next build` 均通过；截图在 `.tmp/e2e/shots/`。覆盖登录/续期/退出/账号切换、跨站写拒绝、旧缓存三类核对、离线保留、最新天气与旧建议分离、只读打开不建任务、单次重新分析与刷新恢复、按 advisory_id 读取、后台不可用、结果未知、路线未配置、计划修改、过期历史、360px 长文本与深色模式。
+
+### 4.2 早期验证（2026-10-24，保留作历史记录）
 
 环境：macOS；Next.js 14；Node 22；Chromium（Playwright）；PA API 与 nexus-stub 通过真实 HTTP 启动；通勤 mock provider + worker。
 
@@ -109,7 +127,7 @@ Markdown 表格采用模拟结果验证：在隔离测试库中把一条已完�
 
 首轮自动化 25 项里有两项失败：一项是检查脚本错误断言（登录后“今天”页本来就不展示用户名），另一项是真实缺陷——SSE 终态刷新使用提交前的旧闭包导致答案不显示。已改为读取 `itemsRef` 并在终态后调用详情接口，复测通过。
 
-未验证：真实 NexusPilot 模型调用（本机未运行平台）、Bark 真实送达、APNs、会话过期后的自动清理、真实 iPhone Safari 键盘/安全区（按 CSS 与桌面 Chromium 模拟检查）。
+未验证：真实 NexusPilot 模型调用（本轮未启动共享后端或平台）、Bark 真实送达、APNs、真实 iPhone Safari 键盘/安全区。2026-10-25 的浏览器验收使用隔离 mock 路线/天气，不声称真实路况或真实预报。
 
 ## 5. 启动方式
 
@@ -149,13 +167,21 @@ pnpm --filter @superapp/web start
 
 `PA_API_URL` 缺省为 `http://127.0.0.1:8010`。浏览器只访问同源 `/api/auth/*` 与 `/api/pa/*`。
 
+可重复验收（不连接共享后端）：
+
+```bash
+ASSISTANT_PYTHON=.tmp/backend-venv/bin/python pnpm --filter @superapp/web test:e2e
+# 或复用已构建产物：python3 tests/e2e/run_web_e2e.py --skip-build
+```
+
 ## 6. 剩余事项
 
 1. 事务类页面目前只有演示交互；需要后端新增事务/捕获/依据接口后才能真实联调。
 2. 记忆管理与经验写入需要服务端接口；当前只读代理取决于上游是否可用。
 3. 浏览器地图选点、路线 ETA、路线快照、系统日历/提醒/备忘录读取、APNs 与 Web Push 未实现，页面已标注替代方案或限制。
-4. 现有 `assistant-dev.db` 早于部分迁移（`commute_checks.ai_run_id` 等），本地验证使用新建独立库；部署时应使用 `scripts/migrate_sqlite.py` 或最新建库流程。
-5. 尚未做真实 NexusPilot 端到端、外网 HTTPS Cookie、Safari 实机键盘与安全区验证。
+4. 共享 8010 后端本轮未启动、未连接；真实 Nexus 回答、真实路线 Provider、Bark 送达与 HTTPS/Safari 实机仍未验证。隔离测试使用 mock 路线/天气，不能当作真实联调证据。
+5. `tests/e2e` 中保留了早期手工探针脚本；它们依赖旧账号与旧计划，不属于 `test:e2e`，可重复验收以 `run_web_e2e.py` 为准。
+6. 本地 SQLite 迁移与部署流程仍以 `scripts/migrate_sqlite.py` 为准；测试库每次新建，不修改共享库。
 
 ## 7. AI 平台只读声明
 
