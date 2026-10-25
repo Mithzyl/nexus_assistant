@@ -177,6 +177,7 @@ actor MockCommuteRepository: CommuteRepository {
     private var advisories: [String: CommuteAdvisory]
     private var checks: [String: CommuteCheck] = [:]
     private var checkStart: [String: Date] = [:]
+    private var runtimeCallCount = 0
 
     init(plans: [CommutePlan], advisories: [CommuteAdvisory]) {
         self.plans = plans
@@ -331,7 +332,15 @@ actor MockCommuteRepository: CommuteRepository {
     func runtime() async throws -> CommuteRuntime {
         #if DEBUG
         let env = ProcessInfo.processInfo.environment
-        let scenario = env["COMMUTE_DEMO_RUNTIME"] ?? "not_seen"
+        runtimeCallCount += 1
+        let sequence = (env["COMMUTE_DEMO_RUNTIME_SEQUENCE"] ?? "")
+            .split(separator: ",").map(String.init)
+        let scenario: String
+        if sequence.isEmpty {
+            scenario = env["COMMUTE_DEMO_RUNTIME"] ?? "not_seen"
+        } else {
+            scenario = sequence[min(max(0, runtimeCallCount - 1), sequence.count - 1)]
+        }
         if scenario == "error" {
             throw CommuteAPIError(kind: .server, status: 503, code: "runtime_unavailable",
                                   message: "暂时无法获取后台状态。", retryable: true, requestId: nil)
@@ -354,11 +363,12 @@ actor MockCommuteRepository: CommuteRepository {
             state: state,
             lastSeenAt: seenAgo.map { serverNow.addingTimeInterval(-$0) }
         )
+        let staleAfter = Int(env["COMMUTE_DEMO_STALE_AFTER"] ?? "") ?? 60
         return CommuteRuntime(
             serverTime: serverNow,
             scheduler: component,
             worker: component,
-            staleAfterSeconds: 60,
+            staleAfterSeconds: staleAfter,
             queue: ["queued": state == .online ? 1 : 0, "running": 0],
             // 故意给一条不属于当前页面的 latest_check，用于确认客户端不会拿它覆盖当前任务。
             latestCheck: RuntimeLatestCheck(checkId: "demo-other-check", status: .running,

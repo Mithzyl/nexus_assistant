@@ -6,12 +6,18 @@ final class RuntimeStatusUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launch(_ scenario: String) -> XCUIApplication {
+    private func launch(_ scenario: String,
+                        seenAgo: String? = nil,
+                        staleAfter: String? = nil,
+                        sequence: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["PA_DEMO"] = "1"
         app.launchEnvironment["COMMUTE_DEMO"] = "1"
         app.launchEnvironment["COMMUTE_DEMO_CHECK"] = "queued"
         app.launchEnvironment["COMMUTE_DEMO_RUNTIME"] = scenario
+        if let seenAgo { app.launchEnvironment["COMMUTE_DEMO_SEEN_AGO"] = seenAgo }
+        if let staleAfter { app.launchEnvironment["COMMUTE_DEMO_STALE_AFTER"] = staleAfter }
+        if let sequence { app.launchEnvironment["COMMUTE_DEMO_RUNTIME_SEQUENCE"] = sequence }
         app.launchEnvironment["START_ROUTE"] = "commuteAdvisory"
         app.launch()
         return app
@@ -65,6 +71,45 @@ final class RuntimeStatusUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS %@", "正在分析建议")).firstMatch.exists,
             "心跳新鲜不能把排队任务显示成分析中")
+    }
+
+
+    func testOnlineHintAgesToStaleWhilePageStaysOpen() {
+        let app = launch("online", seenAgo: "1", staleAfter: "3")
+        startWaitingTask(app)
+        XCTAssertTrue(app.staticTexts["后台执行程序最近有响应。"]
+            .waitForExistence(timeout: 20), "没有先显示在线")
+
+        XCTAssertTrue(app.staticTexts["后台执行程序近期未响应，任务仍已保存。"]
+            .waitForExistence(timeout: 15), "页面停留后没有按经过时长改为近期未响应")
+        XCTAssertFalse(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "上次分析失败")).firstMatch.exists)
+        app.swipeDown()
+        app.swipeDown()
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "runtime-aged-stale"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    func testReturningToDetailReadsUpdatedRuntime() {
+        let app = launch("online", seenAgo: "1", staleAfter: "60",
+                         sequence: "online,stale")
+        startWaitingTask(app)
+        XCTAssertTrue(app.staticTexts["后台执行程序最近有响应。"]
+            .waitForExistence(timeout: 20))
+
+        app.buttons["nav.back"].tap()
+        let card = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "上班通勤")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 20))
+        card.tap()
+
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "等待服务器处理")).firstMatch
+            .waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["后台执行程序近期未响应，任务仍已保存。"]
+            .waitForExistence(timeout: 20), "回到详情没有读取更新的后台状态")
     }
 
     func testReopenRestoresSameWaitingTask() {

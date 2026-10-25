@@ -21,7 +21,15 @@ final class RecordingCommuteRepository: CommuteRepository {
     func login(email: String, password: String) async throws -> LoginResponse { throw latestError }
     func listPlans() async throws -> [CommutePlan] { listPlansCalls += 1; return plans }
     func createPlan(_ draft: CommutePlanDraft) async throws -> CommutePlan { throw latestError }
-    func updatePlan(id: String, draft: CommutePlanDraft, revision: Int) async throws -> CommutePlan { throw latestError }
+    func updatePlan(id: String, draft: CommutePlanDraft, revision: Int) async throws -> CommutePlan {
+        guard let index = plans.firstIndex(where: { $0.id == id }),
+              plans[index].revision == revision else { throw latestError }
+        var updated = plans[index]
+        updated.revision = revision + 1
+        updated.name = draft.name
+        plans[index] = updated
+        return updated
+    }
     func deletePlan(id: String) async throws { throw latestError }
     func requestCheck(planId: String, idempotencyKey: String,
                       request: CheckCreateRequest?) async throws -> CommuteCheck {
@@ -301,6 +309,34 @@ final class CommuteRouteTests: XCTestCase {
                          errorCode: nil, errorMessage: nil)
         )
         await store.updateRouteAndAnalyze()
+    }
+
+
+    func testRuntimeAgeUsesElapsedMonotonicTimeNotWallClock() async {
+        repository.runtimeResult = .success(runtimeSnapshot(state: .online, seenAgo: 5))
+        await startWaitingCheck()
+        await store.refreshRuntime(force: true)
+        XCTAssertEqual(store.runtimeHint?.text, "后台执行程序最近有响应。")
+
+        let later = ProcessInfo.processInfo.systemUptime + 120
+        XCTAssertEqual(store.runtimeHint(nowUptime: later)?.text,
+                       "后台执行程序近期未响应，任务仍已保存。",
+                       "页面停留后应按经过时长转为近期未响应")
+    }
+
+    func testPlanChangeClearsPreviousTaskAndRuntime() async {
+        repository.runtimeResult = .success(runtimeSnapshot(state: .online, seenAgo: 5))
+        await startWaitingCheck()
+        await store.refreshRuntime(force: true)
+        XCTAssertNotNil(store.runtimeHint)
+
+        let saved = await store.save(draft: CommutePlanDraft(plan: plan))
+
+        XCTAssertTrue(saved)
+        XCTAssertNil(store.pendingSubmission, "新计划不能继续显示旧任务的等待状态")
+        XCTAssertNil(store.checkStatus)
+        XCTAssertNil(store.runtime)
+        XCTAssertNil(store.runtimeHint, "旧计划的后台状态不能出现在新计划")
     }
 
     func testRuntimeHintIsSilentBeforeFirstQuery() async {

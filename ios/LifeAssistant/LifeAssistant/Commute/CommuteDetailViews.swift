@@ -59,8 +59,13 @@ struct CommuteAdvisoryView: View {
             trailingAction: plan == nil ? nil : ("编辑", { state.open(.commuteSettings) })
         ) {
             VStack(alignment: .leading, spacing: 16) {
-                if !isHistorical, let hint = store.runtimeHint {
-                    runtimeHintCard(hint)
+                if !isHistorical {
+                    // 页面停留时按单调时钟重算心跳年龄；不会因此发网络请求。
+                    TimelineView(.periodic(from: .now, by: 5)) { _ in
+                        if let hint = store.runtimeHint {
+                            runtimeHintCard(hint)
+                        }
+                    }
                 }
                 if let advisory {
                     if isHistorical || model.phase == .dayPassed || model.phase == .expired {
