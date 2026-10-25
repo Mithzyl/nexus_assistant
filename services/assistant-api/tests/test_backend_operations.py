@@ -173,3 +173,23 @@ async def test_advisory_is_read_through_the_check_identifier(commute_harness):
         f"/api/v1/advisories/{executed.advisory_id}", headers=headers(h.token_b)
     )
     assert other.status_code == 404
+
+
+def test_ai_analysis_read_accepts_unknown_status() -> None:
+    """Regression: checks executed while the AI step is unknown must stay readable.
+
+    The worker stores ``status="unknown"`` when the upstream run mapping cannot be
+    resolved. Before this test the advisory serializer rejected that value, so
+    ``GET /advisories/{id}`` returned 500 and neither client could show a result
+    that the backend had already saved.
+    """
+
+    from assistant_api.commute.schemas import AiAnalysisRead
+
+    model = AiAnalysisRead(
+        status="unknown",
+        duration_source="none",
+        reason="ai_run_mapping_unknown",
+    )
+    assert model.status == "unknown"
+    assert model.reason == "ai_run_mapping_unknown"

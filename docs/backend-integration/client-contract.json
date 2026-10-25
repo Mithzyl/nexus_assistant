@@ -289,6 +289,70 @@
         "status",
         "duration_source"
       ]
+    },
+    "PlanWeatherRead": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteModels.swift"
+      ],
+      "fields": [
+        "plan_id",
+        "plan_revision",
+        "local_service_date",
+        "check_id",
+        "provider",
+        "fetched_at",
+        "valid_from",
+        "valid_to",
+        "quality",
+        "freshness",
+        "coverage",
+        "summary",
+        "stale_after_seconds",
+        "is_stale",
+        "matches_current_plan",
+        "current_plan_revision"
+      ],
+      "required": [
+        "plan_id",
+        "plan_revision",
+        "local_service_date",
+        "check_id",
+        "provider",
+        "fetched_at",
+        "valid_from",
+        "valid_to",
+        "quality",
+        "freshness",
+        "coverage",
+        "stale_after_seconds",
+        "is_stale",
+        "matches_current_plan",
+        "current_plan_revision"
+      ]
+    },
+    "AskVerifyResponse": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAModels.swift"
+      ],
+      "fields": [
+        "results"
+      ],
+      "required": [
+        "results"
+      ]
+    },
+    "RuntimeRead": {
+      "evidence": [
+        "apps/web/app/(mobile)/me/commute/[id]/page.tsx"
+      ],
+      "fields": [
+        "route_provider_available"
+      ],
+      "required": [
+        "route_provider_available"
+      ]
     }
   },
   "endpoints": [
@@ -480,6 +544,35 @@
       ],
       "evidence": [
         "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/asks/verify",
+      "methods": [
+        "post"
+      ],
+      "evidence": [
+        "apps/web/components/mobile/ask-store.tsx",
+        "ios/LifeAssistant/LifeAssistant/PA/PAApiClient.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/commute-plans/{plan_id}/weather",
+      "methods": [
+        "get"
+      ],
+      "evidence": [
+        "apps/web/components/mobile/latest-weather-card.tsx",
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/commute/runtime",
+      "methods": [
+        "get"
+      ],
+      "evidence": [
+        "apps/web/app/(mobile)/me/commute/[id]/page.tsx"
       ]
     }
   ]

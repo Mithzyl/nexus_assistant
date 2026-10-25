@@ -200,6 +200,8 @@ struct CommutePresentation: Equatable {
                 return "AI 暂不可用，仅显示路线与天气"
             case .rejected:
                 return "AI 分析未通过校验"
+            case .unknown:
+                return "AI 状态未知，仅显示路线与天气"
             }
         }()
 

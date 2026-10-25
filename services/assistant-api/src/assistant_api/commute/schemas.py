@@ -249,7 +249,7 @@ class CheckCreateRequest(BaseModel):
 
 
 class AiAnalysisRead(BaseModel):
-    status: Literal["available", "unavailable", "rejected"]
+    status: Literal["available", "unavailable", "rejected", "unknown"]
     analysis_version: int | None = None
     route_source: Literal["client_snapshot", "server_provider", "none"] | None = None
     used_duration_seconds: int | None = None

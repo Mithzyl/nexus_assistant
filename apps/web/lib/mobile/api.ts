@@ -255,7 +255,7 @@ export interface Advisory {
   reason_codes: string[];
   explanation_source: "template" | "model";
   ai_analysis: {
-    status: "available" | "unavailable" | "rejected";
+    status: "available" | "unavailable" | "rejected" | "unknown";
     route_source?: "client_snapshot" | "server_provider" | "none" | null;
     used_duration_seconds: number | null;
     duration_source: string;

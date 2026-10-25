@@ -398,13 +398,14 @@ struct AdvisorySource: Codable, Hashable, Identifiable {
 /// 不代表数据不过期；是否仍可执行由 advisory 的时段/有效期决定。
 struct AiAnalysis: Codable, Equatable, Hashable {
     enum Status: String, Codable {
-        case available, unavailable, rejected
+        case available, unavailable, rejected, unknown
 
         var title: String {
             switch self {
             case .available: return "智能分析可用"
             case .unavailable: return "智能分析暂不可用"
             case .rejected: return "智能分析未通过校验"
+            case .unknown: return "智能分析结果未知"
             }
         }
     }

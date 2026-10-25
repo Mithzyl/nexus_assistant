@@ -469,7 +469,8 @@
             "enum": [
               "available",
               "unavailable",
-              "rejected"
+              "rejected",
+              "unknown"
             ],
             "title": "Status",
             "type": "string"

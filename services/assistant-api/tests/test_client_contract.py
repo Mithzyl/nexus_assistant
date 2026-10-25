@@ -29,12 +29,15 @@ def _result(contract=None, spec=None):
 def test_current_clients_match_the_backend():
     result = _result()
     assert result["failures"] == []
-    assert result["interface_count"] >= 10
-    # Routes the backend already serves but neither client calls yet are listed
-    # instead of being silently treated as covered.
+    assert result["interface_count"] >= 14
+    # Round-1 acceptance added the three client-read routes that used to be
+    # reported as uncovered, so they must no longer appear there.
     uncovered = "\n".join(result["uncovered"])
-    assert "/api/v1/asks/verify" in uncovered
-    assert "/api/v1/commute-plans/{plan_id}/weather" in uncovered
+    assert "/api/v1/asks/verify" not in uncovered
+    assert "/api/v1/commute-plans/{plan_id}/weather" not in uncovered
+    assert "/api/v1/commute/runtime" not in uncovered
+    # Routes neither client calls are still listed instead of being treated as covered.
+    assert "/health" in uncovered
 
 
 def test_server_time_stays_in_the_login_contract():
