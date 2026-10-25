@@ -370,3 +370,62 @@ async def test_verify_and_history_are_account_scoped(ai_harness):
         f"/api/v1/asks/{chat_id}", headers=auth(h.token_b)
     )
     assert other_detail.status_code == 404
+
+@pytest.mark.asyncio
+async def test_failed_chat_still_counts_as_chat_for_verify(harness):
+    """A question is a chat because it was asked, not because the model answered."""
+
+    h = harness
+    h.fake.fail_run_create_status = 503
+    response = await h.client.post(
+        "/api/v1/asks",
+        json={"text": "失败的问题也算聊天", "idempotency_key": "chat-fail-0001"},
+        headers=auth(h.token_a),
+    )
+    assert response.status_code == 503
+
+    async with h.app.state.session_factory() as db:
+        run = await db.scalar(
+            select(NexusRun).where(NexusRun.idempotency_key == "chat-fail-0001")
+        )
+        ask = await db.scalar(
+            select(UserAsk).where(UserAsk.local_run_id == run.local_run_id)
+        )
+    assert run is not None and run.status == "failed"
+    assert run.error_code == "nexus_unavailable"
+    assert ask is not None and ask.user_id == h.user_a
+    assert ask.request_text == "失败的问题也算聊天"
+
+    verify = await h.client.post(
+        "/api/v1/asks/verify",
+        json={"local_run_ids": [run.local_run_id]},
+        headers=auth(h.token_a),
+    )
+    assert verify.status_code == 200
+    assert verify.json()["results"] == [
+        {"local_run_id": run.local_run_id, "classification": "chat"}
+    ]
+
+    history = await h.client.get("/api/v1/asks", headers=auth(h.token_a))
+    assert any(
+        item["local_run_id"] == run.local_run_id and item["status"] == "failed"
+        for item in history.json()
+    )
+    detail = await h.client.get(
+        f"/api/v1/asks/{run.local_run_id}", headers=auth(h.token_a)
+    )
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "failed"
+    assert detail.json()["error_code"] == "nexus_unavailable"
+    assert detail.json()["answer"] is None
+
+    other = await h.client.post(
+        "/api/v1/asks/verify",
+        json={"local_run_ids": [run.local_run_id]},
+        headers=auth(h.token_b),
+    )
+    assert other.json()["results"][0]["classification"] == "unknown"
+    other_detail = await h.client.get(
+        f"/api/v1/asks/{run.local_run_id}", headers=auth(h.token_b)
+    )
+    assert other_detail.status_code == 404

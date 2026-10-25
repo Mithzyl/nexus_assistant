@@ -63,7 +63,7 @@ OpenAPI 导出：`.venv/bin/python scripts/export_openapi.py`，输出
 .venv/bin/python scripts/commute_runtime_e2e.py # 隔离 API+scheduler+worker 运行验收
 .venv/bin/python -m scripts.verify_background_migration --database assistant-dev.db
 .venv/bin/python -m scripts.backfill_user_asks --database assistant-dev.db  # 副本上迁移并分类
-.venv/bin/python scripts/check_contract.py    # 前端 TS 类型与 OpenAPI 漂移检查
+.venv/bin/python scripts/check_contract.py    # 已提交 Web/Swift 客户端字段与 OpenAPI 漂移检查
 ```
 
 后台运行接口、阶段/状态、weather_only、恢复与 Bark 限制见

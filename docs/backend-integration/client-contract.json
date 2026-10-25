@@ -1,0 +1,486 @@
+{
+  "version": 1,
+  "description": "Fields and routes that the committed Swift and Web clients actually read or call. Evidence files are tracked in this repository; the ignored v3-kit copy is not an authority. Backend-only fields are allowed (additive) and reported, not treated as failures.",
+  "interfaces": {
+    "AskResponse": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAModels.swift"
+      ],
+      "fields": [
+        "local_run_id",
+        "nexus_run_id",
+        "workflow_execution_id",
+        "status",
+        "replayed"
+      ],
+      "required": [
+        "local_run_id",
+        "nexus_run_id",
+        "status",
+        "workflow_execution_id"
+      ]
+    },
+    "AskRead": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAModels.swift"
+      ],
+      "fields": [
+        "local_run_id",
+        "nexus_run_id",
+        "workflow_execution_id",
+        "status",
+        "replayed",
+        "request_text",
+        "last_event_sequence",
+        "error_code",
+        "answer",
+        "completed_at",
+        "created_at"
+      ],
+      "required": [
+        "local_run_id",
+        "nexus_run_id",
+        "workflow_execution_id",
+        "status",
+        "request_text",
+        "last_event_sequence",
+        "created_at"
+      ]
+    },
+    "MeResponse": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAModels.swift"
+      ],
+      "fields": [
+        "user_id",
+        "email",
+        "display_name"
+      ],
+      "required": [
+        "user_id",
+        "email",
+        "display_name"
+      ]
+    },
+    "LoginResponse": {
+      "evidence": [
+        "apps/web/app/api/auth/login/route.ts",
+        "apps/web/lib/mobile/session.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAModels.swift"
+      ],
+      "fields": [
+        "token",
+        "expires_at",
+        "server_time",
+        "user_id"
+      ],
+      "required": [
+        "token",
+        "expires_at",
+        "server_time",
+        "user_id"
+      ]
+    },
+    "RenewResponse": {
+      "evidence": [
+        "apps/web/lib/mobile/session.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAModels.swift"
+      ],
+      "fields": [
+        "user",
+        "expires_at",
+        "server_time",
+        "token_rotated"
+      ],
+      "required": [
+        "user",
+        "expires_at",
+        "server_time"
+      ]
+    },
+    "CommutePlanRead": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteModels.swift"
+      ],
+      "fields": [
+        "id",
+        "name",
+        "enabled",
+        "timezone",
+        "weekdays",
+        "arrival_local_time",
+        "check_local_time",
+        "transport_mode",
+        "buffer_minutes",
+        "rain_probability_threshold",
+        "rain_extra_buffer_minutes",
+        "notify_enabled",
+        "origin",
+        "destination",
+        "revision",
+        "created_at",
+        "updated_at"
+      ],
+      "required": [
+        "id",
+        "name",
+        "timezone",
+        "weekdays",
+        "arrival_local_time",
+        "check_local_time",
+        "transport_mode",
+        "origin",
+        "destination",
+        "revision",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "CheckRead": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteModels.swift"
+      ],
+      "fields": [
+        "check_id",
+        "plan_id",
+        "status",
+        "trigger",
+        "plan_revision",
+        "advisory_id",
+        "advisory_created",
+        "error",
+        "created_at",
+        "finished_at"
+      ],
+      "required": [
+        "check_id",
+        "plan_id",
+        "status",
+        "trigger",
+        "plan_revision",
+        "advisory_id",
+        "advisory_created",
+        "error",
+        "created_at",
+        "finished_at"
+      ]
+    },
+    "AdvisoryRead": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteModels.swift"
+      ],
+      "fields": [
+        "id",
+        "plan_id",
+        "plan_revision",
+        "local_service_date",
+        "generated_at",
+        "expires_at",
+        "quality",
+        "title",
+        "summary",
+        "target_arrival_at",
+        "recommended_departure_at",
+        "departure_status",
+        "eta_seconds",
+        "buffer_seconds",
+        "weather_extra_buffer_seconds",
+        "weather",
+        "sources",
+        "reason_codes",
+        "explanation_source",
+        "ai_analysis"
+      ],
+      "required": [
+        "id",
+        "plan_id",
+        "plan_revision",
+        "local_service_date",
+        "generated_at",
+        "expires_at",
+        "quality",
+        "title",
+        "summary",
+        "target_arrival_at",
+        "recommended_departure_at",
+        "departure_status",
+        "eta_seconds",
+        "buffer_seconds",
+        "weather_extra_buffer_seconds",
+        "weather",
+        "sources",
+        "reason_codes",
+        "explanation_source"
+      ]
+    },
+    "AdvisorySource": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteModels.swift"
+      ],
+      "fields": [
+        "kind",
+        "provider",
+        "fetched_at",
+        "valid_from",
+        "valid_to",
+        "freshness",
+        "attribution",
+        "note"
+      ],
+      "required": [
+        "kind",
+        "provider",
+        "freshness"
+      ]
+    },
+    "WeatherSummary": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteModels.swift"
+      ],
+      "fields": [
+        "forecast_start",
+        "forecast_end",
+        "temperature_c",
+        "precipitation_probability_max",
+        "precipitation_probability_known",
+        "rain_probability_threshold",
+        "rain_risk",
+        "coverage"
+      ],
+      "required": [
+        "forecast_start",
+        "forecast_end",
+        "temperature_c",
+        "precipitation_probability_max",
+        "precipitation_probability_known",
+        "rain_probability_threshold",
+        "rain_risk",
+        "coverage"
+      ]
+    },
+    "AiAnalysisRead": {
+      "evidence": [
+        "apps/web/lib/mobile/api.ts",
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteModels.swift"
+      ],
+      "fields": [
+        "status",
+        "route_source",
+        "used_duration_seconds",
+        "duration_source",
+        "map_duration_seconds",
+        "base_buffer_seconds",
+        "additional_buffer_seconds",
+        "extra_buffer_seconds",
+        "recommended_departure_at",
+        "basis",
+        "missing_information",
+        "reason"
+      ],
+      "required": [
+        "status",
+        "duration_source"
+      ]
+    }
+  },
+  "endpoints": [
+    {
+      "path": "/api/v1/auth/login",
+      "methods": [
+        "post"
+      ],
+      "evidence": [
+        "apps/web/app/api/auth/login/route.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAApiClient.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/auth/me",
+      "methods": [
+        "get"
+      ],
+      "evidence": [
+        "apps/web/app/api/auth/me/route.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAApiClient.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/auth/session/renew",
+      "methods": [
+        "post"
+      ],
+      "evidence": [
+        "apps/web/app/api/auth/session/renew/route.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAApiClient.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/auth/logout",
+      "methods": [
+        "post"
+      ],
+      "evidence": [
+        "apps/web/app/api/auth/logout/route.ts",
+        "ios/LifeAssistant/LifeAssistant/PA/PAApiClient.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/asks",
+      "methods": [
+        "get",
+        "post"
+      ],
+      "evidence": [
+        "apps/web/components/mobile/ask-store.tsx",
+        "ios/LifeAssistant/LifeAssistant/PA/AskRepository.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/asks/{local_run_id}",
+      "methods": [
+        "get"
+      ],
+      "evidence": [
+        "apps/web/components/mobile/ask-store.tsx",
+        "ios/LifeAssistant/LifeAssistant/PA/AskRepository.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/asks/{local_run_id}/events",
+      "methods": [
+        "get"
+      ],
+      "evidence": [
+        "apps/web/components/mobile/ask-store.tsx",
+        "ios/LifeAssistant/LifeAssistant/PA/AskRepository.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/asks/{local_run_id}/cancel",
+      "methods": [
+        "post"
+      ],
+      "evidence": [
+        "apps/web/components/mobile/ask-store.tsx",
+        "ios/LifeAssistant/LifeAssistant/PA/AskRepository.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/commute-plans",
+      "methods": [
+        "get",
+        "post"
+      ],
+      "evidence": [
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/commute-plans/{plan_id}",
+      "methods": [
+        "get",
+        "put",
+        "delete"
+      ],
+      "evidence": [
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/commute-plans/{plan_id}/checks",
+      "methods": [
+        "post"
+      ],
+      "evidence": [
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift",
+        "apps/web/app/(mobile)/me/commute/[id]/page.tsx"
+      ]
+    },
+    {
+      "path": "/api/v1/checks/{check_id}",
+      "methods": [
+        "get"
+      ],
+      "evidence": [
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift",
+        "apps/web/app/(mobile)/me/commute/[id]/page.tsx"
+      ]
+    },
+    {
+      "path": "/api/v1/commute-plans/{plan_id}/advisories/latest",
+      "methods": [
+        "get"
+      ],
+      "evidence": [
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift",
+        "apps/web/components/mobile/commute-card.tsx"
+      ]
+    },
+    {
+      "path": "/api/v1/advisories/{advisory_id}",
+      "methods": [
+        "get"
+      ],
+      "evidence": [
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift",
+        "apps/web/app/(mobile)/me/commute/[id]/page.tsx"
+      ]
+    },
+    {
+      "path": "/api/v1/advisories/{advisory_id}/actions",
+      "methods": [
+        "post"
+      ],
+      "evidence": [
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift"
+      ]
+    },
+    {
+      "path": "/api/v1/commute/bark",
+      "methods": [
+        "get",
+        "patch"
+      ],
+      "evidence": [
+        "apps/web/app/(mobile)/me/commute/bark/page.tsx"
+      ]
+    },
+    {
+      "path": "/api/v1/commute/bark/binding",
+      "methods": [
+        "post",
+        "delete"
+      ],
+      "evidence": [
+        "apps/web/app/(mobile)/me/commute/bark/page.tsx"
+      ]
+    },
+    {
+      "path": "/api/v1/commute/bark/test",
+      "methods": [
+        "post"
+      ],
+      "evidence": [
+        "apps/web/app/(mobile)/me/commute/bark/page.tsx"
+      ]
+    },
+    {
+      "path": "/api/v1/push-devices/{installation_id}",
+      "methods": [
+        "put",
+        "delete"
+      ],
+      "evidence": [
+        "ios/LifeAssistant/LifeAssistant/Commute/CommuteAPI.swift"
+      ]
+    }
+  ]
+}
