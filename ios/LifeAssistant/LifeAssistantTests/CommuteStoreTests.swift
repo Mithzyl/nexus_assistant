@@ -4,6 +4,7 @@ import XCTest
 final class StubCommuteRepository: CommuteRepository {
     var plans: [CommutePlan] = []
     var advisory: CommuteAdvisory?
+    var weather: PlanWeather?
     var advisories: [String: CommuteAdvisory] = [:]
     var latestError: CommuteAPIError?
     var updateError: CommuteAPIError?
@@ -64,6 +65,11 @@ final class StubCommuteRepository: CommuteRepository {
         if let latestError { throw latestError }
         if let advisory { return advisory }
         throw CommuteAPIError.missingAdvisory
+    }
+
+    func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather {
+        if let weather { return weather }
+        throw CommuteAPIError.missingWeather
     }
 
     func advisory(id: String) async throws -> CommuteAdvisory {
@@ -309,5 +315,57 @@ final class CommuteStoreTests: XCTestCase {
         XCTAssertNil(advisory.weather?.rainProbability)
         XCTAssertEqual(advisory.planRevision, 3)
         XCTAssertFalse(advisory.isExpired)
+    }
+
+    func testServerSuitabilityFlagsAreAuthoritative() {
+        var advisory = DemoCommute.advisory
+        XCTAssertTrue(CommuteStore.isApplicable(advisory, plan: DemoCommute.plan))
+        advisory.matchesCurrentPlan = false
+        XCTAssertFalse(CommuteStore.isApplicable(advisory, plan: DemoCommute.plan))
+        advisory.matchesCurrentPlan = true
+        advisory.isExpiredFlag = true
+        XCTAssertFalse(CommuteStore.isApplicable(advisory, plan: DemoCommute.plan))
+        advisory.isExpiredFlag = false
+        advisory.isCurrentServiceDate = false
+        XCTAssertFalse(CommuteStore.isApplicable(advisory, plan: DemoCommute.plan))
+    }
+
+    func testLatestWeatherIsLoadedSeparatelyFromAdvisory() async {
+        let stub = StubCommuteRepository()
+        stub.plans = [DemoCommute.plan]
+        stub.advisory = DemoCommute.advisory
+        let summary = DemoCommute.advisory.weather
+        stub.weather = PlanWeather(
+            planId: DemoCommute.plan.id, planRevision: 2, currentPlanRevision: 3,
+            localServiceDate: "2026-10-25", checkId: "check-weather", provider: "weatherkit",
+            fetchedAt: Date(), validFrom: Date(), validTo: Date(),
+            quality: .fresh, freshness: "fresh", coverage: "full", staleAfterSeconds: 1800,
+            isStale: false, matchesCurrentPlan: false, summary: summary
+        )
+        let store = makeStore(stub)
+
+        await store.load()
+
+        XCTAssertEqual(store.latestWeather?.planId, DemoCommute.plan.id)
+        XCTAssertEqual(store.latestWeather?.matchesCurrentPlan, false)
+        XCTAssertNil(store.weatherNotice)
+        XCTAssertEqual(store.advisory?.id, DemoCommute.advisory.id)
+    }
+
+    func testPhaseTextUsesRealStagesOnly() async {
+        let stub = StubCommuteRepository()
+        stub.plans = [DemoCommute.plan]
+        stub.advisory = DemoCommute.advisory
+        var running = CommuteCheck(id: "check-phase", status: .running, advisoryId: nil,
+                                   errorCode: nil, errorMessage: nil)
+        running.phase = .fetchingWeather
+        stub.requestCheckResult = running
+        let store = makeStore(stub)
+        await store.load()
+
+        await store.updateRouteAndAnalyze()
+
+        XCTAssertTrue(store.processingStateText?.contains("正在更新天气") == true,
+                      "应显示后端真实阶段：\(String(describing: store.processingStateText))")
     }
 }

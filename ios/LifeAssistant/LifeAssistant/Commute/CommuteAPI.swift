@@ -42,6 +42,11 @@ struct CommuteAPIError: Error, LocalizedError, Equatable {
         message: "还没有生成过建议。", retryable: false, requestId: nil
     )
 
+    static let missingWeather = CommuteAPIError(
+        kind: .notFound, status: 404, code: "NO_WEATHER",
+        message: "还没有可用的天气记录。", retryable: false, requestId: nil
+    )
+
     static func transport(_ error: Error) -> CommuteAPIError {
         if error is CancellationError { return cancelled }
         let urlError = error as? URLError
@@ -240,6 +245,14 @@ struct CommuteAPIClient {
 
     func latestAdvisory(planId: String) async throws -> CommuteAdvisory {
         try await send("/api/v1/commute-plans/\(planId)/advisories/latest", expect: CommuteAdvisory.self)
+    }
+
+    func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather {
+        var path = "/api/v1/commute-plans/\(planId)/weather"
+        if let date = localServiceDate, !date.isEmpty {
+            path += "?local_service_date=\(date)"
+        }
+        return try await send(path, expect: PlanWeather.self)
     }
 
     func advisory(id: String) async throws -> CommuteAdvisory {

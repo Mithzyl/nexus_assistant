@@ -71,6 +71,7 @@ struct CommuteAdvisoryView: View {
                         planUpdatedBanner(notice)
                     }
                     coreCard(advisory)
+                    latestWeatherCard(advisory)
                     breakdownCard(advisory)
                     aiCard(advisory)
                     weatherCard(advisory)
@@ -87,6 +88,8 @@ struct CommuteAdvisoryView: View {
             }
         }
         .task {
+            // 只读读取最新天气；不会因为打开页面而创建分析。
+            await store.refreshWeather()
             guard let advisoryId, !advisoryId.isEmpty, loadedId != advisoryId else { return }
             loadedId = advisoryId
             await store.loadAdvisory(id: advisoryId)
@@ -153,7 +156,7 @@ struct CommuteAdvisoryView: View {
                         .foregroundStyle(advisory.etaSeconds == nil ? Palette.amber : Palette.ink)
                 }
                 HStack {
-                    Text("提前预留").font(.captionText).foregroundStyle(Palette.muted)
+                    Text("总预留").font(.captionText).foregroundStyle(Palette.muted)
                     Spacer()
                     Text(CommuteFormat.duration(totalBuffer))
                         .font(.system(.subheadline, weight: .medium))
@@ -161,8 +164,8 @@ struct CommuteAdvisoryView: View {
                 }
                 DisclosureGroup(isExpanded: $showBreakdown) {
                     VStack(alignment: .leading, spacing: 6) {
-                        detailLine("基础预留", CommuteFormat.duration(advisory.bufferSeconds))
-                        detailLine("雨天额外预留", CommuteFormat.duration(advisory.weatherExtraBufferSeconds))
+                        detailLine("固定预留", CommuteFormat.duration(advisory.bufferSeconds))
+                        detailLine("天气额外预留", CommuteFormat.duration(advisory.weatherExtraBufferSeconds))
                         detailLine("目标到达", CommuteFormat.clock(advisory.targetArrivalAt, timeZone: timezone))
                     }
                     .padding(.top, 6)
@@ -214,7 +217,7 @@ struct CommuteAdvisoryView: View {
                     if let map = ai.mapDurationSeconds {
                         detailLine("地图耗时", CommuteFormat.duration(map))
                     }
-                    detailLine("AI 额外预留",
+                    detailLine("模型额外预留",
                                ai.extraBufferSeconds.map(CommuteFormat.duration) ?? "未单独记录")
                     if !advisory.summary.isEmpty {
                         Text("简短依据")
@@ -245,6 +248,75 @@ struct CommuteAdvisoryView: View {
                     detailLine("服务端路线", "不可用（本次采用客户端快照）")
                 } else if let routeSource {
                     detailLine("路线获取", routeSource.fetchedAt.map { CommuteFormat.clock($0, timeZone: timezone) } ?? "未知")
+                }
+            }
+        }
+    }
+
+    /// 独立天气快照：只描述“现在拿到的最新预报”，不覆盖某条旧建议采用的天气。
+    private func latestWeatherCard(_ advisory: CommuteAdvisory) -> some View {
+        let latest = store.latestWeather
+        let advisoryWeatherFetched = advisory.sources.first { ($0.kind ?? "") == "weather" }?.fetchedAt
+        let isNewer: Bool = {
+            guard let latestFetched = latest?.fetchedAt else { return false }
+            guard let advisoryFetched = advisoryWeatherFetched else { return true }
+            return latestFetched > advisoryFetched.addingTimeInterval(60)
+        }()
+        return SurfaceCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("最新天气")
+                    .font(.cardTitle)
+                    .foregroundStyle(Palette.ink)
+                if let latest {
+                    if let summary = latest.summary {
+                        HStack(spacing: 18) {
+                            if let temperature = summary.temperatureC {
+                                metric("温度", String(format: "%.0f°", temperature))
+                            }
+                            if summary.precipitationProbabilityKnown != false,
+                               let rain = summary.precipitationProbabilityMax {
+                                metric("降雨概率（预报）", "\(Int((rain * 100).rounded()))%")
+                            }
+                        }
+                        if let from = latest.validFrom, let to = latest.validTo {
+                            Text("预报时段 \(CommuteFormat.clock(from, timeZone: timezone))–\(CommuteFormat.clock(to, timeZone: timezone))")
+                                .font(.captionText)
+                                .foregroundStyle(Palette.muted)
+                        }
+                    } else {
+                        Text("服务器没有返回天气摘要。")
+                            .font(.captionText)
+                            .foregroundStyle(Palette.muted)
+                    }
+                    if !latest.matchesCurrentPlan {
+                        Text("这条天气对应修改前的计划，不适用于当前设置。")
+                            .font(.captionText)
+                            .foregroundStyle(Palette.amber)
+                    }
+                    if latest.isStale {
+                        Text("天气已超出新鲜度窗口，仅供回看。")
+                            .font(.captionText)
+                            .foregroundStyle(Palette.amber)
+                    }
+                    if let fetched = latest.fetchedAt {
+                        Text("获取于 \(CommuteFormat.dayTime(fetched))")
+                            .font(.microLabel)
+                            .foregroundStyle(Palette.faint)
+                    }
+                    if isNewer {
+                        Text("天气已更新，下面的建议仍是上次分析的结果。")
+                            .font(.captionText)
+                            .foregroundStyle(Palette.amber)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if let notice = store.weatherNotice {
+                    Text(notice)
+                        .font(.captionText)
+                        .foregroundStyle(Palette.muted)
+                } else {
+                    Text("还没有读取到独立天气记录。")
+                        .font(.captionText)
+                        .foregroundStyle(Palette.muted)
                 }
             }
         }

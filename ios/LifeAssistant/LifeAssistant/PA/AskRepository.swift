@@ -5,6 +5,7 @@ protocol AskRepository {
     func createAsk(text: String, idempotencyKey: String) async throws -> AskCreateResponse
     func getAsk(id: String) async throws -> AskRead
     func cancelAsk(id: String) async throws -> AskRead
+    func verifyAsks(localRunIDs: [String]) async throws -> [AskVerifyItem]
 }
 
 struct RemoteAskRepository: AskRepository {
@@ -18,6 +19,9 @@ struct RemoteAskRepository: AskRepository {
     }
     func getAsk(id: String) async throws -> AskRead { try await client.getAsk(id: id) }
     func cancelAsk(id: String) async throws -> AskRead { try await client.cancelAsk(id: id) }
+    func verifyAsks(localRunIDs: [String]) async throws -> [AskVerifyItem] {
+        try await client.verifyAsks(localRunIDs: localRunIDs).results
+    }
 }
 
 enum AskRepositoryFactory {
@@ -97,6 +101,24 @@ actor MockAskRepository: AskRepository {
 
     func listAsks(limit: Int) async throws -> [AskRead] {
         asks.values.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func verifyAsks(localRunIDs: [String]) async throws -> [AskVerifyItem] {
+        #if DEBUG
+        if let scenario = ProcessInfo.processInfo.environment["PA_DEMO_VERIFY"] {
+            let classification: AskChatClassification = {
+                switch scenario {
+                case "not_chat": return .notChat
+                case "unknown": return .unknown
+                default: return .chat
+                }
+            }()
+            return localRunIDs.map { AskVerifyItem(localRunId: $0, classification: classification) }
+        }
+        #endif
+        return localRunIDs.map { id in
+            AskVerifyItem(localRunId: id, classification: asks[id] == nil ? .unknown : .chat)
+        }
     }
 
     func createAsk(text: String, idempotencyKey: String) async throws -> AskCreateResponse {

@@ -33,7 +33,7 @@ struct AskView: View {
                     sessionBanner
                         .padding(.horizontal, Spacing.screen)
 
-                    if asks.items.isEmpty {
+                    if asks.timeline.isEmpty {
                         intro
                             .padding(.horizontal, Spacing.screen)
                     } else {
@@ -65,6 +65,8 @@ struct AskView: View {
             }
             .task {
                 await asks.bindAccount()
+                // 旧缓存核对不阻塞页面；失败只保留原内容，不隐藏、不重发。
+                await asks.verifyCachedRuns()
                 asks.resumePolling()
                 scrollToBottom(proxy, animated: false)
             }
@@ -199,22 +201,49 @@ struct AskView: View {
 
     // MARK: - 单条问答
 
+    @ViewBuilder
     private func askCard(_ item: AskItem) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Spacer()
-                Text(item.question)
-                    .font(.bodyText)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Palette.accentFill)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .frame(maxWidth: 280, alignment: .trailing)
-                    .textSelection(.enabled)
-            }
+        if item.chatClassification == .unknown {
+            verificationCard(item)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Spacer()
+                    Text(item.question)
+                        .font(.bodyText)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Palette.accentFill)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .frame(maxWidth: 280, alignment: .trailing)
+                        .textSelection(.enabled)
+                }
 
-            statusCard(item)
+                statusCard(item)
+            }
+        }
+    }
+
+    /// 服务器无法确认这条本机缓存属于聊天：保留记录、隐藏正文、不提供重新提交。
+    private func verificationCard(_ item: AskItem) -> some View {
+        SurfaceCard(tint: Palette.amberSoft) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("这条历史记录暂时无法确认")
+                    .font(.system(.subheadline, weight: .semibold))
+                    .foregroundStyle(Palette.amber)
+                Text("本机保留了原记录，但服务器尚未确认它属于聊天。暂不展示正文，也不会重新提交；可以稍后再核对。")
+                    .font(.captionText)
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(asks.verifyingHistory ? "核对中…" : "稍后核对") {
+                    Task { await asks.verifyCachedRuns(force: true) }
+                }
+                .font(.system(.subheadline, weight: .semibold))
+                .foregroundStyle(Palette.fogDeep)
+                .disabled(asks.verifyingHistory)
+                .accessibilityIdentifier("ask.verifyAgain")
+            }
         }
     }
 

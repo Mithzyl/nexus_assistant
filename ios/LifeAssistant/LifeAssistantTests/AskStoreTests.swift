@@ -8,6 +8,8 @@ final class StubAskRepository: AskRepository {
     var cancelHandler: ((String) async throws -> AskRead)?
     var createdKeys: [String] = []
     var createdTexts: [String] = []
+    var verifyHandler: (([String]) async throws -> [AskVerifyItem])?
+    var verifyRequests: [[String]] = []
 
     func listAsks(limit: Int) async throws -> [AskRead] {
         try listResult.get()
@@ -38,17 +40,24 @@ final class StubAskRepository: AskRepository {
         }
         return try await cancelHandler(id)
     }
+
+    func verifyAsks(localRunIDs: [String]) async throws -> [AskVerifyItem] {
+        verifyRequests.append(localRunIDs)
+        if let verifyHandler { return try await verifyHandler(localRunIDs) }
+        return localRunIDs.map { AskVerifyItem(localRunId: $0, classification: .chat) }
+    }
 }
 
 @MainActor
 final class AskStoreTests: XCTestCase {
     private var account = "user-1"
 
-    private func makeStore(_ stub: StubAskRepository) -> (AskStore, AskLocalStore) {
+    private func makeStore(_ stub: StubAskRepository,
+                           demoMode: Bool = true) -> (AskStore, AskLocalStore) {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("ask-tests-" + UUID().uuidString)
         let local = AskLocalStore(root: directory)
-        let store = AskStore(repository: stub, localStore: local, demoMode: true,
+        let store = AskStore(repository: stub, localStore: local, demoMode: demoMode,
                              accountProvider: { [weak self] in self?.account })
         return (store, local)
     }
@@ -351,6 +360,125 @@ final class AskStoreTests: XCTestCase {
         XCTAssertEqual(local.load(account: "user-1").count, 1)
         store.pausePolling()
     }
+
+    // MARK: - 旧缓存核对
+
+    private func legacyItem(_ id: String, serverId: String, phase: AskPhase = .succeeded) -> AskItem {
+        AskItem(id: id, question: "q-\(id)", idempotencyKey: "key-\(id)", serverId: serverId,
+                status: .succeeded, phase: phase, answer: "a", completedAt: Date(),
+                createdAt: Date().addingTimeInterval(-60), updatedAt: Date(), errorMessage: nil)
+    }
+
+    func testVerifyClassifiesAndHidesNonChat() async {
+        let stub = StubAskRepository()
+        stub.verifyHandler = { ids in
+            ids.map { id in
+                switch id {
+                case "run-chat": return AskVerifyItem(localRunId: id, classification: .chat)
+                case "run-internal": return AskVerifyItem(localRunId: id, classification: .notChat)
+                default: return AskVerifyItem(localRunId: id, classification: .unknown)
+                }
+            }
+        }
+        let (store, local) = makeStore(stub, demoMode: false)
+        local.save([legacyItem("local-chat", serverId: "run-chat"),
+                    legacyItem("local-internal", serverId: "run-internal"),
+                    legacyItem("local-unknown", serverId: "run-unknown"),
+                    AskItem(question: "还没提交的问题")],
+                   account: "user-1")
+
+        await store.bindAccount()
+        await store.verifyCachedRuns(force: true)
+
+        let byId = Dictionary(uniqueKeysWithValues: store.items.map { ($0.id, $0) })
+        XCTAssertEqual(byId["local-chat"]?.chatClassification, .chat)
+        XCTAssertEqual(byId["local-internal"]?.chatClassification, .notChat)
+        XCTAssertEqual(byId["local-unknown"]?.chatClassification, .unknown)
+        let timelineIDs = Set(store.timeline.map(\.id))
+        XCTAssertFalse(timelineIDs.contains("local-internal"), "内部任务不能进入聊天列表")
+        XCTAssertTrue(timelineIDs.contains("local-unknown"), "unknown 保留但会遮罩正文")
+        XCTAssertTrue(timelineIDs.contains(byId.first { $0.value.serverId == nil }!.key),
+                      "未提交用户输入必须保留")
+        XCTAssertEqual(Set(stub.verifyRequests.first ?? []),
+                       ["run-chat", "run-internal", "run-unknown"])
+    }
+
+    func testVerifyFailureKeepsLegacyItemsVisible() async {
+        let stub = StubAskRepository()
+        stub.verifyHandler = { _ in
+            throw PAError(kind: .server, status: 503, code: "unavailable",
+                          message: "暂时不可用", retryable: true, requestId: nil, retryAfter: nil)
+        }
+        let (store, local) = makeStore(stub, demoMode: false)
+        local.save([legacyItem("local-chat", serverId: "run-chat")], account: "user-1")
+
+        await store.bindAccount()
+        await store.verifyCachedRuns(force: true)
+
+        XCTAssertNil(store.items.first?.chatClassification, "核对失败不能当成 not_chat")
+        XCTAssertEqual(store.timeline.count, 1, "核对失败时保留原有展示")
+        XCTAssertTrue(store.lastError?.contains("核对") == true)
+    }
+
+    func testVerifyBatchesAtMostFifty() async {
+        let stub = StubAskRepository()
+        let (store, local) = makeStore(stub, demoMode: false)
+        let items = (0..<51).map { legacyItem("local-\($0)", serverId: "run-\($0)") }
+        local.save(items, account: "user-1")
+
+        await store.bindAccount()
+        await store.verifyCachedRuns(force: true)
+
+        XCTAssertEqual(stub.verifyRequests.map(\.count), [50, 1])
+        XCTAssertTrue(store.items.allSatisfy { $0.chatClassification == .chat })
+    }
+
+
+    func testVerificationMasksDuplicateCopiesAndDeduplicates() async {
+        let stub = StubAskRepository()
+        stub.verifyHandler = { ids in ids.map { AskVerifyItem(localRunId: $0, classification: .unknown) } }
+        let (store, local) = makeStore(stub, demoMode: false)
+        local.save([legacyItem("copy-a", serverId: "run-1"),
+                    legacyItem("copy-b", serverId: "run-1")], account: "user-1")
+
+        await store.bindAccount()
+        await store.verifyCachedRuns(force: true)
+
+        XCTAssertEqual(store.items.count, 1, "同一服务器编号的旧副本应合并")
+        XCTAssertEqual(store.items.first?.chatClassification, .unknown)
+        XCTAssertEqual(store.timeline.count, 1)
+    }
+
+
+    func testDedupeKeepsVerifiedClassification() async {
+        let stub = StubAskRepository()
+        var older = legacyItem("older", serverId: "run-1")
+        older.chatClassification = .unknown
+        var newer = legacyItem("newer", serverId: "run-1")
+        newer.chatClassification = nil
+        newer.updatedAt = older.updatedAt.addingTimeInterval(10)
+        let (store, local) = makeStore(stub, demoMode: false)
+        local.save([older, newer], account: "user-1")
+
+        await store.bindAccount()
+
+        XCTAssertEqual(store.items.count, 1)
+        XCTAssertEqual(store.items.first?.chatClassification, .unknown,
+                       "合并副本时不能丢掉服务器已核对分类")
+    }
+
+    func testVerifySkipsUnsubmittedInputs() async {
+        let stub = StubAskRepository()
+        let (store, local) = makeStore(stub, demoMode: false)
+        local.save([AskItem(question: "只在本机，还没提交")], account: "user-1")
+
+        await store.bindAccount()
+        await store.verifyCachedRuns(force: true)
+
+        XCTAssertTrue(stub.verifyRequests.isEmpty)
+        XCTAssertEqual(store.timeline.count, 1)
+        XCTAssertNil(store.timeline.first?.chatClassification)
+    }
 }
 
 final class PAAskContractTests: XCTestCase {
@@ -426,4 +554,5 @@ final class PAAskContractTests: XCTestCase {
         XCTAssertEqual(envelope.error.code, "unauthenticated")
         XCTAssertEqual(envelope.requestId, "req-1")
     }
+
 }

@@ -50,11 +50,11 @@ enum DepartureStatus: String, Codable {
 }
 
 enum CheckStatus: String, Codable {
-    case queued, running, succeeded, degraded, failed, cancelled
+    case queued, running, succeeded, degraded, failed, cancelled, unknown
     var isTerminal: Bool {
         switch self {
         case .succeeded, .degraded, .failed, .cancelled: return true
-        case .queued, .running: return false
+        case .queued, .running, .unknown: return false
         }
     }
     var title: String {
@@ -65,6 +65,7 @@ enum CheckStatus: String, Codable {
         case .degraded: return "已完成（数据不完整）"
         case .failed: return "失败"
         case .cancelled: return "已取消"
+        case .unknown: return "结果未知"
         }
     }
 }
@@ -202,6 +203,33 @@ struct CommutePlanDraft: Codable, Equatable {
     }
 }
 
+/// 后端真实处理阶段；没有该字段时只显示已确认状态，不按计时器模拟。
+enum CheckPhase: String, Codable, Equatable {
+    case queued
+    case fetchingRoute = "fetching_route"
+    case fetchingWeather = "fetching_weather"
+    case analyzing
+    case saving
+    case retryWait = "retry_wait"
+    case done
+    case failed
+    case cancelled
+
+    var title: String {
+        switch self {
+        case .queued: return "已提交，等待处理"
+        case .fetchingRoute: return "正在查询路线"
+        case .fetchingWeather: return "正在更新天气"
+        case .analyzing: return "正在分析建议"
+        case .saving: return "正在保存结果"
+        case .retryWait: return "请求已保存，后台处理暂不可用"
+        case .done: return "建议已生成"
+        case .failed: return "分析失败"
+        case .cancelled: return "已取消"
+        }
+    }
+}
+
 // MARK: - 检查与建议
 
 struct CommuteCheckFailure: Codable, Equatable {
@@ -223,6 +251,11 @@ struct CommuteCheck: Codable, Identifiable {
     let advisoryCreated: Bool?
     let createdAt: Date?
     let finishedAt: Date?
+    var phase: CheckPhase?
+    var phaseUpdatedAt: Date?
+    var analysisMode: String?
+    var attemptCount: Int?
+    var nextAttemptAt: Date?
 
     var errorCode: String? { error?.code }
     var errorMessage: String? { error?.message }
@@ -238,6 +271,11 @@ struct CommuteCheck: Codable, Identifiable {
         case advisoryCreated = "advisory_created"
         case createdAt = "created_at"
         case finishedAt = "finished_at"
+        case phase
+        case phaseUpdatedAt = "phase_updated_at"
+        case analysisMode = "analysis_mode"
+        case attemptCount = "attempt_count"
+        case nextAttemptAt = "next_attempt_at"
     }
 
     init(id: String, status: CheckStatus, advisoryId: String?,
@@ -291,6 +329,43 @@ struct AdvisoryWeather: Codable, Hashable {
     var isMissing: Bool {
         forecastStart == nil && forecastEnd == nil && temperatureC == nil
             && precipitationProbabilityMax == nil
+    }
+}
+
+/// 计划最新的独立天气快照；不代表旧建议当时采用的天气。
+struct PlanWeather: Codable, Equatable {
+    let planId: String
+    let planRevision: Int
+    let currentPlanRevision: Int
+    let localServiceDate: String
+    let checkId: String
+    let provider: String
+    let fetchedAt: Date?
+    let validFrom: Date?
+    let validTo: Date?
+    let quality: AdvisoryQuality
+    let freshness: String
+    let coverage: String
+    let staleAfterSeconds: Int
+    let isStale: Bool
+    let matchesCurrentPlan: Bool
+    let summary: AdvisoryWeather?
+
+    enum CodingKeys: String, CodingKey {
+        case planId = "plan_id"
+        case planRevision = "plan_revision"
+        case currentPlanRevision = "current_plan_revision"
+        case localServiceDate = "local_service_date"
+        case checkId = "check_id"
+        case provider
+        case fetchedAt = "fetched_at"
+        case validFrom = "valid_from"
+        case validTo = "valid_to"
+        case quality, freshness, coverage
+        case staleAfterSeconds = "stale_after_seconds"
+        case isStale = "is_stale"
+        case matchesCurrentPlan = "matches_current_plan"
+        case summary
     }
 }
 
@@ -401,6 +476,11 @@ struct CommuteAdvisory: Codable, Identifiable, Hashable {
     let reasonCodes: [String]
     let explanationSource: String
     var aiAnalysis: AiAnalysis? = nil
+    /// 服务器读取时计算的适用性；旧数据没有这些字段时为 nil，由客户端按版本/时间兜底。
+    var matchesCurrentPlan: Bool? = nil
+    var isCurrentServiceDate: Bool? = nil
+    var isExpiredFlag: Bool? = nil
+    var currentPlanRevision: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -420,6 +500,10 @@ struct CommuteAdvisory: Codable, Identifiable, Hashable {
         case reasonCodes = "reason_codes"
         case explanationSource = "explanation_source"
         case aiAnalysis = "ai_analysis"
+        case matchesCurrentPlan = "matches_current_plan"
+        case isCurrentServiceDate = "is_current_service_date"
+        case isExpiredFlag = "is_expired"
+        case currentPlanRevision = "current_plan_revision"
     }
 
     var isExpired: Bool { expiresAt <= Date() }

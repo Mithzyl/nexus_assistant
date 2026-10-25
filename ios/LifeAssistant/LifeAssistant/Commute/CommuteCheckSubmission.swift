@@ -80,6 +80,8 @@ struct PendingSubmission: Codable, Equatable {
     var createdAt: Date
     var uncertain: Bool
     var accountId: String
+    /// 服务器返回的检查编号；用于重开页面后继续查询同一次处理。
+    var checkId: String? = nil
 }
 
 extension CommuteRouteSnapshot {

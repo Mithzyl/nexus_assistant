@@ -66,9 +66,11 @@ struct LifeAssistantApp: App {
                             // 回前台只走 PASession 这一个续期入口；失败不清凭据。
                             await session.handleForeground()
                             await commute.refreshIfStale()
+                            await commute.resumeProgressIfNeeded()
                         }
                     } else {
                         asks.pausePolling()
+                        commute.pausePolling()
                         session.handleBackground()
                     }
                 }
