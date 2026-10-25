@@ -247,6 +247,10 @@ struct CommuteAPIClient {
         try await send("/api/v1/commute-plans/\(planId)/advisories/latest", expect: CommuteAdvisory.self)
     }
 
+    func runtime() async throws -> CommuteRuntime {
+        try await send("/api/v1/commute/runtime", expect: CommuteRuntime.self)
+    }
+
     func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather {
         var path = "/api/v1/commute-plans/\(planId)/weather"
         if let date = localServiceDate, !date.isEmpty {

@@ -67,6 +67,7 @@ struct LifeAssistantApp: App {
                             await session.handleForeground()
                             await commute.refreshIfStale()
                             await commute.resumeProgressIfNeeded()
+                            await commute.refreshRuntime(force: true)
                         }
                     } else {
                         asks.pausePolling()

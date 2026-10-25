@@ -51,6 +51,7 @@
 		95FC8F2AC32A0E6685BA02D9 /* AskRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01628FF0303781D79F21D6EE /* AskRepository.swift */; };
 		98CCD4D4BEC1866F8663C790 /* DataSourceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DB50E42BB302CC1A09D93EB /* DataSourceModels.swift */; };
 		A126D05CF1554AD92E09389A /* MemoryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E2C50794B96DF71CF03A7FF /* MemoryViews.swift */; };
+		A6C4BD300D9521E47D50FE3D /* RuntimeStatusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA627A8E38D0E750E115B25 /* RuntimeStatusUITests.swift */; };
 		ACF4D0FBD3A7CC96E3879DF3 /* SessionRenewalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F98F7A4F761470201059B79 /* SessionRenewalTests.swift */; };
 		AEB2391EF6D8818DCB3D042C /* LiveBackendUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF5AA30322A22BB548CFFAB2 /* LiveBackendUITests.swift */; };
 		B1180CAF59912B18AD7166F0 /* CloudSyncAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 287B8BCD814D40F953474CF4 /* CloudSyncAPI.swift */; };
@@ -155,6 +156,7 @@
 		F23242C22707B09812915024 /* CommutePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommutePresentation.swift; sourceTree = "<group>"; };
 		F6918BC1DFBD96B50890D9C9 /* MeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeView.swift; sourceTree = "<group>"; };
 		F91C2F54F739FEF9462656CA /* MarkdownAnswerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownAnswerView.swift; sourceTree = "<group>"; };
+		FAA627A8E38D0E750E115B25 /* RuntimeStatusUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeStatusUITests.swift; sourceTree = "<group>"; };
 		FCDA9F8B6F1B4DFA64CEEB45 /* CommuteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommuteModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -238,6 +240,7 @@
 				71EAAF90D0CC7CBC6E770A9F /* LoginPersistenceUITests.swift */,
 				5C7829F645E2DAF33AD4DDE6 /* NoteImportIsolationUITests.swift */,
 				2F1A547968C1934C16366DCF /* PAEndToEndUITests.swift */,
+				FAA627A8E38D0E750E115B25 /* RuntimeStatusUITests.swift */,
 				3DAB5CB4230E5E484CC2F563 /* SessionCommuteAcceptanceUITests.swift */,
 				81836E2625FB0526D3F525A5 /* StateExpressionUITests.swift */,
 			);
@@ -451,6 +454,7 @@
 				8CAF7BB1B72636CFA2D9ECAE /* LoginPersistenceUITests.swift in Sources */,
 				B6B7676D032DA8E1271F5456 /* NoteImportIsolationUITests.swift in Sources */,
 				77757D65E6A8700CDCEC0A01 /* PAEndToEndUITests.swift in Sources */,
+				A6C4BD300D9521E47D50FE3D /* RuntimeStatusUITests.swift in Sources */,
 				29253A4B8245005B39189D1E /* SessionCommuteAcceptanceUITests.swift in Sources */,
 				945001CA21D39C11559F3D1E /* StateExpressionUITests.swift in Sources */,
 			);

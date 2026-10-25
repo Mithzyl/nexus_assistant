@@ -5,6 +5,7 @@ final class StubCommuteRepository: CommuteRepository {
     var plans: [CommutePlan] = []
     var advisory: CommuteAdvisory?
     var weather: PlanWeather?
+    var runtime: CommuteRuntime?
     var advisories: [String: CommuteAdvisory] = [:]
     var latestError: CommuteAPIError?
     var updateError: CommuteAPIError?
@@ -70,6 +71,12 @@ final class StubCommuteRepository: CommuteRepository {
     func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather {
         if let weather { return weather }
         throw CommuteAPIError.missingWeather
+    }
+
+    func runtime() async throws -> CommuteRuntime {
+        if let runtime { return runtime }
+        throw CommuteAPIError(kind: .server, status: 503, code: "runtime_unavailable",
+                              message: "no runtime", retryable: true, requestId: nil)
     }
 
     func advisory(id: String) async throws -> CommuteAdvisory {
