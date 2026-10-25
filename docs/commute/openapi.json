@@ -2525,7 +2525,7 @@
         "type": "object"
       },
       "RuntimeRead": {
-        "description": "Process liveness is not task progress; both are reported separately.",
+        "description": "Process liveness is not task progress; both are reported separately.\n\n`server_time` answers \"can the server respond at all\", which is distinct from\n\"a background process reported in recently\" and from \"this task advanced\".\nClients use it to age `last_seen_at` and `phase_updated_at` on their own clock.",
         "properties": {
           "auto_analysis_enabled": {
             "default": false,
@@ -2576,6 +2576,10 @@
           "scheduler": {
             "$ref": "#/components/schemas/RuntimeComponentRead"
           },
+          "server_time": {
+            "title": "Server Time",
+            "type": "string"
+          },
           "stale_after_seconds": {
             "title": "Stale After Seconds",
             "type": "integer"
@@ -2585,6 +2589,7 @@
           }
         },
         "required": [
+          "server_time",
           "scheduler",
           "worker",
           "stale_after_seconds",

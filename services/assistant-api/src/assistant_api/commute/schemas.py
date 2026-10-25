@@ -405,8 +405,14 @@ class RuntimeLatestCheckRead(BaseModel):
 
 
 class RuntimeRead(BaseModel):
-    """Process liveness is not task progress; both are reported separately."""
+    """Process liveness is not task progress; both are reported separately.
 
+    `server_time` answers "can the server respond at all", which is distinct from
+    "a background process reported in recently" and from "this task advanced".
+    Clients use it to age `last_seen_at` and `phase_updated_at` on their own clock.
+    """
+
+    server_time: UtcDateTime
     scheduler: RuntimeComponentRead
     worker: RuntimeComponentRead
     stale_after_seconds: int

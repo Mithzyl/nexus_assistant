@@ -131,6 +131,17 @@ Authorization: Bearer <local session>
 建议里的 `weather` 与 `sources` 始终是生成时保存的副本；最新天气更新后不会覆盖它们。
 客户端应同时展示“最新天气”和“上一次分析采用的天气”，两者不一致是正常的。
 
+### 5.1 读取顺序（2026-10-25 补充）
+
+- 查询某次分析：先 `GET /api/v1/checks/{check_id}` 取 `advisory_id`，再
+  `GET /api/v1/advisories/{advisory_id}`；不得用另一条 latest 代替本次结果。
+- latest 只表示“最近保存的建议”，配合 `matches_current_plan` / `is_current_service_date` /
+  `is_expired` 判断是否仍可展示为当前建议。
+- 天气查询是纯读取：不触达 Nexus、不触发模型、不新建建议、不移动 latest。
+  只刷新天气的任务（`analysis_mode=weather_only`）完成后，天气会变、建议不变。
+- `GET /api/v1/commute/runtime` 的 `server_time` 只回答“服务器是否在响应”；
+  `scheduler/worker.state` 是进程心跳，`latest_check.phase_updated_at` 是任务进度。
+
 ## 6. 仍未完成
 
 - **真实 WeatherKit REST**：未验证 JWT、数据字段与 Apple attribution。

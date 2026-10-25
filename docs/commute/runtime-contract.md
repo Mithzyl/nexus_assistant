@@ -79,6 +79,7 @@ Worker   (独立进程) ─┘  执行检查、保存快照/建议、Bark 出站
 
 ```json
 {
+  "server_time": "...Z",
   "scheduler": {"state": "online|stale|not_seen", "last_seen_at": "...Z"},
   "worker":    {"state": "online|stale|not_seen", "last_seen_at": "...Z"},
   "stale_after_seconds": 60,
@@ -93,8 +94,12 @@ Worker   (独立进程) ─┘  执行检查、保存快照/建议、Bark 出站
 ```
 
 - 不返回其他用户 ID、全局任务明细、scheduler/worker 的 instance_id、内部租约或密钥。
+- `server_time` 是服务器当前时间，只回答“接口能否响应”；它与进程心跳、任务进度
+  是三个独立信号，客户端用它换算 `last_seen_at` / `phase_updated_at` 的年龄。
 - `scheduler/worker.last_seen_at` 是进程心跳；`latest_check.phase_updated_at` /
   `last_progress_at` 是任务进度。进程在线不等于任务在推进，反之亦然。
+- 只有 API 进程在运行、scheduler/worker 都没启动时，接口仍返回 200 和
+  `server_time`，但两个组件是 `not_seen`，排队任务保持 `queued` 且不会伪造结果。
 - `stale` 阈值由 `ASSISTANT_COMMUTE_HEARTBEAT_STALE_SECONDS`（默认 60s）明确给出。
 - 心跳由独立任务按 `ASSISTANT_COMMUTE_HEARTBEAT_INTERVAL_SECONDS`（默认 15s）更新，
   不等待当前长任务结束；worker 心跳同时按当前租约续期。

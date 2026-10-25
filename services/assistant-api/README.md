@@ -27,6 +27,11 @@ cp .env.example .env          # 修改两个令牌
 `ASSISTANT_ALLOW_SCHEMA_CREATE=true` 只用于本地临时库；正常开发/运行使用迁移器。
 接口文档：`http://127.0.0.1:8010/docs`。
 
+本轮（2026-10-25）在独立工作树上完成了隔离运行验证；运行环境、原库状态、共同联调
+恢复方案与客户端交付见
+[`../../docs/backend-integration/16-后端运行与客户端交付-20261025.md`](../../docs/backend-integration/16-后端运行与客户端交付-20261025.md)。
+`GET /api/v1/commute/runtime` 现在返回 `server_time`，与进程心跳、任务进度分开。
+
 ## 通勤提醒
 
 通勤计划、手动检查、建议、设备绑定、通知 outbox 在 API 进程；
@@ -58,7 +63,7 @@ OpenAPI 导出：`.venv/bin/python scripts/export_openapi.py`，输出
 .venv/bin/python scripts/commute_runtime_e2e.py # 隔离 API+scheduler+worker 运行验收
 .venv/bin/python -m scripts.verify_background_migration --database assistant-dev.db
 .venv/bin/python -m scripts.backfill_user_asks --database assistant-dev.db  # 副本上迁移并分类
-.venv/bin/python scripts/check_contract.py    # 前端 TS 类型与 OpenAPI 漂移检查
+.venv/bin/python scripts/check_contract.py    # 已提交 Web/Swift 客户端字段与 OpenAPI 漂移检查
 ```
 
 后台运行接口、阶段/状态、weather_only、恢复与 Bark 限制见
