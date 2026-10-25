@@ -199,7 +199,32 @@ def main() -> int:
         "HTTPS_PROXY": "",
         "ALL_PROXY": "",
         "NO_PROXY": "127.0.0.1,localhost",
+        # The interpreter may have an editable install pointing at another
+        # checkout. Force child processes to import THIS worktree's backend.
+        "PYTHONPATH": str(API_DIR / "src")
+        + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else ""),
     }
+
+    diagnostic = subprocess.run(
+        [
+            str(PYTHON),
+            "-c",
+            "import sys, sqlite3, sqlalchemy, aiosqlite, assistant_api;"
+            "print('python=' + sys.version.split()[0]);"
+            "print('sqlalchemy=' + sqlalchemy.__version__);"
+            "print('aiosqlite=' + aiosqlite.__version__);"
+            "print('sqlite=' + sqlite3.sqlite_version);"
+            "print('assistant_api=' + assistant_api.__file__)",
+        ],
+        cwd=API_DIR,
+        env=BASE_ENV,
+        text=True,
+        capture_output=True,
+    )
+    print(diagnostic.stdout.strip(), flush=True)
+    if diagnostic.returncode != 0 or str(API_DIR / "src" / "assistant_api") not in diagnostic.stdout:
+        print(diagnostic.stderr, file=sys.stderr)
+        raise RuntimeError("acceptance backend is not imported from this worktree")
 
     logs = (RUNTIME / "processes.log").open("w")
     stub = api = web = None

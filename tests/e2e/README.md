@@ -81,3 +81,19 @@ They are not real credentials and must not be reused.
 earlier scratch area. They expect older hand-made fixtures (a specific account
 and plan) and are **not** part of `test:e2e`; use the runner above for repeatable
 results.
+
+
+## Extra model flow
+
+`acceptance_model_flows.py` is the heavier "valid model / unknown model" flow. It starts
+its own stub, API and web on 8411/3411/8421. The script forces `PYTHONPATH` to this
+worktree's `services/assistant-api/src` and prints the actual Python/SQLAlchemy/aiosqlite/
+SQLite versions and `assistant_api.__file__` before starting anything; do not point
+`ASSISTANT_PYTHON` at a venv whose editable install belongs to another checkout.
+
+As of 2026-10-25 this flow is **intermittent, not a stable pass**: the create-check step
+sometimes returns 500 from `ensure_instance()` with
+`sqlite3.OperationalError: no such savepoint: sa_savepoint_1`. It reproduced with both
+SQLAlchemy 2.0.51 and 2.1.6 after the worktree import fix. Failure evidence and the exact
+commands are in `tests/e2e/evidence/model-flow-failure-20261025/`. Do not claim this flow
+passed from a single green run; wait for the backend fix and rerun both model outcomes.

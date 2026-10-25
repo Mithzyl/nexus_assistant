@@ -164,7 +164,13 @@ iOS 目前没有 runtime 模型，因此没有假装覆盖。
 
 ### 5.5 后台心跳与两条模型结果流程
 
-`tests/e2e/acceptance_model_flows.py`（真实 API + 真实 worker + 生产构建网页，23/23）：
+`tests/e2e/acceptance_model_flows.py`（真实 API + 真实 worker + 生产构建网页，历史上曾 23/23）：
+
+> 2026-10-25 Web 线程重跑时该流程**间歇失败**：创建 check 时后端
+> `ensure_instance()` 报 `no such savepoint: sa_savepoint_1`。同一命令有通过也有失败，
+> 跨 SQLAlchemy 2.0.51/2.1.6 均复现，不能把单次 23/23 当作稳定通过。完整命令、版本、
+> 数据库状态和日志见 `tests/e2e/evidence/model-flow-failure-20261025/`，等待后端修复后重跑。
+> 网页导入路径已修正并打印校验；主流程 90/90 与后台状态 23/23 不受影响。
 
 | 结论 | 证据 |
 |---|---|

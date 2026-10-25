@@ -1,0 +1,18 @@
+{
+  "counts": {
+    "users": 1,
+    "commute_plans": 1,
+    "commute_instances": 0,
+    "commute_checks": 0,
+    "commute_advisories": 0,
+    "commute_weather_snapshots": 0
+  },
+  "plans": [
+    [
+      "5bac6aec-1d1b-4389-9c34-dec7ae50123a",
+      "模型流程通勤",
+      1,
+      1
+    ]
+  ]
+}

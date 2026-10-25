@@ -76,7 +76,13 @@ ASSISTANT_PYTHON=.tmp/backend-venv/bin/python pnpm --filter @superapp/web test:e
 
 默认端口：网页 3300，隔离 API 8300；测试账号仅存在于临时库，见 `tests/e2e/README.md`。最近一次结果：主流程 **90/90**、后台状态 **23/23** 通过，0 pageerror；`tsc --noEmit` 与 `next build` 均通过；截图在 `.tmp/e2e/shots/`。覆盖登录/续期/退出/账号切换、跨站写拒绝、旧缓存三类核对、离线保留、最新天气与旧建议分离、只读打开不建任务、单次重新分析与刷新恢复、按 advisory_id 读取、结果未知、路线未配置、计划修改、过期历史、360px 长文本与深色模式。后台状态专项还覆盖：执行程序从未报到、刚报到但任务未领取、心跳超阈值、查询失败、长时间打开后老化、页面隐藏/恢复、账号切换不串状态，以及这些读取不创建检查。
 
-### 4.2 早期验证（2026-10-24，保留作历史记录）
+### 4.2 额外模型流程（2026-10-25，未稳定通过）
+
+`tests/e2e/acceptance_model_flows.py` 的两条模拟模型流程本轮重跑**间歇失败**：网页点击“重新分析”后，创建 check 时后端返回 500，数据库中计划存在但没有 instance/check。错误栈为 `ensure_instance()` 的 `db.begin_nested()` → `sqlite3.OperationalError: no such savepoint: sa_savepoint_1`；同一命令、同一提交下跨 SQLAlchemy 2.0.51 与 2.1.6 均出现，2 次通过、3 次失败。不能把单次 23/23 当作稳定通过。
+
+测试侧已修正实际导入路径（强制 worktree 的 `services/assistant-api/src` 并打印校验），失败证据、完整命令、版本、数据库状态和原始日志在 `tests/e2e/evidence/model-flow-failure-20261025/`。等后端给出 savepoint/单连接池并发问题的修复提交与稳定地址后再重跑；主流程 90/90 与后台状态 23/23 不受影响。
+
+### 4.3 早期验证（2026-10-24，保留作历史记录）
 
 环境：macOS；Next.js 14；Node 22；Chromium（Playwright）；PA API 与 nexus-stub 通过真实 HTTP 启动；通勤 mock provider + worker。
 
