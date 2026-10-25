@@ -384,6 +384,8 @@ async def test_runtime_status_is_authenticated_and_user_scoped(commute_harness):
     mine = await h.client.get("/api/v1/commute/runtime", headers=headers(h.token_a))
     assert mine.status_code == 200
     payload = mine.json()
+    assert payload["server_time"].endswith("Z")
+    assert payload["stale_after_seconds"] == h.settings.commute_heartbeat_stale_seconds
     assert payload["scheduler"]["state"] == "online"
     assert payload["worker"]["state"] == "online"
     assert payload["queue"]["queued"] == 1

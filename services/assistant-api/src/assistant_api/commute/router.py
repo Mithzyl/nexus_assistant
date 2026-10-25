@@ -71,12 +71,14 @@ async def get_commute_runtime(
     settings: SettingsDependency,
     user: CurrentUser,
 ) -> RuntimeRead:
+    now = ensure_aware(runtime.now())
     snapshot = await runtime_snapshot(
         db,
         user_id=user.user_id,
-        now=ensure_aware(runtime.now()),
+        now=now,
         stale_seconds=settings.commute_heartbeat_stale_seconds,
     )
+    snapshot["server_time"] = now
     route_available = bool(getattr(runtime.eta, "available", False))
     snapshot["route_provider_available"] = route_available
     snapshot["auto_analysis_enabled"] = settings.commute_auto_ai_enabled
