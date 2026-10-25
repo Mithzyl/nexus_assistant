@@ -86,7 +86,8 @@ iOS 目前没有 runtime 模型，因此没有假装覆盖。
 | 网页类型 | `pnpm --filter @superapp/web typecheck` | 通过 |
 | 网页构建 + 浏览器 | `pnpm --filter @superapp/web test:e2e` | **90/90 checks passed**（隔离库、固定时钟、Playwright） |
 | iOS 构建 | `xcodebuild ... -destination 'platform=iOS Simulator'` | **BUILD SUCCEEDED** |
-| iOS 单元测试 | `xcodebuild test ... -only-testing:LifeAssistantTests` | **阻塞**：`Pseudo Terminal Setup Error / Operation not permitted`，测试运行器无法启动（本机沙箱限制，非编译失败） |
+| iOS 单元测试 | `xcodebuild test ... -only-testing:LifeAssistantTests` | **124/124 通过**（默认签名）。注意：加 `CODE_SIGNING_ALLOWED=NO` 会去掉 Keychain 权限，导致 4 条 Keychain 用例假失败 |
+| iOS 新界面测试 | `-only-testing:LifeAssistantUITests/StateExpressionUITests` | **3/3 通过**（天气分离、未知聊天核对、等待状态只显示已确认阶段） |
 | 真实后台流程 + 跨端 | `tests/e2e/acceptance_round1_flow.py` | **29/29 passed** |
 
 ### 5.1 真实后台执行流程（不是预置状态）
@@ -118,7 +119,10 @@ iOS 目前没有 runtime 模型，因此没有假装覆盖。
 - **真实后台推进**：`acceptance_round1_flow.py` 的 29 项，使用真实进程与真实库。
 - **模拟上游**：Nexus 桩、mock 天气/路线；**没有**验证真实 Nexus、WeatherKit/Maps、
   APNs/Bark 送达。
-- iOS 界面未在真机/模拟器上与真实后端联调：仅编译通过 + 既有单元测试（本轮因环境阻塞未跑通）。
+- iOS 界面只跑了不依赖后端的三条 StateExpression 用例；`LoginPersistenceUITests`、
+  `CloudSyncUITests`、`NoteImportIsolationUITests`、`PAEndToEndUITests` 需要 8010 上的
+  共同后端，按本轮约定没有启动，因此**未验证**（其中 AskChatOrder 一条通过）。
+- 没有真机验收，全部为 iPhone 18 Pro 模拟器。
 
 ## 6. 失败与修复过程
 
@@ -132,8 +136,8 @@ iOS 目前没有 runtime 模型，因此没有假装覆盖。
 
 ## 7. 剩余问题（不要当成已验证）
 
-1. iOS 单元测试与 UI 测试在本机仍受 PTY 限制，需要在普通终端会话补跑；
-   本轮只有编译证据。
+1. 依赖 8010 共同后端的 iOS UI 用例未跑（未启动该服务）；需在确认的环境里补跑
+   账号切换、晚到响应隔离、登录持久化这几条。
 2. iOS 端没有真实后端联调；聊天、天气、进度逻辑仅有编译 + 代码审阅 + 后端契约保证。
 3. 真实 Nexus、真实天气/路线、Bark/APNs 送达未验证；自动分析仍默认关闭。
 4. 共享 8010 未启动；原用户数据库仍未找到，未做任何迁移或恢复。
