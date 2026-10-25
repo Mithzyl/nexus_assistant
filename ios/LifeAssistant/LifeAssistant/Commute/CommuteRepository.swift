@@ -15,6 +15,7 @@ protocol CommuteRepository {
     func check(id: String) async throws -> CommuteCheck
     func latestAdvisory(planId: String) async throws -> CommuteAdvisory
     func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather
+    func runtime() async throws -> CommuteRuntime
     func advisory(id: String) async throws -> CommuteAdvisory
 
     func registerDevice(installationId: String, token: String, permission: String) async throws
@@ -57,6 +58,7 @@ struct RemoteCommuteRepository: CommuteRepository {
     func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather {
         try await client.latestWeather(planId: planId, localServiceDate: localServiceDate)
     }
+    func runtime() async throws -> CommuteRuntime { try await client.runtime() }
     func advisory(id: String) async throws -> CommuteAdvisory { try await client.advisory(id: id) }
 
     func registerDevice(installationId: String, token: String, permission: String) async throws {
@@ -175,6 +177,7 @@ actor MockCommuteRepository: CommuteRepository {
     private var advisories: [String: CommuteAdvisory]
     private var checks: [String: CommuteCheck] = [:]
     private var checkStart: [String: Date] = [:]
+    private var runtimeCallCount = 0
 
     init(plans: [CommutePlan], advisories: [CommuteAdvisory]) {
         self.plans = plans
@@ -324,6 +327,61 @@ actor MockCommuteRepository: CommuteRepository {
             matchesCurrentPlan: advisory.planRevision == plan.revision,
             summary: advisory.weather
         )
+    }
+
+    func runtime() async throws -> CommuteRuntime {
+        #if DEBUG
+        let env = ProcessInfo.processInfo.environment
+        runtimeCallCount += 1
+        let sequence = (env["COMMUTE_DEMO_RUNTIME_SEQUENCE"] ?? "")
+            .split(separator: ",").map(String.init)
+        let scenario: String
+        if sequence.isEmpty {
+            scenario = env["COMMUTE_DEMO_RUNTIME"] ?? "not_seen"
+        } else {
+            scenario = sequence[min(max(0, runtimeCallCount - 1), sequence.count - 1)]
+        }
+        if scenario == "error" {
+            throw CommuteAPIError(kind: .server, status: 503, code: "runtime_unavailable",
+                                  message: "暂时无法获取后台状态。", retryable: true, requestId: nil)
+        }
+        let offset = Double(env["COMMUTE_DEMO_SERVER_OFFSET"] ?? "") ?? 0
+        let serverNow = Date().addingTimeInterval(offset)
+        let state: RuntimeComponentState = {
+            switch scenario {
+            case "online": return .online
+            case "stale": return .stale
+            default: return .notSeen
+            }
+        }()
+        let seenAgo: TimeInterval? = {
+            if state == .notSeen { return nil }
+            if let raw = env["COMMUTE_DEMO_SEEN_AGO"], let seconds = Double(raw) { return seconds }
+            return state == .stale ? 3_600 : 5
+        }()
+        let component = RuntimeComponent(
+            state: state,
+            lastSeenAt: seenAgo.map { serverNow.addingTimeInterval(-$0) }
+        )
+        let staleAfter = Int(env["COMMUTE_DEMO_STALE_AFTER"] ?? "") ?? 60
+        return CommuteRuntime(
+            serverTime: serverNow,
+            scheduler: component,
+            worker: component,
+            staleAfterSeconds: staleAfter,
+            queue: ["queued": state == .online ? 1 : 0, "running": 0],
+            // 故意给一条不属于当前页面的 latest_check，用于确认客户端不会拿它覆盖当前任务。
+            latestCheck: RuntimeLatestCheck(checkId: "demo-other-check", status: .running,
+                                            phase: .analyzing, phaseUpdatedAt: serverNow),
+            lastProgressAt: serverNow,
+            routeProviderAvailable: true,
+            autoAnalysisEnabled: false,
+            autoAnalysisMode: "weather_only"
+        )
+        #else
+        throw CommuteAPIError(kind: .server, status: nil, code: "demo_only",
+                              message: "演示仓库仅在 DEBUG 可用。", retryable: false, requestId: nil)
+        #endif
     }
 
     func advisory(id: String) async throws -> CommuteAdvisory {

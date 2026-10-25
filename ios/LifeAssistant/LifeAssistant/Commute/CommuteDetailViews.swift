@@ -59,6 +59,14 @@ struct CommuteAdvisoryView: View {
             trailingAction: plan == nil ? nil : ("编辑", { state.open(.commuteSettings) })
         ) {
             VStack(alignment: .leading, spacing: 16) {
+                if !isHistorical {
+                    // 页面停留时按单调时钟重算心跳年龄；不会因此发网络请求。
+                    TimelineView(.periodic(from: .now, by: 5)) { _ in
+                        if let hint = store.runtimeHint {
+                            runtimeHintCard(hint)
+                        }
+                    }
+                }
                 if let advisory {
                     if isHistorical || model.phase == .dayPassed || model.phase == .expired {
                         staleBanner()
@@ -88,12 +96,18 @@ struct CommuteAdvisoryView: View {
             }
         }
         .task {
-            // 只读读取最新天气；不会因为打开页面而创建分析。
+            // 只读读取最新天气与后台运行状态；不会因为打开页面而创建分析。
             await store.refreshWeather()
+            await store.refreshRuntime(force: true)
             guard let advisoryId, !advisoryId.isEmpty, loadedId != advisoryId else { return }
             loadedId = advisoryId
             await store.loadAdvisory(id: advisoryId)
             await store.reportOpened(advisoryId: advisoryId)
+        }
+        .onChange(of: store.checkStatus) { _, status in
+            // 任务开始/变化时补一次心跳读取；有 TTL 和共享请求，不会形成第二个高频计时器。
+            guard let status, !status.isTerminal else { return }
+            Task { await store.refreshRuntime() }
         }
     }
 
@@ -343,7 +357,7 @@ struct CommuteAdvisoryView: View {
                             .font(.captionText)
                             .foregroundStyle(Palette.amber)
                     }
-                    if store.isRefreshing {
+                    if case .syncing = store.syncState {
                         Text("正在更新天气…")
                             .font(.captionText)
                             .foregroundStyle(Palette.muted)
@@ -623,6 +637,29 @@ struct CommuteAdvisoryView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func runtimeHintCard(_ hint: CommuteStore.RuntimeHint) -> some View {
+        SurfaceCard(tint: hint.isFailure ? Palette.amberSoft : Palette.fogSoft) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: hint.isFailure ? "wifi.exclamationmark" : "waveform.path.ecg")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(hint.isFailure ? Palette.amber : Palette.fogDeep)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(hint.text)
+                        .font(.system(.caption, weight: .semibold))
+                        .foregroundStyle(hint.isFailure ? Palette.amber : Palette.fogDeep)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let detail = hint.detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(.microLabel)
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("commute.runtimeHint")
     }
 
     private func planUpdatedBanner(_ text: String) -> some View {

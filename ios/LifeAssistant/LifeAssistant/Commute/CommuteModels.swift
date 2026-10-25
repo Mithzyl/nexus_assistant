@@ -332,6 +332,84 @@ struct AdvisoryWeather: Codable, Hashable {
     }
 }
 
+// MARK: - 后台运行状态（与任务进度分开）
+
+enum RuntimeComponentState: String, Codable, Equatable {
+    case online
+    case stale
+    case notSeen = "not_seen"
+}
+
+struct RuntimeComponent: Codable, Equatable {
+    let state: RuntimeComponentState
+    let lastSeenAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case state
+        case lastSeenAt = "last_seen_at"
+    }
+}
+
+struct RuntimeLatestCheck: Codable, Equatable {
+    let checkId: String
+    let status: CheckStatus
+    let phase: CheckPhase?
+    let phaseUpdatedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case checkId = "check_id"
+        case status, phase
+        case phaseUpdatedAt = "phase_updated_at"
+    }
+}
+
+/// GET /api/v1/commute/runtime：进程心跳与任务进度是两件事。
+/// latest_check 只说明服务器看到的最近检查，不能覆盖当前页面正在跟踪的 check。
+struct CommuteRuntime: Codable, Equatable {
+    let serverTime: Date
+    let scheduler: RuntimeComponent
+    let worker: RuntimeComponent
+    let staleAfterSeconds: Int
+    let queue: [String: Int]
+    let latestCheck: RuntimeLatestCheck?
+    let lastProgressAt: Date?
+    let routeProviderAvailable: Bool
+    let autoAnalysisEnabled: Bool?
+    let autoAnalysisMode: String?
+
+    enum CodingKeys: String, CodingKey {
+        case serverTime = "server_time"
+        case scheduler, worker
+        case staleAfterSeconds = "stale_after_seconds"
+        case queue
+        case latestCheck = "latest_check"
+        case lastProgressAt = "last_progress_at"
+        case routeProviderAvailable = "route_provider_available"
+        case autoAnalysisEnabled = "auto_analysis_enabled"
+        case autoAnalysisMode = "auto_analysis_mode"
+    }
+
+    struct Presence: Equatable {
+        let state: RuntimeComponentState
+        let ageSeconds: Int?
+    }
+
+    /// 用服务器时间计算心跳年龄；elapsedSinceFetch 是拿到快照后本机又过去的时间，
+    /// 避免缓存的 online 因页面一直没刷新而永远显示新鲜。
+    func workerPresence(elapsedSinceFetch: TimeInterval) -> Presence {
+        guard let seen = worker.lastSeenAt else {
+            return Presence(state: .notSeen, ageSeconds: nil)
+        }
+        let serverAge = max(0, serverTime.timeIntervalSince(seen))
+        let age = serverAge + max(0, elapsedSinceFetch)
+        if age > Double(staleAfterSeconds) {
+            return Presence(state: .stale, ageSeconds: Int(age.rounded()))
+        }
+        return Presence(state: worker.state == .stale ? .stale : .online,
+                        ageSeconds: Int(age.rounded()))
+    }
+}
+
 /// 计划最新的独立天气快照；不代表旧建议当时采用的天气。
 struct PlanWeather: Codable, Equatable {
     let planId: String

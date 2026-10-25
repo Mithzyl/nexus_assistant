@@ -28,6 +28,14 @@ final class CommuteStore: ObservableObject {
     @Published private(set) var latestWeather: PlanWeather?
     @Published private(set) var weatherLoadedAt: Date?
     @Published private(set) var weatherNotice: String?
+    /// 后台运行状态（进程心跳），与当前任务进度分开；失败时保留上次结果。
+    @Published private(set) var runtime: CommuteRuntime?
+    @Published private(set) var runtimeFetchedAt: Date?
+    /// 单调时钟上的读取时刻；页面停留和用户改手机时间都不影响心跳年龄。
+    private var runtimeFetchedUptime: TimeInterval?
+    @Published private(set) var runtimeFailed = false
+    @Published private(set) var runtimeError: String?
+    private var runtimeTask: Task<Void, Never>?
     @Published private(set) var syncState: CommuteSyncState = .localDraft
     @Published private(set) var isRefreshing = false
     @Published private(set) var notificationPermission: NotificationPermission = .unknown
@@ -121,6 +129,110 @@ final class CommuteStore: ObservableObject {
         }
     }
 
+    /// 仍有需要解释后台状态的任务：排队、处理中或结果未知。
+    var hasActiveCheck: Bool {
+        if pendingSubmission != nil { return true }
+        guard let status = checkStatus else { return false }
+        return !status.isTerminal
+    }
+
+    struct RuntimeHint: Equatable {
+        let text: String
+        let detail: String?
+        let isFailure: Bool
+    }
+
+    /// 只描述“执行程序最近有没有响应”，不改变任务状态，也不承诺任务在前进。
+    var runtimeHint: RuntimeHint? {
+        runtimeHint(nowUptime: ProcessInfo.processInfo.systemUptime)
+    }
+
+    /// 供界面定时重算：nowUptime 来自单调时钟，不用墙钟判断旧缓存。
+    func runtimeHint(nowUptime: TimeInterval) -> RuntimeHint? {
+        guard hasActiveCheck else { return nil }
+        let queried = runtimeFetchedAt.map { CommuteFormat.dayTime($0) }
+        guard let runtime else {
+            // 尚未发起过查询时不要预先显示“失败”，只显示任务本身。
+            guard runtimeFailed else { return nil }
+            return RuntimeHint(
+                text: "暂时无法获取后台状态。",
+                detail: "任务仍已保存，可稍后刷新。",
+                isFailure: true
+            )
+        }
+        let elapsed = runtimeFetchedUptime.map { max(0, nowUptime - $0) } ?? 0
+        let presence = runtime.workerPresence(elapsedSinceFetch: elapsed)
+        let seenText = runtime.worker.lastSeenAt.map { "最近响应：\(CommuteFormat.dayTime($0))" }
+        let queryText = queried.map { "查询于 \($0)" }
+        let detail = [seenText, queryText].compactMap { $0 }.joined(separator: " · ")
+
+        if runtimeFailed {
+            return RuntimeHint(
+                text: "暂时无法获取后台状态。",
+                detail: detail + "。这是上次查询的结果；任务仍已保存。",
+                isFailure: true
+            )
+        }
+        switch presence.state {
+        case .notSeen:
+            return RuntimeHint(text: "尚未收到后台执行程序的响应。",
+                               detail: detail + "。任务仍已保存。",
+                               isFailure: false)
+        case .stale:
+            return RuntimeHint(text: "后台执行程序近期未响应，任务仍已保存。",
+                               detail: detail,
+                               isFailure: false)
+        case .online:
+            return RuntimeHint(text: "后台执行程序最近有响应。",
+                               detail: detail + "。心跳正常不代表这条任务正在推进。",
+                               isFailure: false)
+        }
+    }
+
+    /// 详情/回前台读取；同一时刻共享一个请求，避免和进度轮询各起一个高频计时器。
+    func refreshRuntime(force: Bool = false) async {
+        guard isSignedIn, hasActiveCheck else { return }
+        if let task = runtimeTask {
+            await task.value
+            return
+        }
+        if !force, let fetched = runtimeFetchedUptime,
+           ProcessInfo.processInfo.systemUptime - fetched < 15 {
+            return
+        }
+        let requestGeneration = generation
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.loadRuntime(generation: requestGeneration)
+        }
+        runtimeTask = task
+        await task.value
+        runtimeTask = nil
+    }
+
+    private func loadRuntime(generation: Int) async {
+        do {
+            let snapshot = try await repository.runtime()
+            guard generation == self.generation else { return }
+            runtime = snapshot
+            runtimeFetchedAt = Date()
+            runtimeFetchedUptime = ProcessInfo.processInfo.systemUptime
+            runtimeFailed = false
+            runtimeError = nil
+        } catch let error as CommuteAPIError {
+            guard generation == self.generation else { return }
+            // 心跳读取失败不是任务失败；也不触发全局登出或新建检查。
+            runtimeFailed = true
+            runtimeError = error.kind == .unauthenticated
+                ? "登录状态需要重新确认。"
+                : "暂时无法获取后台状态。"
+        } catch {
+            guard generation == self.generation else { return }
+            runtimeFailed = true
+            runtimeError = "暂时无法获取后台状态。"
+        }
+    }
+
     private func applyLatest(_ latest: CommuteAdvisory) {
         guard let plan else {
             advisory = nil
@@ -156,10 +268,18 @@ final class CommuteStore: ObservableObject {
         routeTask?.cancel()
         routeTask = nil
         pendingSubmission = nil
+        checkStatus = nil
         checkPhase = nil
         latestWeather = nil
         weatherLoadedAt = nil
         weatherNotice = nil
+        runtime = nil
+        runtimeFetchedAt = nil
+        runtimeFetchedUptime = nil
+        runtimeFailed = false
+        runtimeError = nil
+        runtimeTask?.cancel()
+        runtimeTask = nil
         lastLoadAt = nil
         lastSnapshotDate = nil
         syncState = .localDraft
@@ -190,7 +310,10 @@ final class CommuteStore: ObservableObject {
             syncState = .localDraft
             _ = draft
         }
-        pendingSubmission = demoMode ? nil : localStore.loadPending(account: accountID)
+        // 演示默认从固定 mock 开始；UI 验证重开恢复时用 COMMUTE_DEMO_KEEP_PENDING=1 读取原记录。
+        let keepDemoPending = ProcessInfo.processInfo.environment["COMMUTE_DEMO_KEEP_PENDING"] == "1"
+        pendingSubmission = (!demoMode || keepDemoPending)
+            ? localStore.loadPending(account: accountID) : nil
         if pendingSubmission?.uncertain == true {
             errorNotice = "上次提交结果未知，可点“核对上次提交”复用同一请求。"
         }
@@ -285,8 +408,15 @@ final class CommuteStore: ObservableObject {
                     historicalAdvisory = current
                     advisory = nil
                 }
-                // 旧快照与旧幂等键都不能用于新计划。
+                // 旧快照与旧幂等键都不能用于新计划；旧任务的进度和后台状态也不再属于当前设置。
                 clearPending()
+                checkStatus = nil
+                checkPhase = nil
+                runtime = nil
+                runtimeFetchedAt = nil
+                runtimeFetchedUptime = nil
+                runtimeFailed = false
+                runtimeError = nil
                 planUpdatedNotice = "设置已更新：旧建议不适用于新计划，请重新获取路线并分析。"
             }
             syncState = .synced(Date())
@@ -327,6 +457,13 @@ final class CommuteStore: ObservableObject {
             advisory = nil
             historicalAdvisory = nil
             planUpdatedNotice = nil
+            checkStatus = nil
+            checkPhase = nil
+            runtime = nil
+            runtimeFetchedAt = nil
+            runtimeFetchedUptime = nil
+            runtimeFailed = false
+            runtimeError = nil
             clearPending()
             localStore.clear()
             syncState = .localDraft
