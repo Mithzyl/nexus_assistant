@@ -106,13 +106,13 @@ iOS 目前没有 runtime 模型，因此没有假装覆盖。
 | 后端单元/接口 | `.venv/bin/python -m pytest -q` | **180 passed**（176 + 4 条观察器助手回归） |
 | 客户端契约 | `scripts/check_contract.py` | **ok：14 接口 / 22 路由** |
 | 网页类型 | `pnpm --filter @superapp/web typecheck` | 通过 |
-| 网页构建 + 浏览器 | `pnpm --filter @superapp/web test:e2e` | **90/90 checks passed**（隔离库、固定时钟、Playwright） |
+| 网页构建 + 浏览器 | `pnpm --filter @superapp/web test:e2e` | **90/90 主流程 + 23/23 后台状态**（隔离库、固定时钟、Playwright） |
 | iOS 构建 | `xcodebuild ... -destination 'platform=iOS Simulator'` | **BUILD SUCCEEDED** |
 | iOS 单元测试 | `xcodebuild test ... -only-testing:LifeAssistantTests` | **124/124 通过**（默认签名）。注意：加 `CODE_SIGNING_ALLOWED=NO` 会去掉 Keychain 权限，导致 4 条 Keychain 用例假失败 |
 | iOS 新界面测试 | `-only-testing:LifeAssistantUITests/StateExpressionUITests` | **3/3 通过**（天气分离、未知聊天核对、等待状态只显示已确认阶段） |
 | 真实后台流程 + 跨端 | `tests/e2e/acceptance_round1_flow.py` | **29/29 passed** |
 | 模拟器连隔离后端 | `-only-testing:LifeAssistantUITests/LiveBackendUITests` | **1/1 通过**（97 秒，见 5.4） |
-| 两条模型结果 + 心跳 | `tests/e2e/acceptance_model_flows.py` | **23/23 passed**（见 5.5） |
+| 两条模型结果 + 心跳 | `tests/e2e/acceptance_model_flows.py` | **23/23 passed**（见 5.5；本轮已更新“在线”为“最近有响应”） |
 
 ### 5.1 真实后台执行流程（不是预置状态）
 
@@ -169,7 +169,7 @@ iOS 目前没有 runtime 模型，因此没有假装覆盖。
 | 结论 | 证据 |
 |---|---|
 | 后端确实用 `service_heartbeats.last_seen_at` 判定执行程序是否在线 | 未跑 worker 时 `worker.state=not_seen`；`worker --once` 后 `state=online` 且带 `last_seen_at`；状态由 `stale_seconds` 与时钟差计算（`commute/heartbeat.py:123-136`） |
-| 网页用的是心跳，不是路线可用性或任务阶段 | 未跑 worker 时页面显示“尚未发现后台执行程序”；worker 后显示“后台执行程序在线”；同一时刻 `route_provider_available=true`、检查阶段仍在 `queued`，三者互不替代 |
+| 网页用的是心跳，不是路线可用性或任务阶段 | 未跑 worker 时页面显示“尚未收到执行程序的响应”；worker 后 API `state=online` 表示“最近有响应”，已完成任务不再保留后台横幅；同一时刻 `route_provider_available=true`、检查阶段仍在 `queued`，三者互不替代。2026-10-25 已把旧“在线”文案改为带时间限定的最近响应文案。 |
 | 苹果客户端**没有**用心跳 | iOS 没有调用 `/commute/runtime`，也没有 runtime 模型；`CommuteStore` 只用 `check.phase`/`status` 文案（`CommuteStore.swift:103-113`）。因此 iOS 只能显示“已提交，等待处理”或真实阶段，**无法**区分“执行程序离线”与“排队中”。这是待补缺口，本轮未改代码 |
 | 模型返回有效建议（模拟） | 客户端提交 → worker → `ai_analysis.status=available`、`used_duration_seconds=1800`、建议标题来自模型 JSON；`GET /advisories/{id}` 200；网页显示模型标题与“模型分析（基于开发/测试数据）”标签 |
 | 模型结果未知（模拟） | `/_debug/unknown_once` 让下一次工作流 `outcome_unknown` → 建议 `ai_analysis.status=unknown`，仍可读取（不 500）；客户端按该检查的 `advisory_id` 显示“模型分析未完成” |

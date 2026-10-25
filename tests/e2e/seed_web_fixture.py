@@ -195,6 +195,7 @@ async def seed(database: str, fixture_path: Path) -> None:
             ("unknown", "E2E 结果未知"),
             ("linked", "E2E 关联建议"),
             ("revision", "E2E 计划已修改"),
+            ("queued", "E2E 后台状态"),
         ]:
             plan = CommutePlan(
                 plan_id=str(uuid4()),
@@ -400,6 +401,9 @@ async def seed(database: str, fixture_path: Path) -> None:
             ai=legacy_ai,
         )
 
+        # Waiting plan used by the controlled runtime-state checks.
+        queued_check = add_check("queued", "queued", status="queued", phase="queued")
+
         # Progress plan: a running check with a real server phase.
         running_check = add_check("progress", "progress", status="running", phase="fetching_weather")
         add_weather("progress", running_check, 17.0, 0.5)
@@ -469,6 +473,71 @@ async def seed(database: str, fixture_path: Path) -> None:
 
         # A create-once plan with no pending local record.
         plans["create"].revision = 2
+
+        # A separate account with its own queued plan, used to prove runtime
+        # status does not leak across an account switch.
+        plan_b = CommutePlan(
+            plan_id=str(uuid4()),
+            user_id=user_b.user_id,
+            name="E2E B 的后台状态",
+            enabled=True,
+            timezone=TZ,
+            weekdays_json=[1, 2, 3, 4, 5, 6, 7],
+            arrival_local_time="09:00",
+            check_local_time="07:30",
+            transport_mode="driving",
+            buffer_minutes=10,
+            rain_probability_threshold=0.4,
+            rain_extra_buffer_minutes=10,
+            notify_enabled=True,
+            origin_label="B 起点",
+            origin_latitude=31.2304,
+            origin_longitude=121.4737,
+            destination_label="B 终点",
+            destination_latitude=31.2019,
+            destination_longitude=121.606,
+            revision=1,
+        )
+        session.add(plan_b)
+        await session.flush()
+        instance_b = CommuteInstance(
+            instance_id=str(uuid4()),
+            user_id=user_b.user_id,
+            plan_id=plan_b.plan_id,
+            plan_revision=1,
+            local_service_date=day,
+            timezone=TZ,
+            target_arrival_at=TARGET,
+            check_window_start_at=CHECK_WINDOW,
+            status="active",
+        )
+        session.add(instance_b)
+        await session.flush()
+        check_b = CommuteCheck(
+            check_id=str(uuid4()),
+            user_id=user_b.user_id,
+            plan_id=plan_b.plan_id,
+            instance_id=instance_b.instance_id,
+            plan_revision=1,
+            trigger="manual",
+            analysis_mode="full",
+            phase="queued",
+            phase_updated_at=NOW - timedelta(minutes=1),
+            slot_index=None,
+            idempotency_key=f"e2e:b-queued:{uuid4()}",
+            request_hash="e2e",
+            status="queued",
+            attempt_count=0,
+            next_attempt_at=None,
+            lease_owner=None,
+            lease_expires_at=None,
+            finished_at=None,
+            advisory_id=None,
+            advisory_created=False,
+            created_at=NOW - timedelta(minutes=5),
+            updated_at=NOW - timedelta(minutes=1),
+        )
+        session.add(check_b)
 
         # Chat history: 21 chats so the oldest falls outside /asks?limit=20.
         chat_runs: list[NexusRun] = []
@@ -641,6 +710,8 @@ async def seed(database: str, fixture_path: Path) -> None:
             "user_a_id": user_a.user_id,
             "user_b_id": user_b.user_id,
             "plans": {key: plan.plan_id for key, plan in plans.items()},
+            "plan_b": plan_b.plan_id,
+            "check_b": check_b.check_id,
             "checks": {key: check_fixture(check) for key, check in checks.items()},
             "runs": {
                 "internal": internal_run.local_run_id,

@@ -377,7 +377,7 @@ def main() -> int:
         go(page, f"/me/commute/{plan_b}", 1200)
         body = text(page)
         check("running phase is shown", "更新天气" in body)
-        check("worker offline is explained", "后台执行程序暂时没有响应" in body)
+        check("missing worker is explained", "尚未收到执行程序的响应" in body)
         check("task is described as saved", "任务已保存" in body)
         check("manual reconcile action exists", "继续核对" in body or "继续等待" in body)
         check("no check created while restoring", len(check_posts) == 0, check_posts)

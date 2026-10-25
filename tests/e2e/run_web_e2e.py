@@ -187,24 +187,28 @@ def main() -> int:
             label="web build",
         )
 
-        print("==> running Playwright flow", flush=True)
-        result = subprocess.run(
-            [sys.executable, str(ROOT / "tests" / "e2e" / "web_flow_check.py")],
-            cwd=ROOT,
-            env={
-                **os.environ,
-                "E2E_BASE_URL": f"http://localhost:{args.web_port}",
-                "E2E_API_URL": f"http://127.0.0.1:{args.api_port}",
-                "E2E_FIXTURE": str(fixture),
-                "E2E_SHOT_DIR": str(shots),
-            },
-        )
-        if result.returncode != 0:
-            print(f"\nweb log: {runtime / 'web.log'}\napi log: {runtime / 'api.log'}")
-            print(f"fixture: {fixture}\nshots: {shots}")
-        else:
+        test_env = {
+            **os.environ,
+            "E2E_BASE_URL": f"http://localhost:{args.web_port}",
+            "E2E_API_URL": f"http://127.0.0.1:{args.api_port}",
+            "E2E_FIXTURE": str(fixture),
+            "E2E_SHOT_DIR": str(shots),
+        }
+        failed = 0
+        for name in ("web_flow_check.py", "runtime_state_check.py"):
+            print(f"==> running Playwright flow {name}", flush=True)
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "tests" / "e2e" / name)],
+                cwd=ROOT,
+                env=test_env,
+            )
+            if result.returncode != 0:
+                failed = result.returncode
+                print(f"\n{name} failed; web log: {runtime / 'web.log'}\napi log: {runtime / 'api.log'}")
+                print(f"fixture: {fixture}\nshots: {shots}")
+        if not failed:
             print(f"\nfixture: {fixture}\nshots: {shots}")
-        return result.returncode
+        return failed
     finally:
         stop(web)
         stop(api)
