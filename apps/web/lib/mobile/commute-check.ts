@@ -1,6 +1,6 @@
 /** Durable client record for one explicit "重新分析" operation. */
 
-import type { CheckStatus } from "./api";
+import type { CheckPhase, CheckStatus } from "./api";
 import { readJson, writeJson, commuteCheckKey } from "./storage";
 
 export type PendingState = "submitting" | "uncertain" | CheckStatus;
@@ -12,6 +12,12 @@ export interface PendingCommuteCheck {
   requestHash: string;
   checkId: string | null;
   status: PendingState;
+  /** Server-reported step; never inferred by the browser. */
+  phase?: CheckPhase | null;
+  analysisMode?: "full" | "weather_only" | null;
+  phaseUpdatedAt?: string | null;
+  attemptCount?: number | null;
+  nextAttemptAt?: string | null;
   advisoryId: string | null;
   error: string | null;
   errorCode: string | null;
@@ -27,6 +33,7 @@ export const TERMINAL_CHECK_STATUSES: CheckStatus[] = [
   "degraded",
   "failed",
   "cancelled",
+  "unknown",
 ];
 
 export const CHECK_STATUS_LABEL: Record<PendingState, string> = {
@@ -37,6 +44,20 @@ export const CHECK_STATUS_LABEL: Record<PendingState, string> = {
   succeeded: "已完成",
   degraded: "已完成（数据不完整）",
   failed: "失败",
+  cancelled: "已取消",
+  unknown: "结果未知",
+};
+
+/** Keep phase text factual; a missing phase is not "analyzing". */
+export const CHECK_PHASE_LABEL: Record<CheckPhase, string> = {
+  queued: "等待后台领取",
+  fetching_route: "查询路线",
+  fetching_weather: "更新天气",
+  analyzing: "分析建议",
+  saving: "保存结果",
+  retry_wait: "等待重试",
+  done: "已结束",
+  failed: "已失败",
   cancelled: "已取消",
 };
 
@@ -51,6 +72,11 @@ export function loadPendingCheck(
   if (!stored || stored.planId !== planId) return null;
   return {
     ...stored,
+    phase: stored.phase ?? null,
+    analysisMode: stored.analysisMode ?? null,
+    phaseUpdatedAt: stored.phaseUpdatedAt ?? null,
+    attemptCount: stored.attemptCount ?? null,
+    nextAttemptAt: stored.nextAttemptAt ?? null,
     errorCode: stored.errorCode ?? null,
     advisoryId: stored.advisoryId ?? null,
     serverCreatedAt: stored.serverCreatedAt ?? null,
@@ -70,5 +96,11 @@ export function clearPendingCheck(accountId: string | null, planId: string): voi
 }
 
 export function isTerminal(status: PendingState): boolean {
-  return status === "succeeded" || status === "degraded" || status === "failed" || status === "cancelled";
+  return (
+    status === "succeeded" ||
+    status === "degraded" ||
+    status === "failed" ||
+    status === "cancelled" ||
+    status === "unknown"
+  );
 }

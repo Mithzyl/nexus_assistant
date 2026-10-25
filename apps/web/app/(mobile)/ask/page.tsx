@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 import type { AskItem } from "@/components/mobile/ask-store";
-import { useAskStore } from "@/components/mobile/ask-store";
+import { isVisibleChat, useAskStore } from "@/components/mobile/ask-store";
 import { Markdown } from "@/components/mobile/markdown";
 import { useAuth } from "@/components/mobile/providers";
 import { LoadingCard, ScreenHeader } from "@/components/mobile/ui";
@@ -32,6 +32,7 @@ function StatusCard({
   onRefresh,
   onReuse,
   onContinue,
+  onRecheck,
   copied,
   onCopy,
 }: {
@@ -41,9 +42,41 @@ function StatusCard({
   onRefresh: () => void;
   onReuse: () => void;
   onContinue: () => void;
+  onRecheck: () => void;
   copied: boolean;
   onCopy: () => void;
 }) {
+  // A pre-separation local record has no trustworthy body until the server
+  // classifies it. Never render its question, answer or retry action.
+  if (item.classification === "pending") {
+    return (
+      <div className="card card--tight">
+        <p className="micro" style={{ margin: 0 }}>
+          正在向服务器核对此前保存的记录；确认属于聊天后才会显示正文。
+        </p>
+        <button type="button" className="link-button mt-6" onClick={onRecheck}>
+          重新核对
+        </button>
+      </div>
+    );
+  }
+
+  if (item.classification === "unknown") {
+    return (
+      <div className="card card--amber">
+        <p className="card-title amber" style={{ fontSize: 15 }}>
+          这条本机记录尚未确认
+        </p>
+        <p className="caption" style={{ margin: "4px 0 0" }}>
+          服务器暂时无法确认它是否属于聊天。为安全起见，这里不显示正文，也不会把它作为新问题再次提交。
+        </p>
+        <button type="button" className="link-button mt-6" onClick={onRecheck}>
+          重新核对
+        </button>
+      </div>
+    );
+  }
+
   if (item.phase === "submitting") {
     return (
       <div className="card card--tight">
@@ -315,6 +348,11 @@ export default function AskPage() {
             {ask.historyError}
           </p>
         ) : null}
+        {ask.verificationError ? (
+          <p className="micro" style={{ marginBottom: 12, color: "var(--m-amber)" }}>
+            {ask.verificationError}
+          </p>
+        ) : null}
       </section>
 
       {timeline.length === 0 ? (
@@ -361,33 +399,51 @@ export default function AskPage() {
         </section>
       ) : (
         <div className="ask-stream">
-          {timeline.map((item) => (
-            <div key={item.id}>
-              <div className="bubble-user">{item.question}</div>
-              <div className="mt-10">
-                <StatusCard
-                  item={item}
-                  copied={copiedId === item.id}
-                  onCopy={() => void copyAnswer(item)}
-                  onRetry={() => void ask.retrySubmission(item.id)}
-                  onCancel={() => void ask.cancel(item.id)}
-                  onRefresh={() => {
-                    if (item.pollingPaused) ask.hidePaused(item.id);
-                    void ask.refreshOne(item.id);
-                  }}
-                  onContinue={() => {
-                    ask.hidePaused(item.id);
-                    void ask.refreshOne(item.id);
-                  }}
-                  onReuse={() => {
-                    setDraft(item.question);
-                    inputRef.current?.focus();
-                    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-                  }}
-                />
+          {timeline.map((item) => {
+            const concealed = !isVisibleChat(item);
+            return (
+              <div key={item.id}>
+                <div
+                  className="bubble-user"
+                  style={
+                    concealed
+                      ? { fontStyle: "italic", opacity: 0.72 }
+                      : undefined
+                  }
+                >
+                  {concealed
+                    ? item.classification === "pending"
+                      ? "正在核对此前保存的记录…"
+                      : "这条本机记录暂不显示内容"
+                    : item.question}
+                </div>
+                <div className="mt-10">
+                  <StatusCard
+                    item={item}
+                    copied={copiedId === item.id}
+                    onCopy={() => void copyAnswer(item)}
+                    onRetry={() => void ask.retrySubmission(item.id)}
+                    onCancel={() => void ask.cancel(item.id)}
+                    onRefresh={() => {
+                      if (item.pollingPaused) ask.hidePaused(item.id);
+                      void ask.refreshOne(item.id);
+                    }}
+                    onContinue={() => {
+                      ask.hidePaused(item.id);
+                      void ask.refreshOne(item.id);
+                    }}
+                    onRecheck={() => void ask.recheckItem(item.id)}
+                    onReuse={() => {
+                      if (!isVisibleChat(item)) return;
+                      setDraft(item.question);
+                      inputRef.current?.focus();
+                      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {ask.loadingHistory ? <LoadingCard label="正在同步服务器历史…" /> : null}
           <div ref={endRef} />
         </div>

@@ -9,7 +9,9 @@
     "lint": "next lint",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test:e2e": "python3 ../../tests/e2e/run_web_e2e.py",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "next": "^14.2.15",

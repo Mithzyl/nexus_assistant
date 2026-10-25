@@ -1,6 +1,6 @@
-# 移动 Web 通勤分析推进记录（第三轮）
+# 移动 Web 通勤分析推进记录（第三轮，2026-10-25 补记）
 
-更新：2026-10-24。范围：`apps/web`、Web 测试、客户端文档。未修改 `services/assistant-api`、`ios/LifeAssistant` 或 `llm_fusion_platform`。
+更新：2026-10-25。范围：`apps/web`、Web 测试、客户端文档。未修改 `services/assistant-api`、`ios/LifeAssistant` 或 `llm_fusion_platform`。
 
 ## 1. 本轮结论
 
@@ -124,7 +124,7 @@ Max-Age 与服务器 expires_at 对齐
 5. **Bark/APNs/Web Push**：本轮未发送真实提醒，未新增 Web Push。
 6. **WebKit 不等于 Safari**：未做真实 iPhone Safari 键盘、底部安全区、Cookie 真机验证。
 7. **后端续期行为**：当前测试环境 renew 返回同一期限；如果后端改为延长，Web 已按返回期限同步 Cookie。
-8. 后端未提供路线 Provider 能力查询端点；在没有任何 advisory/check 时，页面只能显示通用说明，点击重新分析后才能知道具体缺失原因。
+8. 2026-10-25 后端已提供 `GET /commute/runtime`（含 worker/scheduler 心跳与 route_provider_available）和 `GET /commute-plans/{id}/weather`；Web 已接入。真实地图 Provider 仍未配置，隔离测试使用 mock。
 9. 未修改后端、iOS 或 AI 平台；未提交、推送或部署。
 
 ## 7. 运行
@@ -136,3 +136,14 @@ PA_API_URL=http://127.0.0.1:8010 pnpm dev:web
 ```
 
 生产构建：`pnpm build:web`，随后 `pnpm --filter @superapp/web start`。生产环境应使用 HTTPS，以保证 Secure Cookie 可用。
+
+
+## 8. 2026-10-25 补记（本轮 Web 改动）
+
+- 聊天历史与通勤内部分析分开：旧本机缓存通过 `POST /asks/verify` 批量核对；`not_chat` 从聊天和重新提问入口移除，`unknown` 保留本机记录但隐藏正文并禁止直接重提。
+- 详情页新增独立“最新天气”区域，读取 `/commute-plans/{id}/weather`；建议卡改为“上次分析采用的天气”。两者时间不一致时显示“天气已更新，出发建议仍来自上一次分析”；缺失天气不再借用其他日期/地点。
+- 服务端新增的 `matches_current_plan` / `is_current_service_date` / `is_expired` 优先用于适用性判断；旧缓存缺少这些字段时回退到 plan revision 与有效期。计划修改显示“修改前结果”，跨日记录显示“历史建议”。
+- check 详情新增 `phase`、`analysis_mode`、`phase_updated_at`；页面显示真实后台步骤（更新天气、查询路线、分析建议、保存结果等）与后台心跳。后台无响应时说明任务已保存，不再无限显示分析中的旋转图标；结果未知单独提示。
+- 只读恢复、单次重新分析、刷新恢复同一 check、按 `advisory_id` 读取本次建议、计划版本冲突、路线未配置和过期历史均有隔离环境浏览器覆盖。
+- 可重复测试：`ASSISTANT_PYTHON=... pnpm --filter @superapp/web test:e2e`（独立 SQLite、固定时钟、3300/8300 端口、合成账号，详见 `tests/e2e/README.md`）。最近一次 **90/90 通过、0 pageerror**。
+- 边界未变：共享 8010 后端本轮未启动、未连接；真实 Nexus、真实地图 Provider、Bark 送达、APNs/Web Push、HTTPS/Safari 实机仍未验证。测试中的 mock 天气/路线不是真实路况或预报。
