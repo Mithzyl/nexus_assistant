@@ -16,6 +16,8 @@ from `user_asks`, so an internal run cannot leak into it.
 
 from __future__ import annotations
 
+import logging
+
 import asyncio
 import json
 from collections.abc import Callable
@@ -54,6 +56,8 @@ ALLOWED_ROLES = {"controller", "planner", "researcher", "reviewer", "verifier"}
 _background_tasks: set[asyncio.Task] = set()
 _workflow_tasks: dict[str, asyncio.Task] = {}
 
+
+logger = logging.getLogger(__name__)
 
 def _track(task: asyncio.Task, local_run_id: str) -> None:
     _background_tasks.add(task)
@@ -688,6 +692,7 @@ async def _consume_workflow(
     except asyncio.CancelledError:
         raise
     except Exception:  # noqa: BLE001 - a background observer must not crash the app
+        logger.exception("workflow observer failed for %s", local_run_id)
         async with session_factory() as db:
             row = await db.get(NexusRun, local_run_id)
             if row is not None:
@@ -719,6 +724,44 @@ async def _record_workflow_started(
         elif row.status == "pending":
             row.status = "running"
         await db.commit()
+
+
+def _sequence_of_event(event_id: str | None) -> int | None:
+    """Return the integer SSE sequence, or None when the id is absent/opaque.
+
+    The event id is the resume cursor; a malformed id must not stop the stream
+    from being consumed, it only means this frame carries no sequence number.
+    """
+
+    if not event_id:
+        return None
+    try:
+        return int(str(event_id).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _event_error_code(payload: dict[str, Any]) -> str | None:
+    """Best-effort public error code from a terminal event payload.
+
+    Upstream nests the code differently across builds; this only ever reads a
+    bounded string and never re-raises while storing an outcome.
+    """
+
+    candidates: list[Any] = [payload.get("error_code")]
+    error = payload.get("error")
+    if isinstance(error, dict):
+        candidates.append(error.get("code"))
+    public = payload.get("public_payload")
+    if isinstance(public, dict):
+        candidates.append(public.get("error_code"))
+        inner = public.get("error")
+        if isinstance(inner, dict):
+            candidates.append(inner.get("code"))
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()[:64]
+    return None
 
 
 async def _persist_result(

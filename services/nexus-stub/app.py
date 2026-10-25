@@ -21,7 +21,10 @@ from pydantic import BaseModel, ConfigDict, Field
 APP_ID = os.environ.get("STUB_APP_ID", "personal_assistant")
 APP_TOKEN = os.environ.get("STUB_APP_TOKEN", "stub-application-token-32-characters")
 STREAM_DELAY = float(os.environ.get("STUB_STREAM_DELAY_MS", "70")) / 1000
-FINAL_TEXT = "已记住：昨天下午理发，35 元。"
+# Test fixture: the default text answers a chat prompt. Acceptance runs that need a
+# structured commute result pass JSON through STUB_FINAL_TEXT instead; it is still a
+# stub, never a model.
+FINAL_TEXT = os.environ.get("STUB_FINAL_TEXT", "已记住：昨天下午理发，35 元。")
 
 app = FastAPI(title="NexusPilot current App API stub", version="0.2.0")
 RUNS: dict[str, dict[str, Any]] = {}
