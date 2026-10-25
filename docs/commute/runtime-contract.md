@@ -100,6 +100,13 @@ Worker   (独立进程) ─┘  执行检查、保存快照/建议、Bark 出站
   `last_progress_at` 是任务进度。进程在线不等于任务在推进，反之亦然。
 - 只有 API 进程在运行、scheduler/worker 都没启动时，接口仍返回 200 和
   `server_time`，但两个组件是 `not_seen`，排队任务保持 `queued` 且不会伪造结果。
+- `worker.state` 只是按心跳时间判断的近期状态：`online`＝最近一次报到在阈值内，
+  `stale`＝超过阈值，`not_seen`＝当前库里没有该组件的心跳行（从未启动，或三个
+  程序连了另一份数据库）。`online` 不保证进程此刻仍活着。
+- 一次性 `worker --once` 结束后，心跳会在阈值（默认 60s）内继续显得新鲜；
+  客户端不得据此写成“执行程序持续运行”。超过阈值后才是 `stale`。
+- `latest_check` 是本账号最近创建的一条检查，不等于用户当前打开的 check；
+  当前任务的进度看该 `check_id` 的 `GET /api/v1/checks/{id}`。
 - `stale` 阈值由 `ASSISTANT_COMMUTE_HEARTBEAT_STALE_SECONDS`（默认 60s）明确给出。
 - 心跳由独立任务按 `ASSISTANT_COMMUTE_HEARTBEAT_INTERVAL_SECONDS`（默认 15s）更新，
   不等待当前长任务结束；worker 心跳同时按当前租约续期。
