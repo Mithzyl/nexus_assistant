@@ -21,6 +21,10 @@ __pycache__/
 # Valuable scripts were promoted to tests/e2e/; .tmp is not versioned.
 .tmp/
 
+# Repeatable local development environment: database, backups, logs and the
+# generated config live here and are never committed.
+services/assistant-api/data/
+
 # iOS (XcodeGen project, generated artifacts)
 ios/LifeAssistant/build/
 ios/build/
