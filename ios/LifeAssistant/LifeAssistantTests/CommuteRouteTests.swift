@@ -26,6 +26,7 @@ final class RecordingCommuteRepository: CommuteRepository {
     }
     func check(id: String) async throws -> CommuteCheck { throw latestError }
     func latestAdvisory(planId: String) async throws -> CommuteAdvisory { throw latestError }
+    func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather { throw latestError }
     func advisory(id: String) async throws -> CommuteAdvisory { throw latestError }
     func registerDevice(installationId: String, token: String, permission: String) async throws { throw latestError }
     func unregisterDevice(installationId: String) async throws { throw latestError }

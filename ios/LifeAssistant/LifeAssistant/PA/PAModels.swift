@@ -57,6 +57,26 @@ struct AskRead: Codable, Identifiable {
     }
 }
 
+enum AskChatClassification: String, Codable, Equatable {
+    case chat
+    case notChat = "not_chat"
+    case unknown
+}
+
+struct AskVerifyItem: Codable, Equatable {
+    let localRunId: String
+    let classification: AskChatClassification
+
+    enum CodingKeys: String, CodingKey {
+        case localRunId = "local_run_id"
+        case classification
+    }
+}
+
+struct AskVerifyResponse: Codable, Equatable {
+    let results: [AskVerifyItem]
+}
+
 struct PALoginResponse: Codable {
     let token: String
     let expiresAt: Date
@@ -181,6 +201,9 @@ struct AskItem: Identifiable, Codable, Equatable {
     var updatedAt: Date
     var errorMessage: String?
     var pollingPaused: Bool
+    /// 服务器核对结果；nil 表示尚未核对（旧缓存或核对失败）。
+    var chatClassification: AskChatClassification?
+    var verifiedAt: Date?
 
     init(question: String, idempotencyKey: String = UUID().uuidString) {
         self.id = UUID().uuidString

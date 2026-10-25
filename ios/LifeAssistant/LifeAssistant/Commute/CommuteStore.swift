@@ -22,6 +22,12 @@ final class CommuteStore: ObservableObject {
     /// 从通知/历史区按 id 打开的单条建议；不会替换当前适用建议。
     @Published private(set) var openedAdvisory: CommuteAdvisory?
     @Published private(set) var checkStatus: CheckStatus?
+    /// 后端返回的真实阶段；没有该字段时为 nil，只显示状态文字。
+    @Published private(set) var checkPhase: CheckPhase?
+    /// 独立天气接口的最新快照；与某条建议采用的天气分开保存。
+    @Published private(set) var latestWeather: PlanWeather?
+    @Published private(set) var weatherLoadedAt: Date?
+    @Published private(set) var weatherNotice: String?
     @Published private(set) var syncState: CommuteSyncState = .localDraft
     @Published private(set) var isRefreshing = false
     @Published private(set) var notificationPermission: NotificationPermission = .unknown
@@ -70,6 +76,10 @@ final class CommuteStore: ObservableObject {
     /// 当前适用的判断：计划版本一致、未过期、服务日不是过去。
     static func isApplicable(_ advisory: CommuteAdvisory, plan: CommutePlan,
                              now: Date = Date()) -> Bool {
+        // 服务器读取时计算的适用性优先；旧数据没有这些字段时才用本地兜底。
+        if let matches = advisory.matchesCurrentPlan, !matches { return false }
+        if let expired = advisory.isExpiredFlag, expired { return false }
+        if let current = advisory.isCurrentServiceDate, !current { return false }
         guard advisory.planRevision == plan.revision else { return false }
         guard advisory.expiresAt > now else { return false }
         let timezone = TimeZone(identifier: plan.timezone) ?? .current
@@ -87,15 +97,24 @@ final class CommuteStore: ObservableObject {
 
     /// 分析请求的真实状态；没有具体阶段时不编造百分比或阶段。
     var processingStateText: String? {
+        if let pending = pendingSubmission, pending.uncertain {
+            return "上次提交结果未知（\(CommuteFormat.dayTime(pending.createdAt))），可核对上次提交"
+        }
+        // 后端给了真实阶段就用阶段文字，不退回笼统的“等待处理”。
+        if let phase = checkPhase, checkStatus == .queued || checkStatus == .running {
+            return phase.title
+        }
         if let pending = pendingSubmission {
-            let submitted = CommuteFormat.dayTime(pending.createdAt)
-            return pending.uncertain
-                ? "上次提交结果未知（\(submitted)），可核对上次提交"
-                : "分析请求已提交（\(submitted)），等待服务器处理"
+            return "分析请求已提交（\(CommuteFormat.dayTime(pending.createdAt))），等待服务器处理"
         }
         switch checkStatus {
-        case .queued: return "已排队，等待服务器开始"
-        case .running: return "服务器正在处理"
+        case .queued:
+            // 有真实阶段时用它；没有时只说明已提交，不模拟“正在分析”。
+            return checkPhase?.title ?? "已提交，等待处理"
+        case .running:
+            return checkPhase?.title ?? "正在处理"
+        case .unknown:
+            return "结果未知，继续核对原任务"
         case .failed: return "上次分析失败"
         case .cancelled: return "上次分析已取消"
         case .succeeded, .degraded, .none: return nil
@@ -137,6 +156,10 @@ final class CommuteStore: ObservableObject {
         routeTask?.cancel()
         routeTask = nil
         pendingSubmission = nil
+        checkPhase = nil
+        latestWeather = nil
+        weatherLoadedAt = nil
+        weatherNotice = nil
         lastLoadAt = nil
         lastSnapshotDate = nil
         syncState = .localDraft
@@ -178,6 +201,10 @@ final class CommuteStore: ObservableObject {
             return
         }
         await reloadFromServer()
+        // 重开 App 时继续查询原来的检查，不创建新的分析。
+        if pendingSubmission?.checkId != nil, pendingSubmission?.uncertain == false {
+            await resumeProgressIfNeeded()
+        }
     }
 
     func reloadFromServer() async {
@@ -197,6 +224,8 @@ final class CommuteStore: ObservableObject {
                 }
                 syncState = .synced(Date())
                 lastLoadAt = Date()
+                // 独立天气失败不影响建议读取；两者更新时间可以不同。
+                await loadLatestWeather(planId: plan.id, generation: requestGeneration)
                 saveSnapshot()
             } else {
                 advisory = nil
@@ -204,6 +233,30 @@ final class CommuteStore: ObservableObject {
             }
         } catch {
             handle(error, fallbackDate: lastSnapshotDate)
+        }
+    }
+
+    /// 只读刷新独立天气；不创建 check，也不改动建议。
+    func refreshWeather() async {
+        guard isSignedIn, let plan else { return }
+        let requestGeneration = generation
+        await loadLatestWeather(planId: plan.id, generation: requestGeneration)
+    }
+
+    private func loadLatestWeather(planId: String, generation: Int) async {
+        do {
+            let weather = try await repository.latestWeather(planId: planId, localServiceDate: nil)
+            guard generation == self.generation else { return }
+            latestWeather = weather
+            weatherLoadedAt = Date()
+            weatherNotice = nil
+        } catch let error as CommuteAPIError where error.code == "NO_WEATHER" {
+            guard generation == self.generation else { return }
+            latestWeather = nil
+            weatherNotice = "服务器还没有独立天气记录。"
+        } catch {
+            guard generation == self.generation else { return }
+            weatherNotice = "天气暂时读取失败，保留已有天气。"
         }
     }
 
@@ -374,6 +427,12 @@ final class CommuteStore: ObservableObject {
             guard generation == self.generation else { return }
             revisionConflictRetries = 0
             checkStatus = check.status
+            checkPhase = check.phase
+            if var pending = pendingSubmission {
+                pending.checkId = check.id
+                pendingSubmission = pending
+                localStore.savePending(pending)
+            }
             if let advisoryId = check.advisoryId, let latest = try? await repository.advisory(id: advisoryId) {
                 advisory = latest
                 syncState = .synced(Date())
@@ -381,7 +440,13 @@ final class CommuteStore: ObservableObject {
                 saveSnapshot()
                 return
             }
-            await poll(planId: planId, first: check)
+            // 只把轮询放进可取消的 pollTask；请求本身不被后台切换取消。
+            let task = Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.poll(planId: planId, first: check)
+            }
+            pollTask = task
+            await task.value
         } catch {
             guard generation == self.generation else { return }
             handleSubmissionFailure(error, planId: planId, generation: generation)
@@ -477,24 +542,33 @@ final class CommuteStore: ObservableObject {
         await reloadFromServer()
     }
 
-    /// 有限轮询 + 退避；页面离开时调用 stopPolling()，服务器任务继续执行。
+    /// 有限轮询 + 退避；页面离开/进后台时取消本机观察，服务器任务继续执行。
     private func poll(planId: String, first: CommuteCheck) async {
-        let delays: [UInt64] = [500, 900, 1_400, 2_000, 3_000, 4_000]
+        let delays: [UInt64] = [1_000, 2_000, 3_000, 5_000, 8_000]
         var current = first
+        var transientFailures = 0
         for delay in delays {
             if current.status.isTerminal { break }
+            let factor = UInt64(1 << min(transientFailures, 2))
             do {
-                try await Task.sleep(nanoseconds: delay * 1_000_000)
+                try await Task.sleep(nanoseconds: delay * factor * 1_000_000)
             } catch {
                 return
             }
             if Task.isCancelled { return }
             do {
                 current = try await repository.check(id: current.id)
+                transientFailures = 0
                 checkStatus = current.status
+                checkPhase = current.phase
             } catch {
-                handle(error, fallbackDate: lastSnapshotDate)
-                return
+                guard !Task.isCancelled else { return }
+                transientFailures += 1
+                if transientFailures >= 2 {
+                    errorNotice = "暂时无法查询处理状态；任务已保留，稍后可刷新核对。"
+                    return
+                }
+                continue
             }
         }
 
@@ -543,6 +617,38 @@ final class CommuteStore: ObservableObject {
         pollTask?.cancel()
         pollTask = nil
     }
+
+    /// 进后台暂停本机轮询；服务器任务不受影响。
+    func pausePolling() {
+        stopPolling()
+    }
+
+    /// 回前台继续查询原来的检查，不创建新的分析。
+    func resumeProgressIfNeeded() async {
+        guard let plan else { return }
+        guard let checkId = pendingSubmission?.checkId,
+              pendingSubmission?.uncertain == false else { return }
+        if let status = checkStatus, status.isTerminal { return }
+        let requestGeneration = generation
+        do {
+            let check = try await repository.check(id: checkId)
+            guard requestGeneration == generation else { return }
+            checkStatus = check.status
+            checkPhase = check.phase
+            if check.status.isTerminal {
+                await adopt(advisoryId: check.advisoryId, planId: plan.id)
+            } else {
+                let task = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.poll(planId: plan.id, first: check)
+                }
+                pollTask = task
+            }
+        } catch {
+            errorNotice = "暂时无法查询处理状态；任务已保留，稍后可刷新核对。"
+        }
+    }
+
 
     // MARK: - 通知点击 / 动作
 

@@ -21,6 +21,8 @@ final class AskStore: ObservableObject {
     private var cancellingTasks: [String: Task<Void, Never>] = [:]
     private var currentAccount: String?
     private var historyLoaded = false
+    private var verificationAccount: String?
+    @Published private(set) var verifyingHistory = false
 
     init(repository: AskRepository = AskRepositoryFactory.make(),
          localStore: AskLocalStore = AskLocalStore(),
@@ -32,12 +34,17 @@ final class AskStore: ObservableObject {
         self.accountProvider = accountProvider ?? { PASessionStore.shared.accountId }
     }
 
-    var activeCount: Int { items.filter(\.isActive).count }
+    var activeCount: Int {
+        items.filter { $0.isActive && $0.chatClassification != .notChat && $0.chatClassification != .unknown }.count
+    }
 
     /// 聊天时间线：最早在上、最新在下。
     /// `items` 内部仍按最新在前保存，便于插入新提问与按 id 定位；
     /// 视图只能读这份时间线，避免两套存储顺序互相错位。
-    var timeline: [AskItem] { Array(items.reversed()) }
+    /// 服务器确认不是聊天的本地缓存（如旧内部任务）不进入聊天列表，也不提供重新提问。
+    var timeline: [AskItem] {
+        items.reversed().filter { $0.chatClassification != .notChat }
+    }
 
     // MARK: - 账号
 
@@ -54,8 +61,10 @@ final class AskStore: ObservableObject {
                 copy.errorMessage = "提交结果暂不确定，可以重试同一次请求。"
                 return copy
             }
+            items = Self.deduplicated(items)
             currentAccount = account
             historyLoaded = false
+            verificationAccount = nil
             persist()
         }
         needsLogin = account == nil
@@ -69,6 +78,8 @@ final class AskStore: ObservableObject {
         currentAccount = nil
         items = []
         historyLoaded = false
+        verificationAccount = nil
+        verifyingHistory = false
         needsLogin = true
         composerError = nil
         lastError = nil
@@ -111,6 +122,8 @@ final class AskStore: ObservableObject {
                 current.serverId = response.localRunId
                 current.status = response.status
                 current.phase = response.status == .pending ? .queued : .running
+                current.chatClassification = .chat
+                current.verifiedAt = Date()
                 current.errorMessage = nil
                 current.updatedAt = Date()
             }
@@ -158,6 +171,8 @@ final class AskStore: ObservableObject {
                 current.serverId = response.localRunId
                 current.status = response.status
                 current.phase = response.status == .pending ? .queued : .running
+                current.chatClassification = .chat
+                current.verifiedAt = Date()
                 current.errorMessage = nil
                 current.updatedAt = Date()
             }
@@ -358,13 +373,97 @@ final class AskStore: ObservableObject {
             }
             items.sort { $0.createdAt > $1.createdAt }
             persist()
-            for item in items where item.isActive && item.serverId != nil {
+            for item in items where item.isActive && item.serverId != nil
+                && item.chatClassification != .notChat && item.chatClassification != .unknown {
                 startPolling(itemID: item.id)
             }
         } catch let error as PAError where error.kind == .unauthenticated {
             needsLogin = true
         } catch {
             // 历史失败不影响本地已有记录。
+        }
+    }
+
+    /// 旧缓存可能为同一服务器编号留下多份本地副本；合并时保留较新一条并继承已核对分类。
+    private static func deduplicated(_ items: [AskItem]) -> [AskItem] {
+        var indexByServer: [String: Int] = [:]
+        var result: [AskItem] = []
+        for item in items {
+            guard let serverId = item.serverId, !serverId.isEmpty else {
+                result.append(item)
+                continue
+            }
+            if let existing = indexByServer[serverId] {
+                let keepNewer = item.updatedAt >= result[existing].updatedAt
+                let newer = keepNewer ? item : result[existing]
+                let older = keepNewer ? result[existing] : item
+                var merged = newer
+                // 分类是服务器核对结果，合并副本时不能随旧副本一起丢掉。
+                if merged.chatClassification == nil {
+                    merged.chatClassification = older.chatClassification
+                }
+                result[existing] = merged
+                continue
+            }
+            indexByServer[serverId] = result.count
+            result.append(item)
+        }
+        return result
+    }
+
+    // MARK: - 旧缓存核对
+
+    /// 核对本机缓存中的服务器运行编号；每账号最多自动执行一次。
+    /// 失败保留原内容，不把"核对不了"当成"不是聊天"。
+    func verifyCachedRuns(force: Bool = false) async {
+        guard !verifyingHistory, let account = accountProvider() else { return }
+        if !force, verificationAccount == account { return }
+        let ids = Array(Set(items.compactMap(\.serverId).filter { !$0.isEmpty }))
+        guard !ids.isEmpty else {
+            verificationAccount = account
+            return
+        }
+        verifyingHistory = true
+        defer { verifyingHistory = false }
+
+        for start in stride(from: 0, to: ids.count, by: 50) {
+            let chunk = Array(ids[start..<min(start + 50, ids.count)])
+            do {
+                let results = try await repository.verifyAsks(localRunIDs: chunk)
+                guard accountProvider() == account else { return }
+                applyVerification(results)
+            } catch let error as PAError {
+                guard accountProvider() == account else { return }
+                if error.kind == .unauthenticated { needsLogin = true }
+                lastError = "暂时无法核对历史记录，已保留本机内容，稍后可再试。"
+                return
+            } catch {
+                guard accountProvider() == account else { return }
+                lastError = "暂时无法核对历史记录，已保留本机内容，稍后可再试。"
+                return
+            }
+        }
+        guard accountProvider() == account else { return }
+        verificationAccount = account
+        persist()
+    }
+
+    private func applyVerification(_ results: [AskVerifyItem]) {
+        let now = Date()
+        for result in results {
+            // 同一服务器编号可能因旧缓存重复存在：所有副本都必须应用同一分类，
+            // 不能只改第一条，否则会漏出一条未遮罩的正文。
+            let indices = items.indices.filter { items[$0].serverId == result.localRunId }
+            for index in indices {
+                var item = items[index]
+                item.chatClassification = result.classification
+                item.verifiedAt = now
+                items[index] = item
+                if result.classification != .chat {
+                    pollTasks[item.id]?.cancel()
+                    pollTasks[item.id] = nil
+                }
+            }
         }
     }
 
@@ -379,6 +478,11 @@ final class AskStore: ObservableObject {
         if current.phase == .succeeded, read.status != .succeeded { return }
 
         var item = current
+        // 能通过聊天详情/列表读到的记录，服务器已确认属于聊天。
+        if item.chatClassification == nil || item.chatClassification == .unknown {
+            item.chatClassification = .chat
+            item.verifiedAt = Date()
+        }
         item.status = read.status
         item.errorMessage = nil
         item.updatedAt = Date()
@@ -449,6 +553,9 @@ extension AskItem {
                   createdAt: read.createdAt,
                   updatedAt: Date(),
                   errorMessage: read.status == .unknown ? "处理状态暂不确定，可以稍后刷新核对。" : nil)
+        // 聊天列表接口只会返回提问关联，因此列表里的记录可确认是聊天。
+        self.chatClassification = .chat
+        self.verifiedAt = Date()
     }
 
     init(id: String, question: String, idempotencyKey: String, serverId: String?, status: AskStatus?,

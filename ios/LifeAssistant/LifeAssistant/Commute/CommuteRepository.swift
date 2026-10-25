@@ -14,6 +14,7 @@ protocol CommuteRepository {
                       request: CheckCreateRequest?) async throws -> CommuteCheck
     func check(id: String) async throws -> CommuteCheck
     func latestAdvisory(planId: String) async throws -> CommuteAdvisory
+    func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather
     func advisory(id: String) async throws -> CommuteAdvisory
 
     func registerDevice(installationId: String, token: String, permission: String) async throws
@@ -52,6 +53,9 @@ struct RemoteCommuteRepository: CommuteRepository {
         } catch let error as CommuteAPIError where error.status == 404 {
             throw CommuteAPIError.missingAdvisory
         }
+    }
+    func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather {
+        try await client.latestWeather(planId: planId, localServiceDate: localServiceDate)
     }
     func advisory(id: String) async throws -> CommuteAdvisory { try await client.advisory(id: id) }
 
@@ -294,6 +298,32 @@ actor MockCommuteRepository: CommuteRepository {
             throw CommuteAPIError.missingAdvisory
         }
         return advisory
+    }
+
+    func latestWeather(planId: String, localServiceDate: String?) async throws -> PlanWeather {
+        guard let plan = plans.first(where: { $0.id == planId }),
+              let advisory = advisories.values.first(where: { $0.planId == plan.id }) else {
+            throw CommuteAPIError.missingWeather
+        }
+        let weatherSource = advisory.sources.first { $0.kind == "weather" }
+        let stale = advisory.expiresAt <= Date()
+        return PlanWeather(
+            planId: plan.id, planRevision: advisory.planRevision,
+            currentPlanRevision: plan.revision,
+            localServiceDate: localServiceDate ?? advisory.localServiceDate,
+            checkId: "demo-check",
+            provider: weatherSource?.provider ?? "weatherkit",
+            fetchedAt: weatherSource?.fetchedAt ?? advisory.generatedAt,
+            validFrom: advisory.weather?.forecastStart,
+            validTo: advisory.weather?.forecastEnd,
+            quality: advisory.quality,
+            freshness: stale ? "stale" : "fresh",
+            coverage: advisory.weather?.coverage ?? "full",
+            staleAfterSeconds: 1800,
+            isStale: stale,
+            matchesCurrentPlan: advisory.planRevision == plan.revision,
+            summary: advisory.weather
+        )
     }
 
     func advisory(id: String) async throws -> CommuteAdvisory {

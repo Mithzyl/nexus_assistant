@@ -114,6 +114,17 @@ struct PAAPIClient {
                               expect: AskCreateResponse.self)
     }
 
+    /// 批量核对本机旧缓存的服务器运行编号；只返回分类，不返回正文或内部指令。
+    func verifyAsks(localRunIDs: [String]) async throws -> AskVerifyResponse {
+        struct Body: Encodable {
+            let localRunIds: [String]
+            enum CodingKeys: String, CodingKey { case localRunIds = "local_run_ids" }
+        }
+        return try await send("/api/v1/asks/verify", method: "POST",
+                              body: Body(localRunIds: localRunIDs),
+                              expect: AskVerifyResponse.self)
+    }
+
     func getAsk(id: String) async throws -> AskRead {
         try await send("/api/v1/asks/\(id)", expect: AskRead.self)
     }

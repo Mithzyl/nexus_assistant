@@ -118,7 +118,7 @@ final class AppState: ObservableObject {
         case "source": return .source("order")
         case "added": return .added("demo-lamp")
         case "commute", "commuteSettings": return .commuteSettings
-        case "commuteAdvisory": return .commuteAdvisory("demo-advisory")
+        case "commuteAdvisory": return .commuteAdvisory("demo-advisory-3")
         case "commuteNotifications": return .commuteNotifications
         case "dataSources": return .dataSources
         default: return nil
