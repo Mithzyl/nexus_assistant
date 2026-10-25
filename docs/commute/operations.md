@@ -129,6 +129,18 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8010/api/v1/commute/runt
 .venv/bin/python -m scripts.verify_background_migration --database assistant-dev.db
 ```
 
+### 4.1 本机开发环境（可重复启动，非共享）
+
+`scripts/dev_env.py` 管理一套持久开发环境：数据库在 `services/assistant-api/data/`
+（Git 忽略），API 默认 8093，Nexus 用本地 stub 8191，天气/路线 mock，
+自动天气检查开启、自动模型分析关闭、不发送通知。
+
+- `init` 只建库或增量升级；`start` 只检查结构与端口，不建库、不清库、不重置账号。
+- `stop` 只停脚本记录的 PID，并核对命令行；不会按名字杀其他 Python 进程。
+- 备份用 SQLite 在线备份 API；`restore-check` 在临时副本上核对计数与样本 ID。
+- 共同 8010 不由该脚本启动；它也不会安装开机自启。
+- 详见服务 README 与 `docs/backend-integration/16-后端运行与客户端交付-20261025.md` 第 10 节。
+
 ## 5. 配置检查
 
 生产启动时 `commute_configuration_errors` 会拒绝 `ASSISTANT_COMMUTE_PROVIDER_MODE`
