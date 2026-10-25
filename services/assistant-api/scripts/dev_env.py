@@ -302,6 +302,34 @@ def table_counts(path: Path) -> dict[str, int]:
         connection.close()
 
 
+def pending_work(database: Path) -> dict[str, int]:
+    """Count work a starting worker would pick up; the caller decides what to do."""
+
+    empty = {"queued_checks": 0, "running_checks": 0, "pending_notifications": 0}
+    if not database.is_file():
+        return empty
+    connection = _connect_readonly(database)
+    try:
+        queued = connection.execute(
+            "SELECT COUNT(*) FROM commute_checks WHERE status='queued'"
+        ).fetchone()[0]
+        running = connection.execute(
+            "SELECT COUNT(*) FROM commute_checks WHERE status='running'"
+        ).fetchone()[0]
+        notifications = connection.execute(
+            "SELECT COUNT(*) FROM notification_outbox WHERE status IN ('pending','sending')"
+        ).fetchone()[0]
+    except sqlite3.Error:
+        return empty
+    finally:
+        connection.close()
+    return {
+        "queued_checks": queued,
+        "running_checks": running,
+        "pending_notifications": notifications,
+    }
+
+
 def sample_ids(path: Path) -> dict[str, list[str]]:
     """Return stable identifiers so a restore can prove it is the same data."""
 
@@ -583,6 +611,13 @@ def preflight(
             )
     if {"scheduler", "worker"} & set(components):
         errors.extend(untracked_warnings(config, database, running))
+    if "worker" in components:
+        work = pending_work(database)
+        if work["running_checks"]:
+            errors.append(
+                f"有 {work['running_checks']} 条检查仍标记为 running；先确认没有其他执行者，"
+                "或等待租约过期后再启动 worker"
+            )
     return errors
 
 
@@ -711,6 +746,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             print(f"port {port} ({name}): {state}")
     running = running_processes()
     print(f"running components: {', '.join(sorted(running)) or '(none)'}")
+    work = pending_work(database)
+    print(
+        "pending work: "
+        f"queued_checks={work['queued_checks']}, "
+        f"running_checks={work['running_checks']}, "
+        f"pending_notifications={work['pending_notifications']}"
+    )
     for warning in untracked_warnings(values, database, running):
         print(f"  warning: {warning}")
     if blocking:
@@ -777,6 +819,18 @@ def cmd_start(args: argparse.Namespace) -> int:
         if not ready:
             failures.append(name)
             break
+
+    work = pending_work(database)
+    if "worker" in components and (
+        work["queued_checks"] or work["pending_notifications"]
+    ):
+        print(
+            "note: worker will pick up "
+            f"{work['queued_checks']} queued check(s) and "
+            f"{work['pending_notifications']} pending notification(s); "
+            "automatic model analysis is off, but an existing manual check may still call "
+            "the configured Nexus (here: simulated stub)"
+        )
 
     heartbeats: dict[str, str] = {}
     if not failures and {"scheduler", "worker"} <= set(components):
@@ -965,6 +1019,13 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"integrity: {report['integrity']}")
     counts = table_counts(database)
     print("counts: " + ", ".join(f"{key}={value}" for key, value in counts.items()))
+    work = pending_work(database)
+    print(
+        "pending work: "
+        f"queued_checks={work['queued_checks']}, "
+        f"running_checks={work['running_checks']}, "
+        f"pending_notifications={work['pending_notifications']}"
+    )
     connection = _connect_readonly(database)
     try:
         rows = connection.execute(

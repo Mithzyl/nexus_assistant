@@ -267,3 +267,27 @@ def test_untracked_port_is_reported_but_never_stopped(monkeypatch, tmp_path):
         dev_env.config_values(), tmp_path / "missing.db", {}
     )
     assert any("没有本脚本的 PID 记录" in warning for warning in warnings)
+
+def test_pending_work_reports_queue_and_notifications(tmp_path):
+    import sqlite3
+
+    database = tmp_path / "empty.db"
+    connection = sqlite3.connect(database)
+    connection.execute(
+        "CREATE TABLE commute_checks (status TEXT)"
+    )
+    connection.execute(
+        "CREATE TABLE notification_outbox (status TEXT)"
+    )
+    connection.execute("INSERT INTO commute_checks VALUES ('queued')")
+    connection.execute("INSERT INTO commute_checks VALUES ('queued')")
+    connection.execute("INSERT INTO notification_outbox VALUES ('pending')")
+    connection.commit()
+    connection.close()
+
+    work = dev_env.pending_work(database)
+    assert work == {
+        "queued_checks": 2,
+        "running_checks": 0,
+        "pending_notifications": 1,
+    }
