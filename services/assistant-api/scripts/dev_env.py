@@ -57,6 +57,7 @@ DEV_STUB_PORT = 8191
 DEV_NEXUS_TOKEN = "dev-local-nexus-token-32-characters"
 
 COMPONENTS = ("stub", "api", "scheduler", "worker")
+STOP_MARKER = "last-stop.json"
 STOP_ORDER = ("worker", "scheduler", "api", "stub")
 
 REQUIRED_TABLES = (
@@ -580,6 +581,8 @@ def preflight(
                 f"端口 {port}（{name}）已被占用；本脚本不会停止其他程序，"
                 "请先确认占用者，或用 init --api-port/--stub-port 换端口"
             )
+    if {"scheduler", "worker"} & set(components):
+        errors.extend(untracked_warnings(config, database, running))
     return errors
 
 
@@ -708,6 +711,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             print(f"port {port} ({name}): {state}")
     running = running_processes()
     print(f"running components: {', '.join(sorted(running)) or '(none)'}")
+    for warning in untracked_warnings(values, database, running):
+        print(f"  warning: {warning}")
     if blocking:
         print("database is not ready; run: .venv/bin/python scripts/dev_env.py init")
         return 1
@@ -825,6 +830,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
         pid_file(name).unlink(missing_ok=True)
         stopped.append(f"{name}({outcome})")
     if stopped:
+        record_stop_time()
         print("stopped: " + ", ".join(stopped))
     if mismatched:
         print("refused to stop (pid reused by another program):")
@@ -834,6 +840,90 @@ def cmd_stop(args: argparse.Namespace) -> int:
     if not stopped:
         print("nothing to stop (no pid files)")
     return 0
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+
+
+def latest_heartbeats(database: Path) -> dict[str, datetime]:
+    if not database.is_file():
+        return {}
+    connection = _connect_readonly(database)
+    try:
+        rows = connection.execute(
+            "SELECT component, last_seen_at FROM service_heartbeats"
+        ).fetchall()
+    except sqlite3.Error:
+        rows = []
+    finally:
+        connection.close()
+    parsed = {}
+    for component, seen in rows:
+        value = _parse_timestamp(seen)
+        if value is not None:
+            parsed[component] = value
+    return parsed
+
+
+def last_stop_time() -> datetime | None:
+    path = RUN_DIR / STOP_MARKER
+    if not path.is_file():
+        return None
+    try:
+        return _parse_timestamp(json.loads(path.read_text(encoding="utf-8")).get("stopped_at"))
+    except (ValueError, OSError):
+        return None
+
+
+def record_stop_time() -> None:
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    (RUN_DIR / STOP_MARKER).write_text(
+        json.dumps({"stopped_at": datetime.now(UTC).isoformat()}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def untracked_warnings(
+    config: dict[str, str], database: Path, running: dict[str, dict]
+) -> list[str]:
+    """Warn about processes or heartbeats this script does not track (never kills)."""
+
+    warnings: list[str] = []
+    ports = {
+        "api": port_setting(config, "PA_DEV_API_PORT", DEV_API_PORT),
+        "stub": port_setting(config, "PA_DEV_STUB_PORT", DEV_STUB_PORT),
+    }
+    for name, port in ports.items():
+        if port_in_use(port) and name not in running:
+            warnings.append(
+                f"端口 {port}（{name}）被占用，但没有本脚本的 PID 记录；"
+                "可能是别的程序或上次异常退出，请先人工确认（脚本不会停止它）"
+            )
+    stale_seconds = int(config.get("ASSISTANT_COMMUTE_HEARTBEAT_STALE_SECONDS", "60"))
+    stopped_at = last_stop_time()
+    now = datetime.now(UTC)
+    heartbeats = latest_heartbeats(database)
+    for component in ("scheduler", "worker"):
+        if component in running:
+            continue
+        seen = heartbeats.get(component)
+        if seen is None:
+            continue
+        fresh = (now - seen).total_seconds() <= stale_seconds
+        after_stop = stopped_at is None or seen > stopped_at
+        if fresh and after_stop:
+            warnings.append(
+                f"{component} 心跳仍新鲜（{seen.isoformat()}）但没有本脚本的 PID 记录；"
+                "可能有未跟踪进程，请先人工确认，避免重复领取任务"
+            )
+    return warnings
 
 
 def heartbeat_state(value: str | None, stale_seconds: int) -> str:
@@ -888,6 +978,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"heartbeat {component}: {seen} ({heartbeat_state(seen, stale_seconds)})")
     if not rows:
         print("heartbeat: none (background processes have not run yet)")
+    for warning in untracked_warnings(config, database, running):
+        print(f"warning: {warning}")
     return 0
 
 

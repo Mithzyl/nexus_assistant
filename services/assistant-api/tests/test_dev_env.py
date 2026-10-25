@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import socket
 from datetime import UTC, datetime, timedelta
 
@@ -223,3 +224,46 @@ async def test_start_reports_the_component_that_fails(tmp_path, monkeypatch, cap
     assert "start failed: worker" in output
     assert "stopped partially started components: worker(already exited)" in output
     assert not (tmp_path / "run" / "worker.json").exists()
+
+@pytest.mark.asyncio
+async def test_fresh_heartbeat_without_pid_file_blocks_start(tmp_path, monkeypatch):
+    from scripts.migrate_sqlite import init
+
+    database = tmp_path / "dev.db"
+    await init(f"sqlite+aiosqlite:///{database}")
+    values = dev_env.config_values(db_path=database)
+    monkeypatch.setattr(dev_env, "RUN_DIR", tmp_path / "run")
+    monkeypatch.setattr(dev_env, "running_processes", lambda: {})
+    monkeypatch.setattr(dev_env, "port_in_use", lambda port: False)
+
+    connection = __import__("sqlite3").connect(database)
+    now = datetime.now(UTC)
+    connection.execute(
+        "INSERT INTO service_heartbeats (component, instance_id, last_seen_at, "
+        "current_check_id, created_at, updated_at) VALUES ('worker','w1',?,NULL,?,?)",
+        (now.isoformat(sep=" "), now.isoformat(sep=" "), now.isoformat(sep=" ")),
+    )
+    connection.commit()
+    connection.close()
+
+    errors = dev_env.preflight(values, ("scheduler", "worker"), db_path=database)
+    assert any("心跳仍新鲜" in error for error in errors), errors
+
+    # A recorded stop newer than the heartbeat means the process is expected gone.
+    (tmp_path / "run").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "run" / dev_env.STOP_MARKER).write_text(
+        json.dumps({"stopped_at": datetime.now(UTC).isoformat()}), encoding="utf-8"
+    )
+    errors_after_stop = dev_env.preflight(
+        values, ("scheduler", "worker"), db_path=database
+    )
+    assert not any("心跳仍新鲜" in error for error in errors_after_stop), errors_after_stop
+
+
+def test_untracked_port_is_reported_but_never_stopped(monkeypatch, tmp_path):
+    monkeypatch.setattr(dev_env, "RUN_DIR", tmp_path / "run")
+    monkeypatch.setattr(dev_env, "port_in_use", lambda port: True)
+    warnings = dev_env.untracked_warnings(
+        dev_env.config_values(), tmp_path / "missing.db", {}
+    )
+    assert any("没有本脚本的 PID 记录" in warning for warning in warnings)
