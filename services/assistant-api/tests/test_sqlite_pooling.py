@@ -81,6 +81,29 @@ async def test_concurrent_check_creation_on_a_file_database_all_succeed(tmp_path
         tool_callback_token="test-tool-callback-token-32-characters",
         allow_schema_create=True,
     )
+    # Pick a timezone where it is currently daytime, so "today 23:00" is in the
+    # future regardless of when the suite runs.
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(UTC)
+    timezone = "Asia/Shanghai"
+    for candidate in (
+        "Pacific/Honolulu",
+        "America/Los_Angeles",
+        "America/New_York",
+        "UTC",
+        "Europe/London",
+        "Asia/Shanghai",
+        "Asia/Tokyo",
+        "Australia/Sydney",
+        "Pacific/Auckland",
+    ):
+        local_hour = now.astimezone(ZoneInfo(candidate)).hour
+        if 6 <= local_hour <= 18:
+            timezone = candidate
+            break
+
     app = create_app(settings)
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
@@ -91,7 +114,9 @@ async def test_concurrent_check_creation_on_a_file_database_all_succeed(tmp_path
                 await client.post(
                     "/api/v1/commute-plans",
                     json=commute_plan_body(
-                        arrival_local_time="23:00", check_local_time="20:00"
+                        timezone=timezone,
+                        arrival_local_time="23:00",
+                        check_local_time="20:00",
                     ),
                     headers=auth(token),
                 )

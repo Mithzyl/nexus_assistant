@@ -104,6 +104,9 @@ class MatterDraft(TimestampMixin, Base):
         UniqueConstraint(
             "user_id", "confirm_key", name="uq_matter_drafts_user_confirm"
         ),
+        UniqueConstraint(
+            "user_id", "origin_key", name="uq_matter_drafts_user_origin"
+        ),
         Index("ix_matter_drafts_user_status", "user_id", "status", "updated_at"),
     )
 
@@ -123,6 +126,8 @@ class MatterDraft(TimestampMixin, Base):
     base_schedule_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ai_run_id: Mapped[str | None] = mapped_column(String(36))
     confirm_key: Mapped[str | None] = mapped_column(String(128))
+    # Idempotency key for a directly created edit draft (no model run).
+    origin_key: Mapped[str | None] = mapped_column(String(128))
     result_json: Mapped[dict | None] = mapped_column(JSON)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

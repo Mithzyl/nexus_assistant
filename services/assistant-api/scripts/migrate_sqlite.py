@@ -51,6 +51,7 @@ COLUMN_MIGRATIONS = (
     ("0008_source_auth", "reminders", "data_source_id", "VARCHAR(36)"),
     ("0008_source_auth", "content_sync_batches", "payload_sha256", "VARCHAR(64)"),
     ("0008_source_auth", "nexus_runs", "context_json", "JSON"),
+    ("0009_edit_drafts", "matter_drafts", "origin_key", "VARCHAR(128)"),
 )
 
 # Indexes on pre-existing tables cannot be added by metadata.create_all, so they
@@ -101,6 +102,12 @@ INDEX_MIGRATIONS = (
         "uq_reminders_user_source_device_external",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_reminders_user_source_device_external "
         "ON reminders (user_id, source, data_source_id, source_external_id)",
+    ),
+    (
+        "0009_edit_drafts",
+        "uq_matter_drafts_user_origin",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_matter_drafts_user_origin "
+        "ON matter_drafts (user_id, origin_key)",
     ),
 )
 

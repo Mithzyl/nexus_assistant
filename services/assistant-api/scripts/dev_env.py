@@ -107,8 +107,9 @@ REQUIRED_COLUMNS = {
         "source_scope_key",
     ),
     "reminders": ("source_scope_key", "data_source_id"),
+    "matter_drafts": ("origin_key",),
 }
-REQUIRED_MIGRATIONS = ("0006_ai_task_purpose", "0007_matters", "0008_source_auth")
+REQUIRED_MIGRATIONS = ("0006_ai_task_purpose", "0007_matters", "0008_source_auth", "0009_edit_drafts")
 
 COMPONENT_MARKERS = {
     "stub": ("uvicorn", "app:app"),

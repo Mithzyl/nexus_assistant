@@ -30,7 +30,12 @@ class EmptyBody(BaseModel):
 
 
 def _intake_response(
-    *, draft: dict | None, replayed: bool, intent: str, response: Response
+    *,
+    draft: dict | None,
+    replayed: bool,
+    intent: str,
+    answer: str | None,
+    response: Response,
 ) -> dict:
     if intent == "question":
         response.status_code = 200
@@ -38,9 +43,16 @@ def _intake_response(
             "draft": None,
             "replayed": replayed,
             "intent": "question",
-            "message": "这句话更像问题或闲聊；请用问助手（POST /asks）回答，不会创建事项。",
+            "message": "这句话更像问题或闲聊，已直接回答，不会创建事项。",
+            "answer": answer,
         }
-    return {"draft": draft, "replayed": replayed, "intent": "matter", "message": None}
+    return {
+        "draft": draft,
+        "replayed": replayed,
+        "intent": "matter",
+        "message": None,
+        "answer": None,
+    }
 
 
 @router.post("/matters/intake", response_model=schemas.IntakeResponse, status_code=201)
@@ -54,7 +66,7 @@ async def intake(
     user: CurrentUser,
     response: Response,
 ) -> dict:
-    draft, replayed, intent = await matters.intake(
+    draft, replayed, intent, answer = await matters.intake(
         db,
         client,
         settings,
@@ -65,7 +77,11 @@ async def intake(
         idempotency_key=payload.idempotency_key,
     )
     return _intake_response(
-        draft=draft, replayed=replayed, intent=intent, response=response
+        draft=draft,
+        replayed=replayed,
+        intent=intent,
+        answer=answer,
+        response=response,
     )
 
 
@@ -85,7 +101,7 @@ async def intake_for_matter(
     user: CurrentUser,
     response: Response,
 ) -> dict:
-    draft, replayed, intent = await matters.intake(
+    draft, replayed, intent, answer = await matters.intake(
         db,
         client,
         settings,
@@ -97,8 +113,37 @@ async def intake_for_matter(
         matter_id=matter_id,
     )
     return _intake_response(
-        draft=draft, replayed=replayed, intent=intent, response=response
+        draft=draft,
+        replayed=replayed,
+        intent=intent,
+        answer=answer,
+        response=response,
     )
+
+
+@router.post(
+    "/matters/{matter_id}/drafts",
+    response_model=schemas.DraftRead,
+    status_code=201,
+)
+async def create_edit_draft(
+    matter_id: str,
+    payload: schemas.MatterEditRequest,
+    db: DatabaseSession,
+    settings: SettingsDependency,
+    runtime: CommuteRuntimeDependency,
+    user: CurrentUser,
+) -> dict:
+    return await matters.create_edit_draft(
+        db, runtime, settings, user, matter_id, payload
+    )
+
+
+@router.get("/matters/{matter_id}/changes", response_model=list[schemas.ChangeRead])
+async def list_changes(
+    matter_id: str, db: DatabaseSession, user: CurrentUser
+) -> list[dict]:
+    return await matters.list_changes(db, user, matter_id)
 
 
 @router.get("/matters/drafts", response_model=list[schemas.DraftRead])

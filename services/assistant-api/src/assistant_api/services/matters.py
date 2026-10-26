@@ -608,7 +608,7 @@ async def intake(
     text: str,
     idempotency_key: str,
     matter_id: str | None = None,
-) -> tuple[dict | None, bool, str]:
+) -> tuple[dict | None, bool, str, str | None]:
     pinned = await _get_matter(db, user, matter_id) if matter_id else None
     if pinned is not None and pinned.status in ("archived", "deleted"):
         raise ConflictError("matter_not_active", "该事项已归档，不能继续补充进展。")
@@ -665,7 +665,7 @@ async def intake(
         )
     )
     if existing is not None:
-        return _serialize_draft(existing), True, "matter"
+        return _serialize_draft(existing), True, "matter", None
 
     if run.status not in run_service.TERMINAL_STATUSES:
         if replayed:
@@ -708,13 +708,13 @@ async def intake(
         ) from None
 
     if parsed.get("intent") == "question":
-        # A question must not silently become an empty matter. The web should
-        # send it to POST /asks; this endpoint returns no draft.
-        return None, False, "question"
+        # One model run answers the question here; no draft and no second run.
+        return None, False, "question", parsed.get("answer")
     if parsed.get("intent") == "unclear":
         raise InvalidRequestError(
             "matter_intent_unclear",
-            "这句话还不足以形成事项，请补充目标、时间或要办的事。",
+            parsed.get("clarify")
+            or "这句话还不足以形成事项，请补充目标、时间或要办的事。",
         )
 
     timezone = context["timezone"]
@@ -820,7 +820,7 @@ async def intake(
     db.add(draft)
     await db.commit()
     await db.refresh(draft)
-    return _serialize_draft(draft), False, "matter"
+    return _serialize_draft(draft), False, "matter", None
 
 
 async def list_drafts(
@@ -1615,6 +1615,11 @@ async def revert_change(
         raise ConflictError(
             "later_changes", "该变更之后还有新的修改，不能直接撤回覆盖。"
         )
+    eligible, reason_code, reason_text = await _change_eligibility(
+        db, user, matter, change
+    )
+    if not eligible:
+        raise ConflictError(reason_code or "not_revertable", reason_text or "该变更不能撤回。")
     before = change.before_json or {}
     after = change.after_json or {}
     now = datetime.now(UTC)
@@ -1726,6 +1731,212 @@ async def revert_change(
     }
 
 
+async def _change_eligibility(
+    db: AsyncSession, user: User, matter: Matter, change: MatterChange
+) -> tuple[bool, str | None, str | None]:
+    """Single source of truth for "can this change still be reverted?"."""
+
+    if change.reverted_at is not None:
+        return False, "already_reverted", "该变更已经撤回。"
+    later = await db.scalar(
+        select(MatterChange)
+        .where(
+            MatterChange.matter_id == matter.matter_id,
+            MatterChange.created_at > change.created_at,
+            MatterChange.change_id != change.change_id,
+        )
+        .limit(1)
+    )
+    if later is not None:
+        return False, "later_changes", "该变更之后还有新的修改，不能直接撤回。"
+    after = change.after_json or {}
+    after_version = after.get("matter_version")
+    if after_version is not None and matter.version != after_version:
+        return False, "matter_changed", "事项在此之后被直接修改过。"
+    schedule = after.get("schedule")
+    if schedule:
+        current = await db.scalar(
+            select(ScheduleEvent).where(
+                ScheduleEvent.schedule_id == schedule.get("schedule_id"),
+                ScheduleEvent.user_id == user.user_id,
+            )
+        )
+        if current is None or current.deleted_at is not None:
+            return False, "schedule_changed", "关联日程已被删除。"
+        same = (
+            current.title == schedule.get("title")
+            and _as_utc(current.starts_at) == _parse_dt(schedule.get("starts_at"))
+            and _as_utc(current.ends_at) == _parse_dt(schedule.get("ends_at"))
+            and current.location == schedule.get("location")
+        )
+        if not same:
+            return False, "schedule_changed", "关联日程在此之后被修改过。"
+    return True, None, None
+
+
+async def list_changes(
+    db: AsyncSession, user: User, matter_id: str
+) -> list[dict]:
+    matter = await _get_matter(db, user, matter_id)
+    rows = list(
+        (
+            await db.scalars(
+                select(MatterChange)
+                .where(
+                    MatterChange.matter_id == matter.matter_id,
+                    MatterChange.user_id == user.user_id,
+                )
+                .order_by(MatterChange.created_at.desc())
+                .limit(50)
+            )
+        ).all()
+    )
+    items = []
+    for change in rows:
+        after = change.after_json or {}
+        eligible, code, reason = await _change_eligibility(db, user, matter, change)
+        items.append(
+            {
+                "change_id": change.change_id,
+                "matter_id": change.matter_id,
+                "change_type": change.change_type,
+                "draft_id": change.draft_id,
+                "created_at": change.created_at,
+                "schedule_id": (after.get("schedule") or {}).get("schedule_id"),
+                "before": change.before_json or {},
+                "after": after,
+                "revertable": eligible,
+                "reason_code": code,
+                "reason": reason,
+            }
+        )
+    return items
+
+
+async def create_edit_draft(
+    db: AsyncSession,
+    runtime: CommuteRuntime,
+    settings: Settings,
+    user: User,
+    matter_id: str,
+    payload: schemas.MatterEditRequest,
+) -> dict:
+    """Open one existing schedule/todo as an editable preview (no model call)."""
+
+    matter = await _get_matter(db, user, matter_id)
+    if matter.status not in ("active", "waiting"):
+        raise ConflictError("matter_not_active", "该事项当前不可编辑。")
+    existing = await db.scalar(
+        select(MatterDraft).where(
+            MatterDraft.user_id == user.user_id,
+            MatterDraft.origin_key == payload.idempotency_key,
+        )
+    )
+    if existing is not None:
+        return _serialize_draft(existing)
+    timezone = await user_timezone(db, user, settings.matter_default_timezone)
+    body: dict = {
+        "kind": "update",
+        "matter_id": matter.matter_id,
+        "requires_choice": False,
+        "title": None,
+        "goal": None,
+        "changes_note": None,
+        "next_step": None,
+        "schedule": None,
+        "todos": [],
+        "complete_todo_ids": [],
+        "source_text": "直接编辑",
+        "analysis": {},
+    }
+    base_schedule = None
+    if payload.schedule_id:
+        schedule = await db.scalar(
+            select(ScheduleEvent).where(
+                ScheduleEvent.schedule_id == payload.schedule_id,
+                ScheduleEvent.user_id == user.user_id,
+                ScheduleEvent.deleted_at.is_(None),
+            )
+        )
+        if schedule is None:
+            raise NotFoundError("schedule_not_found", "日程不存在。")
+        if schedule.matter_id != matter.matter_id:
+            raise ConflictError("schedule_not_in_matter", "该日程不属于这个事项。")
+        if schedule.source not in (None, "web_native"):
+            raise InvalidRequestError(
+                "schedule_not_editable", "设备导入的日程不能在应用内改写。"
+            )
+        base_schedule = schedule
+        body["schedule"] = {
+            "schedule_id": schedule.schedule_id,
+            "title": schedule.title,
+            "starts_at": schedule.starts_at,
+            "ends_at": schedule.ends_at,
+            "location": schedule.location,
+            "latitude": schedule.latitude,
+            "longitude": schedule.longitude,
+        }
+        body["changes_note"] = "修改日程"
+    else:
+        todo = await db.scalar(
+            select(MatterTodo).where(
+                MatterTodo.todo_id == payload.todo_id,
+                MatterTodo.matter_id == matter.matter_id,
+                MatterTodo.user_id == user.user_id,
+            )
+        )
+        if todo is None:
+            raise NotFoundError("todo_not_found", "待办不存在。")
+        body["todos"] = [
+            {
+                "todo_id": todo.todo_id,
+                "title": todo.title,
+                "due_at": todo.due_at,
+                "reminder_at": todo.reminder_at,
+                "status": todo.status,
+            }
+        ]
+        body["changes_note"] = "修改待办时间"
+    conflict = await _conflict_for_payload(
+        db,
+        runtime,
+        user,
+        body,
+        settings=settings,
+        timezone=timezone,
+        exclude_schedule_id=(base_schedule.schedule_id if base_schedule else None),
+    )
+    draft = MatterDraft(
+        user_id=user.user_id,
+        kind="update",
+        matter_id=matter.matter_id,
+        status="preview",
+        version=1,
+        payload_json=_jsonable(body),
+        conflict_json=_jsonable(conflict) if conflict else None,
+        base_matter_version=matter.version,
+        base_schedule_id=base_schedule.schedule_id if base_schedule else None,
+        base_schedule_updated_at=base_schedule.updated_at if base_schedule else None,
+        origin_key=payload.idempotency_key,
+    )
+    db.add(draft)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        winner = await db.scalar(
+            select(MatterDraft).where(
+                MatterDraft.user_id == user.user_id,
+                MatterDraft.origin_key == payload.idempotency_key,
+            )
+        )
+        if winner is not None:
+            return _serialize_draft(winner)
+        raise
+    await db.refresh(draft)
+    return _serialize_draft(draft)
+
+
 # ---------------------------------------------------------------------------
 # today and reminders
 # ---------------------------------------------------------------------------
@@ -1770,18 +1981,180 @@ async def today_view(
             )
         ).all()
     )
-    pending_drafts = await db.scalar(
-        select(func.count(MatterDraft.draft_id)).where(
-            MatterDraft.user_id == user.user_id,
-            MatterDraft.status == "preview",
-        )
+    matter_ids = {row.matter_id for row in schedules if row.matter_id}
+    matter_ids |= {row.matter_id for row in reminders if row.matter_id}
+    matters = {
+        row.matter_id: row
+        for row in (
+            await db.scalars(
+                select(Matter).where(Matter.user_id == user.user_id)
+            )
+        ).all()
+    }
+    deadlines = list(
+        (
+            await db.scalars(
+                select(MatterTodo)
+                .join(Matter, Matter.matter_id == MatterTodo.matter_id)
+                .where(
+                    MatterTodo.user_id == user.user_id,
+                    MatterTodo.status == "open",
+                    MatterTodo.due_at.is_not(None),
+                    MatterTodo.due_at < ends,
+                    Matter.deleted_at.is_(None),
+                    Matter.status.in_(("active", "waiting")),
+                )
+                .order_by(MatterTodo.due_at)
+                .limit(50)
+            )
+        ).all()
     )
+    matter_ids |= {row.matter_id for row in deadlines}
+
+    preview_rows = list(
+        (
+            await db.scalars(
+                select(MatterDraft)
+                .where(
+                    MatterDraft.user_id == user.user_id,
+                    MatterDraft.status == "preview",
+                )
+                .order_by(MatterDraft.updated_at.desc())
+                .limit(100)
+            )
+        ).all()
+    )
+    drafts = []
+    for draft in preview_rows:
+        body = draft.payload_json or {}
+        if draft.matter_id and (
+            draft.matter_id not in matters
+            or matters[draft.matter_id].deleted_at is not None
+        ):
+            continue
+        schedule = body.get("schedule")
+        if schedule:
+            start = _parse_dt(schedule.get("starts_at"))
+            if start is None or not (starts <= start < ends):
+                continue
+            impact = "拟修改日程"
+        else:
+            created = _as_utc(draft.created_at)
+            if created is None or not (starts <= created < ends):
+                continue
+            impact = "拟补充进展"
+        conflict = draft.conflict_json or {}
+        if conflict.get("has_conflict"):
+            impact = "与已有安排冲突，需用户确认调整方案"
+        drafts.append(
+            {
+                "draft_id": draft.draft_id,
+                "matter_id": draft.matter_id,
+                "matter_title": (
+                    matters[draft.matter_id].title
+                    if draft.matter_id and draft.matter_id in matters
+                    else None
+                ),
+                "kind": draft.kind,
+                "version": draft.version,
+                "updated_at": draft.updated_at,
+                "schedule": schedule,
+                "conflict": conflict or None,
+                "impact": impact,
+            }
+        )
+        if draft.matter_id:
+            matter_ids.add(draft.matter_id)
+
+    changes = [
+        row
+        for row in (
+            await db.scalars(
+                select(MatterChange)
+                .where(
+                    MatterChange.user_id == user.user_id,
+                    MatterChange.created_at >= starts,
+                    MatterChange.created_at < ends,
+                )
+                .order_by(MatterChange.created_at.desc())
+                .limit(50)
+            )
+        ).all()
+        if row.matter_id in matters and matters[row.matter_id].deleted_at is None
+    ]
+    matter_ids |= {row.matter_id for row in changes}
+
+    route = {
+        "status": "unverified",
+        "reason_code": "no_linked_route_result",
+        "message": "尚无与该日程关联的路线结果；可打开事项后重新测算。",
+        "advisory_id": None,
+    }
+    schedule_items = []
+    for row in schedules:
+        item = _serialize_schedule(row)
+        item["matter_title"] = (
+            matters[row.matter_id].title
+            if row.matter_id and row.matter_id in matters
+            else None
+        )
+        item["route"] = dict(route)
+        schedule_items.append(item)
+    reminder_items = []
+    for row in reminders:
+        item = _serialize_reminder(row)
+        item["matter_title"] = (
+            matters[row.matter_id].title
+            if row.matter_id and row.matter_id in matters
+            else None
+        )
+        reminder_items.append(item)
+    change_items = []
+    for change in changes:
+        after = change.after_json or {}
+        schedule = after.get("schedule") or {}
+        parts = [
+            part
+            for part in (
+                change.change_type,
+                schedule.get("title"),
+                schedule.get("starts_at"),
+                schedule.get("location"),
+            )
+            if part
+        ]
+        change_items.append(
+            {
+                "change_id": change.change_id,
+                "matter_id": change.matter_id,
+                "matter_title": matters[change.matter_id].title,
+                "change_type": change.change_type,
+                "created_at": change.created_at,
+                "summary": " / ".join(str(part) for part in parts),
+            }
+        )
     return {
         "date": day.isoformat(),
         "timezone": timezone,
-        "schedules": [_serialize_schedule(row) for row in schedules],
-        "reminders": [_serialize_reminder(row) for row in reminders],
-        "pending_drafts": int(pending_drafts or 0),
+        "schedules": schedule_items,
+        "reminders": reminder_items,
+        "pending_drafts": len(drafts),
+        "deadlines": [
+            {
+                "todo_id": row.todo_id,
+                "matter_id": row.matter_id,
+                "matter_title": matters[row.matter_id].title
+                if row.matter_id in matters
+                else "",
+                "title": row.title,
+                "due_at": row.due_at,
+                "status": row.status,
+                "reminder_at": row.reminder_at,
+            }
+            for row in deadlines
+        ],
+        "drafts": drafts,
+        "changes": change_items,
     }
 
 

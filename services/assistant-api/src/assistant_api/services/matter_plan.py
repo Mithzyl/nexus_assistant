@@ -25,6 +25,8 @@ MAX_TODOS = 30
 PROMPT = """你是个人事项整理助手。请把用户这句话整理成一个严格 JSON 对象，不要输出任何解释或 Markdown。
 字段：
 - intent: "matter"（在交代/推进一件事）、"question"（只是提问或闲聊，不应创建事项）或 "unclear"（信息不足，无法判断）。
+- answer: intent=question 时，用一两句话直接回答用户的问题；其余情况省略。
+- clarify: intent=unclear 时，说明还缺什么信息（目标、时间、地点或要办的事）；其余情况省略。
 - kind: "create"（新事项）或 "update"（接续已有事项）。
 - matter_id: update 时必须是下面"已有事项"里的 id；create 时为 null。
 - title: 事项标题（create 必填，update 可省略表示不改）。
@@ -152,6 +154,8 @@ def validate_result(text: str | None, context: dict[str, Any]) -> dict:
     if intent != "matter":
         return {
             "intent": intent,
+            "answer": _clean_text(value.get("answer"), 2000),
+            "clarify": _clean_text(value.get("clarify"), 500),
             "kind": "create",
             "matter_id": None,
             "candidate_matter_ids": [],
@@ -234,6 +238,8 @@ def validate_result(text: str | None, context: dict[str, Any]) -> dict:
 
     return {
         "intent": intent,
+        "answer": None,
+        "clarify": None,
         "kind": kind,
         "matter_id": matter_id,
         "candidate_matter_ids": candidate_ids,

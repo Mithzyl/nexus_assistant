@@ -111,6 +111,18 @@ class ScheduleRead(BaseModel):
     deleted_at: UtcDateTime | None = None
 
 
+class TodayRouteRead(BaseModel):
+    status: Literal["available", "unverified", "unavailable"]
+    reason_code: str | None = None
+    message: str | None = None
+    advisory_id: str | None = None
+
+
+class TodayScheduleRead(ScheduleRead):
+    matter_title: str | None = None
+    route: TodayRouteRead
+
+
 class ReminderRead(BaseModel):
     reminder_id: str
     matter_id: str | None = None
@@ -234,6 +246,37 @@ class IntakeResponse(BaseModel):
     replayed: bool = False
     intent: Literal["matter", "question"] = "matter"
     message: str | None = None
+    answer: str | None = None
+
+
+class MatterEditRequest(BaseModel):
+    """Create an editable draft from one existing schedule or todo."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    schedule_id: str | None = None
+    todo_id: str | None = None
+
+    @model_validator(mode="after")
+    def _one_target(self) -> "MatterEditRequest":
+        if (self.schedule_id is None) == (self.todo_id is None):
+            raise ValueError("schedule_id 和 todo_id 必须且只能提供一个。")
+        return self
+
+
+class ChangeRead(BaseModel):
+    change_id: str
+    matter_id: str
+    change_type: str
+    draft_id: str | None = None
+    created_at: UtcDateTime
+    schedule_id: str | None = None
+    before: dict
+    after: dict
+    revertable: bool
+    reason_code: str | None = None
+    reason: str | None = None
 
 
 class DraftPatchRequest(BaseModel):
@@ -298,12 +341,50 @@ class RevertResponse(BaseModel):
     reverted_at: UtcDateTime
 
 
+class TodayReminderRead(ReminderRead):
+    matter_title: str | None = None
+
+
+class TodayDeadlineRead(BaseModel):
+    todo_id: str
+    matter_id: str
+    matter_title: str
+    title: str
+    due_at: UtcDateTime
+    status: TodoStatus
+    reminder_at: UtcDateTime | None = None
+
+
+class TodayDraftRead(BaseModel):
+    draft_id: str
+    matter_id: str | None = None
+    matter_title: str | None = None
+    kind: Literal["create", "update"]
+    version: int
+    updated_at: UtcDateTime
+    schedule: dict | None = None
+    conflict: ConflictRead | None = None
+    impact: str
+
+
+class TodayChangeRead(BaseModel):
+    change_id: str
+    matter_id: str
+    matter_title: str | None = None
+    change_type: str
+    created_at: UtcDateTime
+    summary: str
+
+
 class TodayRead(BaseModel):
     date: str
     timezone: str
-    schedules: list[ScheduleRead]
-    reminders: list[ReminderRead]
+    schedules: list[TodayScheduleRead]
+    reminders: list[TodayReminderRead]
     pending_drafts: int
+    deadlines: list[TodayDeadlineRead] = Field(default_factory=list)
+    drafts: list[TodayDraftRead] = Field(default_factory=list)
+    changes: list[TodayChangeRead] = Field(default_factory=list)
 
 
 class EstimateRequest(BaseModel):
