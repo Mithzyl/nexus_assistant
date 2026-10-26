@@ -1415,9 +1415,36 @@
       },
       "ConfirmResponse": {
         "properties": {
+          "applied": {
+            "default": true,
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
           "change_id": {
             "title": "Change Id",
             "type": "string"
+          },
+          "conflict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConflictRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "draft": {
             "$ref": "#/components/schemas/DraftRead"
@@ -2570,7 +2597,34 @@
       "IntakeResponse": {
         "properties": {
           "draft": {
-            "$ref": "#/components/schemas/DraftRead"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intent": {
+            "default": "matter",
+            "enum": [
+              "matter",
+              "question"
+            ],
+            "title": "Intent",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
           },
           "replayed": {
             "default": false,
@@ -2578,9 +2632,6 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "draft"
-        ],
         "title": "IntakeResponse",
         "type": "object"
       },

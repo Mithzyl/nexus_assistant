@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from fastapi import APIRouter, Header, Query, Request, status
+from fastapi import APIRouter, Header, Query, Request, Response, status
 from pydantic import BaseModel
 
 from assistant_api.commute.runtime import CommuteRuntime
@@ -29,6 +29,20 @@ class EmptyBody(BaseModel):
     pass
 
 
+def _intake_response(
+    *, draft: dict | None, replayed: bool, intent: str, response: Response
+) -> dict:
+    if intent == "question":
+        response.status_code = 200
+        return {
+            "draft": None,
+            "replayed": replayed,
+            "intent": "question",
+            "message": "这句话更像问题或闲聊；请用问助手（POST /asks）回答，不会创建事项。",
+        }
+    return {"draft": draft, "replayed": replayed, "intent": "matter", "message": None}
+
+
 @router.post("/matters/intake", response_model=schemas.IntakeResponse, status_code=201)
 async def intake(
     request: Request,
@@ -38,8 +52,9 @@ async def intake(
     settings: SettingsDependency,
     runtime: CommuteRuntimeDependency,
     user: CurrentUser,
+    response: Response,
 ) -> dict:
-    draft, replayed = await matters.intake(
+    draft, replayed, intent = await matters.intake(
         db,
         client,
         settings,
@@ -49,7 +64,9 @@ async def intake(
         text=payload.text,
         idempotency_key=payload.idempotency_key,
     )
-    return {"draft": draft, "replayed": replayed}
+    return _intake_response(
+        draft=draft, replayed=replayed, intent=intent, response=response
+    )
 
 
 @router.post(
@@ -66,8 +83,9 @@ async def intake_for_matter(
     settings: SettingsDependency,
     runtime: CommuteRuntimeDependency,
     user: CurrentUser,
+    response: Response,
 ) -> dict:
-    draft, replayed = await matters.intake(
+    draft, replayed, intent = await matters.intake(
         db,
         client,
         settings,
@@ -78,7 +96,9 @@ async def intake_for_matter(
         idempotency_key=payload.idempotency_key,
         matter_id=matter_id,
     )
-    return {"draft": draft, "replayed": replayed}
+    return _intake_response(
+        draft=draft, replayed=replayed, intent=intent, response=response
+    )
 
 
 @router.get("/matters/drafts", response_model=list[schemas.DraftRead])

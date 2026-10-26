@@ -608,7 +608,7 @@ async def intake(
     text: str,
     idempotency_key: str,
     matter_id: str | None = None,
-) -> tuple[dict, bool]:
+) -> tuple[dict | None, bool, str]:
     pinned = await _get_matter(db, user, matter_id) if matter_id else None
     if pinned is not None and pinned.status in ("archived", "deleted"):
         raise ConflictError("matter_not_active", "该事项已归档，不能继续补充进展。")
@@ -665,7 +665,7 @@ async def intake(
         )
     )
     if existing is not None:
-        return _serialize_draft(existing), True
+        return _serialize_draft(existing), True, "matter"
 
     if run.status not in run_service.TERMINAL_STATUSES:
         if replayed:
@@ -706,6 +706,16 @@ async def intake(
         raise InvalidRequestError(
             "matter_extraction_invalid", f"整理结果未通过校验：{exc.reason}"
         ) from None
+
+    if parsed.get("intent") == "question":
+        # A question must not silently become an empty matter. The web should
+        # send it to POST /asks; this endpoint returns no draft.
+        return None, False, "question"
+    if parsed.get("intent") == "unclear":
+        raise InvalidRequestError(
+            "matter_intent_unclear",
+            "这句话还不足以形成事项，请补充目标、时间或要办的事。",
+        )
 
     timezone = context["timezone"]
     target: Matter | None = pinned
@@ -810,7 +820,7 @@ async def intake(
     db.add(draft)
     await db.commit()
     await db.refresh(draft)
-    return _serialize_draft(draft), False
+    return _serialize_draft(draft), False, "matter"
 
 
 async def list_drafts(
@@ -821,7 +831,16 @@ async def list_drafts(
     matter_id: str | None = None,
     limit: int = 20,
 ) -> list[dict]:
-    query = select(MatterDraft).where(MatterDraft.user_id == user.user_id)
+    deleted_matters = select(Matter.matter_id).where(
+        Matter.user_id == user.user_id, Matter.deleted_at.is_not(None)
+    )
+    query = select(MatterDraft).where(
+        MatterDraft.user_id == user.user_id,
+        or_(
+            MatterDraft.matter_id.is_(None),
+            MatterDraft.matter_id.notin_(deleted_matters),
+        ),
+    )
     if status is not None:
         query = query.where(MatterDraft.status == status)
     if matter_id is not None:
@@ -840,6 +859,15 @@ async def get_draft(
     draft_id: str,
 ) -> dict:
     draft = await _get_draft(db, user, draft_id)
+    if draft.matter_id:
+        owner = await db.scalar(
+            select(Matter).where(
+                Matter.matter_id == draft.matter_id,
+                Matter.user_id == user.user_id,
+            )
+        )
+        if owner is None or owner.deleted_at is not None:
+            raise NotFoundError("draft_not_found", "变更预览不存在。")
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
     payload = draft.payload_json or {}
     if draft.status == "preview" and payload.get("schedule"):
@@ -885,6 +913,10 @@ async def select_matter(
     body["matter_id"] = matter.matter_id
     body["requires_choice"] = False
     body["kind"] = "update"
+    # A previously chosen adjustment was computed for the old candidate; it
+    # must not survive this re-binding.
+    body.pop("selected_option", None)
+    body.pop("previous_adjustment", None)
     draft.base_matter_version = matter.version
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
     schedule = body.get("schedule")
@@ -1430,7 +1462,11 @@ async def confirm_draft(
             payload,
             settings=settings,
             timezone=timezone,
-            exclude_schedule_id=(proposed or {}).get("schedule_id"),
+            exclude_schedule_id=(
+                schedule_row.schedule_id
+                if body.create_schedule and schedule_row is not None
+                else (proposed or {}).get("schedule_id")
+            ),
         )
         if conflict and conflict.get("has_conflict") and not body.acknowledge_conflict:
             raise ConflictError(
@@ -1471,6 +1507,7 @@ async def confirm_draft(
             "schedule_id": schedule_row.schedule_id if schedule_row else None,
             "reminder_ids": [reminder.reminder_id for reminder in reminders_created],
             "change_id": change.change_id,
+            "conflict": _jsonable(conflict) if conflict else None,
         }
         await db.commit()
     except AssistantError:
@@ -1511,6 +1548,16 @@ async def _confirm_response(
         ).all()
     )
     matter_payload = (await _serialize_matters(db, [matter]))[0]
+    change = (
+        await db.scalar(
+            select(MatterChange).where(
+                MatterChange.change_id == result.get("change_id"),
+                MatterChange.user_id == user.user_id,
+            )
+        )
+        if result.get("change_id")
+        else None
+    )
     return {
         "draft": _serialize_draft(draft),
         "matter": matter_payload,
@@ -1518,6 +1565,18 @@ async def _confirm_response(
         "reminders": [_serialize_reminder(reminder) for reminder in reminders],
         "change_id": result.get("change_id"),
         "replayed": replayed,
+        "applied": True,
+        "conflict": result.get("conflict"),
+        "change": (
+            {
+                "change_id": change.change_id,
+                "change_type": change.change_type,
+                "before": change.before_json,
+                "after": change.after_json,
+            }
+            if change is not None
+            else None
+        ),
     }
 
 
@@ -1628,6 +1687,9 @@ async def revert_change(
                 MatterTodo.todo_id == todo_id,
                 MatterTodo.matter_id == matter.matter_id,
                 MatterTodo.user_id == user.user_id,
+                # Later manual completion must not be overwritten by this revert.
+                MatterTodo.completed_at.is_not(None),
+                MatterTodo.completed_at <= change.created_at,
             )
             .values(status="open", completed_at=None)
         )

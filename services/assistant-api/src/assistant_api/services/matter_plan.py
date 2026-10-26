@@ -24,6 +24,7 @@ MAX_TODOS = 30
 
 PROMPT = """你是个人事项整理助手。请把用户这句话整理成一个严格 JSON 对象，不要输出任何解释或 Markdown。
 字段：
+- intent: "matter"（在交代/推进一件事）、"question"（只是提问或闲聊，不应创建事项）或 "unclear"（信息不足，无法判断）。
 - kind: "create"（新事项）或 "update"（接续已有事项）。
 - matter_id: update 时必须是下面"已有事项"里的 id；create 时为 null。
 - title: 事项标题（create 必填，update 可省略表示不改）。
@@ -145,6 +146,25 @@ def validate_result(text: str | None, context: dict[str, Any]) -> dict:
     if not isinstance(value, dict):
         _reject("not_object")
 
+    intent = value.get("intent") or "matter"
+    if intent not in ("matter", "question", "unclear"):
+        _reject("intent_invalid")
+    if intent != "matter":
+        return {
+            "intent": intent,
+            "kind": "create",
+            "matter_id": None,
+            "candidate_matter_ids": [],
+            "title": None,
+            "goal": None,
+            "changes_note": None,
+            "next_step": None,
+            "schedule": None,
+            "todos": [],
+            "complete_todo_ids": [],
+            "dropped_complete_todo_ids": [],
+            "confidence": None,
+        }
     kind = value.get("kind") or "create"
     if kind not in ("create", "update"):
         _reject("kind_invalid")
@@ -213,6 +233,7 @@ def validate_result(text: str | None, context: dict[str, Any]) -> dict:
         _reject("confidence_invalid")
 
     return {
+        "intent": intent,
         "kind": kind,
         "matter_id": matter_id,
         "candidate_matter_ids": candidate_ids,

@@ -230,8 +230,10 @@ class IntakeRequest(BaseModel):
 
 
 class IntakeResponse(BaseModel):
-    draft: DraftRead
+    draft: DraftRead | None = None
     replayed: bool = False
+    intent: Literal["matter", "question"] = "matter"
+    message: str | None = None
 
 
 class DraftPatchRequest(BaseModel):
@@ -285,6 +287,9 @@ class ConfirmResponse(BaseModel):
     reminders: list[ReminderRead] = Field(default_factory=list)
     change_id: str
     replayed: bool = False
+    applied: bool = True
+    conflict: ConflictRead | None = None
+    change: dict | None = None
 
 
 class RevertResponse(BaseModel):
