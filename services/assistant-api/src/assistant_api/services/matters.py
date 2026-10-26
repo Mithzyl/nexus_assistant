@@ -71,13 +71,22 @@ def _jsonable(value):
     return value
 
 
-def _parse_dt(value):
-    """Return UTC; SQLite stores wall-clock values without an offset."""
+def _parse_dt(value, timezone: str | None = None):
+    """Return UTC; SQLite stores wall-clock values without an offset.
+
+    Naive input is anchored in the supplied timezone (the user's timezone), so a
+    web edit and a model extraction interpret an offset-less value the same way.
+    """
 
     if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=ZoneInfo(timezone or "UTC"))
         return ensure_aware(value).astimezone(UTC)
     if isinstance(value, str):
-        return ensure_aware(datetime.fromisoformat(value.replace("Z", "+00:00"))).astimezone(UTC)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo(timezone or "UTC"))
+        return parsed.astimezone(UTC)
     return None
 
 
@@ -247,22 +256,27 @@ async def _conflict_for_payload(
     payload: dict,
     *,
     settings: Settings,
+    timezone: str,
     exclude_schedule_id: str | None = None,
+    adjusted: dict[str, tuple[datetime, datetime | None]] | None = None,
 ) -> dict | None:
     schedule = payload.get("schedule")
     if not schedule:
         return None
+    start = _parse_dt(schedule["starts_at"], timezone)
+    end = _parse_dt(schedule.get("ends_at"), timezone)
     return await evaluate_conflict(
         db,
         runtime,
         user=user,
-        starts_at=_parse_dt(schedule["starts_at"]),
-        ends_at=_parse_dt(schedule.get("ends_at")),
+        starts_at=start,
+        ends_at=end,
         latitude=schedule.get("latitude"),
         longitude=schedule.get("longitude"),
         exclude_schedule_id=exclude_schedule_id,
         window_hours=settings.matter_conflict_window_hours,
         min_gap_seconds=settings.matter_conflict_min_gap_seconds,
+        adjusted=adjusted,
     )
 
 
@@ -446,7 +460,13 @@ async def delete_matter(db: AsyncSession, user: User, matter_id: str) -> dict:
 
 
 async def complete_todo(
-    db: AsyncSession, user: User, matter_id: str, todo_id: str, *, done: bool
+    db: AsyncSession,
+    user: User,
+    matter_id: str,
+    todo_id: str,
+    *,
+    done: bool,
+    cancel_reminders: bool = False,
 ) -> dict:
     await _get_matter(db, user, matter_id)
     todo = await db.scalar(
@@ -460,13 +480,19 @@ async def complete_todo(
         raise NotFoundError("todo_not_found", "待办不存在。")
     todo.status = "done" if done else "open"
     todo.completed_at = datetime.now(UTC) if done else None
+    if done and cancel_reminders:
+        now = datetime.now(UTC)
+        await db.execute(
+            update(Reminder)
+            .where(
+                Reminder.user_id == user.user_id,
+                Reminder.todo_id == todo.todo_id,
+                Reminder.status == "pending",
+            )
+            .values(status="cancelled", cancelled_at=now)
+        )
     await db.commit()
     return _serialize_todo(todo)
-
-
-# ---------------------------------------------------------------------------
-# draft preparation
-# ---------------------------------------------------------------------------
 
 
 def _normalise_title(value: str) -> set[str]:
@@ -583,22 +609,55 @@ async def intake(
     idempotency_key: str,
     matter_id: str | None = None,
 ) -> tuple[dict, bool]:
-    timezone = await user_timezone(db, user, settings.matter_default_timezone)
     pinned = await _get_matter(db, user, matter_id) if matter_id else None
     if pinned is not None and pinned.status in ("archived", "deleted"):
         raise ConflictError("matter_not_active", "该事项已归档，不能继续补充进展。")
-    context, todos_by_matter = await _extraction_context(
-        db, user, text=text, timezone=timezone, pinned=pinned
+
+    run_key = f"matter-intake:{idempotency_key}"
+    existing_run = await db.scalar(
+        select(NexusRun).where(
+            NexusRun.user_id == user.user_id,
+            NexusRun.idempotency_key == run_key,
+        )
     )
-    run, replayed = await run_service.create_ai_task(
-        db,
-        user=user,
-        purpose=matter_plan.PURPOSE,
-        trigger="chat",
-        idempotency_key=f"matter-intake:{idempotency_key}",
-        context=context,
-        business_ref=pinned.matter_id if pinned else None,
-    )
+    if existing_run is not None and existing_run.purpose not in (None, matter_plan.PURPOSE):
+        raise ConflictError(
+            "idempotency_key_reused", "该幂等键已用于其他类型的请求。"
+        )
+
+    context: dict | None = None
+    run: NexusRun | None = None
+    replayed = False
+    if existing_run is not None and existing_run.context_json:
+        stored = dict(existing_run.context_json)
+        if stored.get("text") != text or stored.get("pinned_matter_id") != (
+            pinned.matter_id if pinned else None
+        ):
+            raise ConflictError(
+                "idempotency_key_reused", "该幂等键已用于另一句话或另一事项。"
+            )
+        context = stored
+        run = existing_run
+        replayed = True
+
+    if run is None:
+        timezone = await user_timezone(db, user, settings.matter_default_timezone)
+        context, _ = await _extraction_context(
+            db, user, text=text, timezone=timezone, pinned=pinned
+        )
+        run, replayed = await run_service.create_ai_task(
+            db,
+            user=user,
+            purpose=matter_plan.PURPOSE,
+            trigger="chat",
+            idempotency_key=run_key,
+            context=context,
+            business_ref=pinned.matter_id if pinned else None,
+        )
+        if run.context_json is None:
+            run.context_json = context
+            await db.commit()
+
     existing = await db.scalar(
         select(MatterDraft).where(
             MatterDraft.user_id == user.user_id,
@@ -607,28 +666,38 @@ async def intake(
     )
     if existing is not None:
         return _serialize_draft(existing), True
-    if replayed:
-        run = await run_service.resume_ai_task(
-            db, client, settings, session_factory, user=user, row=run
-        )
-    else:
-        run = await run_service.launch_ai_task(
-            db, client, settings, session_factory, user=user, row=run
-        )
+
     if run.status not in run_service.TERMINAL_STATUSES:
-        run, timed_out = await run_service.wait_terminal(
-            db,
-            client,
-            user=user,
-            row=run,
-            timeout_seconds=settings.matter_ai_timeout_seconds,
-        )
-        if timed_out and run.status not in run_service.TERMINAL_STATUSES:
-            raise AssistantError("matter_ai_timeout", "事项整理超时，请稍后重试。", 504)
+        if replayed:
+            run = await run_service.resume_ai_task(
+                db, client, settings, session_factory, user=user, row=run
+            )
+        else:
+            run = await run_service.launch_ai_task(
+                db, client, settings, session_factory, user=user, row=run
+            )
+        if run.status not in run_service.TERMINAL_STATUSES:
+            run, timed_out = await run_service.wait_terminal(
+                db,
+                client,
+                user=user,
+                row=run,
+                timeout_seconds=settings.matter_ai_timeout_seconds,
+            )
+            if timed_out and run.status not in run_service.TERMINAL_STATUSES:
+                raise AssistantError(
+                    "matter_ai_timeout",
+                    "事项整理超时。可用同一 idempotency_key 重试，或用 GET /matters/drafts 找回已生成的预览。",
+                    504,
+                )
     if run.status == "unknown":
-        raise AssistantError("matter_ai_unknown", "事项整理结果未知，请稍后重试。", 504)
+        raise AssistantError(
+            "matter_ai_unknown", "事项整理结果未知，请用同一幂等键重试。", 504
+        )
     if run.status != "succeeded":
         raise AssistantError("matter_ai_failed", "事项整理失败，请稍后重试。", 502)
+
+    assert context is not None
     try:
         parsed = matter_plan.SPEC.validate_result(
             run_service.answer_text(run), context
@@ -638,6 +707,7 @@ async def intake(
             "matter_extraction_invalid", f"整理结果未通过校验：{exc.reason}"
         ) from None
 
+    timezone = context["timezone"]
     target: Matter | None = pinned
     candidates: list[dict] = []
     requires_choice = False
@@ -648,7 +718,7 @@ async def intake(
             await _get_matter(db, user, candidate)
             for candidate in parsed["candidate_matter_ids"][:5]
         ]
-        candidates = (await _serialize_matters(db, matched))
+        candidates = await _serialize_matters(db, matched)
         requires_choice = True
         parsed["kind"] = "update"
     if target is None and parsed["kind"] == "create":
@@ -661,14 +731,17 @@ async def intake(
             requires_choice = True
             parsed["kind"] = "update"
 
-    allowed_todos = set()
+    allowed_todos: set[str] = set()
     if target is not None:
-        allowed_todos = {item["todo_id"] for item in todos_by_matter.get(target.matter_id, [])}
+        rows = (
+            await db.scalars(
+                select(MatterTodo).where(MatterTodo.matter_id == target.matter_id)
+            )
+        ).all()
+        allowed_todos = {row.todo_id for row in rows}
     parsed["complete_todo_ids"] = [
         todo_id for todo_id in parsed["complete_todo_ids"] if todo_id in allowed_todos
     ]
-    if parsed["schedule"] is not None and target is None:
-        parsed["schedule"]["title"] = parsed["schedule"]["title"] or parsed["title"]
 
     payload = {
         "kind": "update" if (target is not None or requires_choice) else "create",
@@ -701,7 +774,11 @@ async def intake(
                 )
             ).all()
         )
-        future = [row for row in schedules if ensure_aware(row.starts_at) >= datetime.now(UTC) - timedelta(hours=1)]
+        future = [
+            row
+            for row in schedules
+            if ensure_aware(row.starts_at) >= datetime.now(UTC) - timedelta(hours=1)
+        ]
         if len(future) == 1:
             base_schedule = future[0]
             payload["schedule"]["schedule_id"] = base_schedule.schedule_id
@@ -712,7 +789,8 @@ async def intake(
         user,
         payload,
         settings=settings,
-        exclude_schedule_id=payload["schedule"].get("schedule_id") if payload["schedule"] else None,
+        timezone=timezone,
+        exclude_schedule_id=(payload["schedule"] or {}).get("schedule_id"),
     )
     payload = _jsonable(payload)
     draft = MatterDraft(
@@ -735,8 +813,208 @@ async def intake(
     return _serialize_draft(draft), False
 
 
-async def get_draft(db: AsyncSession, user: User, draft_id: str) -> dict:
-    return _serialize_draft(await _get_draft(db, user, draft_id))
+async def list_drafts(
+    db: AsyncSession,
+    user: User,
+    *,
+    status: str | None = None,
+    matter_id: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    query = select(MatterDraft).where(MatterDraft.user_id == user.user_id)
+    if status is not None:
+        query = query.where(MatterDraft.status == status)
+    if matter_id is not None:
+        query = query.where(MatterDraft.matter_id == matter_id)
+    rows = (
+        await db.scalars(query.order_by(MatterDraft.updated_at.desc()).limit(limit))
+    ).all()
+    return [_serialize_draft(row) for row in rows]
+
+
+async def get_draft(
+    db: AsyncSession,
+    runtime: CommuteRuntime,
+    settings: Settings,
+    user: User,
+    draft_id: str,
+) -> dict:
+    draft = await _get_draft(db, user, draft_id)
+    timezone = await user_timezone(db, user, settings.matter_default_timezone)
+    payload = draft.payload_json or {}
+    if draft.status == "preview" and payload.get("schedule"):
+        conflict = await _conflict_for_payload(
+            db,
+            runtime,
+            user,
+            payload,
+            settings=settings,
+            timezone=timezone,
+            exclude_schedule_id=payload["schedule"].get("schedule_id"),
+        )
+        draft.conflict_json = _jsonable(conflict) if conflict else None
+        await db.commit()
+        await db.refresh(draft)
+    return _serialize_draft(draft)
+
+
+async def select_matter(
+    db: AsyncSession,
+    runtime: CommuteRuntime,
+    settings: Settings,
+    user: User,
+    draft_id: str,
+    payload: schemas.DraftSelectMatterRequest,
+) -> dict:
+    draft = await _get_draft(db, user, draft_id)
+    if draft.status != "preview":
+        raise ConflictError("draft_not_editable", "该预览已确认或已取消。")
+    if draft.version != payload.expected_version:
+        raise ConflictError("preview_stale", "预览已更新，请刷新后再选。")
+    candidate_ids = {
+        candidate["matter_id"] for candidate in (draft.candidates_json or [])
+    }
+    if payload.matter_id not in candidate_ids:
+        raise InvalidRequestError(
+            "matter_choice_required", "请选择预览中列出的候选事项。"
+        )
+    matter = await _get_matter(db, user, payload.matter_id)
+    if matter.status not in ("active", "waiting"):
+        raise ConflictError("matter_not_active", "该事项当前不可接续。")
+    body = dict(draft.payload_json or {})
+    body["matter_id"] = matter.matter_id
+    body["requires_choice"] = False
+    body["kind"] = "update"
+    draft.base_matter_version = matter.version
+    timezone = await user_timezone(db, user, settings.matter_default_timezone)
+    schedule = body.get("schedule")
+    if schedule and not schedule.get("schedule_id"):
+        rows = list(
+            (
+                await db.scalars(
+                    select(ScheduleEvent).where(
+                        ScheduleEvent.matter_id == matter.matter_id,
+                        ScheduleEvent.user_id == user.user_id,
+                        ScheduleEvent.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        future = [
+            row
+            for row in rows
+            if ensure_aware(row.starts_at) >= datetime.now(UTC) - timedelta(hours=1)
+        ]
+        if len(future) == 1:
+            schedule["schedule_id"] = future[0].schedule_id
+            draft.base_schedule_id = future[0].schedule_id
+            draft.base_schedule_updated_at = future[0].updated_at
+    draft.payload_json = _jsonable(body)
+    draft.version += 1
+    conflict = await _conflict_for_payload(
+        db,
+        runtime,
+        user,
+        body,
+        settings=settings,
+        timezone=timezone,
+        exclude_schedule_id=(schedule or {}).get("schedule_id"),
+    )
+    draft.conflict_json = _jsonable(conflict) if conflict else None
+    await db.commit()
+    await db.refresh(draft)
+    return _serialize_draft(draft)
+
+
+async def apply_option(
+    db: AsyncSession,
+    runtime: CommuteRuntime,
+    settings: Settings,
+    user: User,
+    draft_id: str,
+    payload: schemas.DraftOptionRequest,
+) -> dict:
+    draft = await _get_draft(db, user, draft_id)
+    if draft.status != "preview":
+        raise ConflictError("draft_not_editable", "该预览已确认或已取消。")
+    if draft.version != payload.expected_version:
+        raise ConflictError("preview_stale", "预览已更新，请刷新后再选。")
+    timezone = await user_timezone(db, user, settings.matter_default_timezone)
+    body = dict(draft.payload_json or {})
+    conflict = await _conflict_for_payload(
+        db,
+        runtime,
+        user,
+        body,
+        settings=settings,
+        timezone=timezone,
+        exclude_schedule_id=(body.get("schedule") or {}).get("schedule_id"),
+    )
+    options = {option["option_id"]: option for option in (conflict or {}).get("options", [])}
+    option = options.get(payload.option_id)
+    if option is None:
+        raise InvalidRequestError(
+            "option_not_available", "当前预览没有这个调整方案，请重新计算冲突。"
+        )
+    adjusted: dict[str, tuple[datetime, datetime | None]] = {}
+    if payload.option_id == "A":
+        schedule = body.get("schedule")
+        if not schedule:
+            raise InvalidRequestError("option_not_applicable", "当前预览没有可调整的日程。")
+        shift = timedelta(seconds=int(option.get("shift_seconds") or 0))
+        start = _parse_dt(schedule["starts_at"], timezone)
+        end = _parse_dt(schedule.get("ends_at"), timezone)
+        schedule["starts_at"] = _jsonable(start + shift)
+        schedule["ends_at"] = _jsonable(end + shift) if end else None
+    elif payload.option_id == "B":
+        target_id = option.get("target_schedule_id")
+        if not target_id:
+            raise InvalidRequestError("option_not_applicable", "该方案没有可调整的相邻日程。")
+        target = await db.scalar(
+            select(ScheduleEvent).where(
+                ScheduleEvent.schedule_id == target_id,
+                ScheduleEvent.user_id == user.user_id,
+                ScheduleEvent.deleted_at.is_(None),
+            )
+        )
+        if target is None:
+            raise NotFoundError("schedule_not_found", "需要调整的日程不存在。")
+        delta = timedelta(seconds=int(option.get("shift_seconds") or 0))
+        base_updated = target.updated_at
+        body["previous_adjustment"] = {
+            "schedule_id": target.schedule_id,
+            "shift_seconds": int(option.get("shift_seconds") or 0),
+            "base_updated_at": _jsonable(base_updated),
+        }
+        adjusted[target.schedule_id] = (
+            ensure_aware(target.starts_at) + delta,
+            (ensure_aware(target.ends_at) + delta) if target.ends_at else None,
+        )
+        todo_title = option.get("creates_todo")
+        if todo_title:
+            titles = {item.get("title") for item in body.get("todos") or []}
+            if todo_title not in titles:
+                body.setdefault("todos", []).append(
+                    {"todo_id": None, "title": todo_title, "due_at": None,
+                     "reminder_at": None, "status": "open"}
+                )
+    body["selected_option"] = payload.option_id
+    draft.payload_json = _jsonable(body)
+    draft.version += 1
+    conflict = await _conflict_for_payload(
+        db,
+        runtime,
+        user,
+        body,
+        settings=settings,
+        timezone=timezone,
+        exclude_schedule_id=(body.get("schedule") or {}).get("schedule_id"),
+        adjusted=adjusted or None,
+    )
+    draft.conflict_json = _jsonable(conflict) if conflict else None
+    await db.commit()
+    await db.refresh(draft)
+    return _serialize_draft(draft)
 
 
 async def patch_draft(
@@ -752,31 +1030,101 @@ async def patch_draft(
         raise ConflictError("draft_not_editable", "该预览已确认或已取消。")
     if draft.version != payload.expected_version:
         raise ConflictError("preview_stale", "预览已更新，请刷新后再改。")
+    timezone = await user_timezone(db, user, settings.matter_default_timezone)
     merged = dict(draft.payload_json or {})
     changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+
     for key in ("title", "goal", "changes_note", "next_step"):
-        if key in changes and changes[key] is not None:
+        if key in changes:
+            if key == "title" and changes[key] is None:
+                continue
             merged[key] = changes[key]
+
     if "schedule" in changes:
-        merged["schedule"] = (
-            changes["schedule"].model_dump() if changes["schedule"] is not None else None
-        )
-        if merged["schedule"] is not None and merged["schedule"].get("schedule_id") is None:
-            merged["schedule"]["schedule_id"] = draft.base_schedule_id
+        if changes["schedule"] is None:
+            merged["schedule"] = None
+        else:
+            old = merged.get("schedule") or {}
+            schedule = dict(changes["schedule"])
+            if not schedule.get("schedule_id") and old.get("schedule_id"):
+                schedule["schedule_id"] = old["schedule_id"]
+            if schedule.get("ends_at") is not None:
+                if _parse_dt(schedule["ends_at"], timezone) <= _parse_dt(
+                    schedule["starts_at"], timezone
+                ):
+                    raise InvalidRequestError(
+                        "schedule_time_order", "日程结束时间必须晚于开始时间。"
+                    )
+            schedule["starts_at"] = _parse_dt(schedule["starts_at"], timezone)
+            schedule["ends_at"] = _parse_dt(schedule.get("ends_at"), timezone)
+            old_location = old.get("location")
+            new_location = schedule.get("location")
+            if new_location != old_location or None in (
+                schedule.get("latitude"),
+                schedule.get("longitude"),
+            ):
+                schedule["latitude"] = None
+                schedule["longitude"] = None
+            merged["schedule"] = schedule
+
     if "todos" in changes and changes["todos"] is not None:
-        merged["todos"] = [todo.model_dump() for todo in changes["todos"]]
+        matter_ids = {draft.payload_json.get("matter_id")} if draft.payload_json else set()
+        allowed = set()
+        if draft.matter_id:
+            matter_ids.add(draft.matter_id)
+        if any(matter_ids):
+            rows = (
+                await db.scalars(
+                    select(MatterTodo.todo_id).where(
+                        MatterTodo.matter_id.in_([m for m in matter_ids if m])
+                    )
+                )
+            ).all()
+            allowed = set(rows)
+        todos = []
+        for item in changes["todos"]:
+            todo = dict(item)
+            todo["due_at"] = _parse_dt(todo.get("due_at"), timezone)
+            todo["reminder_at"] = _parse_dt(todo.get("reminder_at"), timezone)
+            if todo.get("todo_id") and todo["todo_id"] not in allowed:
+                raise InvalidRequestError(
+                    "todo_not_in_matter", "待办不属于该事项。"
+                )
+            todos.append(todo)
+        merged["todos"] = todos
+
     if "complete_todo_ids" in changes and changes["complete_todo_ids"] is not None:
+        allowed = set()
+        target_id = (draft.payload_json or {}).get("matter_id") or draft.matter_id
+        if target_id:
+            allowed = set(
+                (
+                    await db.scalars(
+                        select(MatterTodo.todo_id).where(
+                            MatterTodo.matter_id == target_id
+                        )
+                    )
+                ).all()
+            )
+        unknown = [todo_id for todo_id in changes["complete_todo_ids"] if todo_id not in allowed]
+        if unknown:
+            raise InvalidRequestError("todo_not_in_matter", "待办不属于该事项。")
         merged["complete_todo_ids"] = changes["complete_todo_ids"]
-    draft.payload_json = _jsonable(merged)
-    draft.version += 1
+
+    merged.pop("previous_adjustment", None)
+    merged.pop("selected_option", None)
+    schedule = merged.get("schedule")
     conflict = await _conflict_for_payload(
         db,
         runtime,
         user,
         merged,
         settings=settings,
-        exclude_schedule_id=merged.get("schedule", {}).get("schedule_id") if merged.get("schedule") else None,
+        timezone=timezone,
+        exclude_schedule_id=(schedule or {}).get("schedule_id"),
     )
+    draft.payload_json = _jsonable(merged)
+    draft.version += 1
     draft.conflict_json = _jsonable(conflict) if conflict else None
     await db.commit()
     await db.refresh(draft)
@@ -813,169 +1161,245 @@ async def confirm_draft(
         if draft.confirm_key == idempotency_key:
             return await _confirm_response(db, user, draft, replayed=True)
         raise ConflictError("draft_already_confirmed", "该预览已确认。")
-    if draft.status == "cancelled":
+    if draft.status != "preview":
         raise ConflictError("draft_cancelled", "该预览已取消，请重新整理。")
     if draft.version != body.expected_version:
         raise ConflictError("preview_stale", "预览已更新，请刷新后确认。")
 
-    taken = await db.scalar(
-        select(MatterDraft).where(
-            MatterDraft.user_id == user.user_id,
-            MatterDraft.confirm_key == idempotency_key,
-        )
-    )
-    if taken is not None and taken.draft_id != draft.draft_id:
-        raise ConflictError("idempotency_key_reused", "该幂等键已用于另一次确认。")
-
     payload = dict(draft.payload_json or {})
-    matter: Matter | None = None
-    if payload.get("kind") == "update" and payload.get("requires_choice"):
-        candidate_ids = {
-            candidate["matter_id"] for candidate in (draft.candidates_json or [])
-        }
-        if not body.matter_id or body.matter_id not in candidate_ids:
-            raise InvalidRequestError(
-                "matter_choice_required", "存在多个可能事项，请先选择要接续的事项。"
-            )
-        payload["matter_id"] = body.matter_id
-        payload["requires_choice"] = False
-    if payload.get("matter_id"):
-        matter = await _get_matter(db, user, payload["matter_id"])
-    if payload.get("kind") == "update":
-        if matter is None:
-            raise InvalidRequestError("matter_required", "接续更新缺少事项。")
-        if draft.base_matter_version is not None and matter.version != draft.base_matter_version:
-            raise ConflictError("matter_changed", "该事项已被修改，请重新整理。")
+    if body.option_id is not None and payload.get("selected_option") != body.option_id:
+        raise ConflictError(
+            "option_not_selected", "请先在预览中选择调整方案，再提交确认。"
+        )
+    timezone = await user_timezone(db, user, settings.matter_default_timezone)
 
-    schedule_row: ScheduleEvent | None = None
-    proposed_schedule = payload.get("schedule")
-    if body.create_schedule and proposed_schedule:
-        schedule_id = proposed_schedule.get("schedule_id")
-        if schedule_id:
+    claim = await db.execute(
+        update(MatterDraft)
+        .where(
+            MatterDraft.draft_id == draft.draft_id,
+            MatterDraft.user_id == user.user_id,
+            MatterDraft.status == "preview",
+            MatterDraft.version == body.expected_version,
+        )
+        .values(status="confirmed", confirm_key=idempotency_key)
+    )
+    if claim.rowcount == 0:
+        await db.rollback()
+        fresh = await _get_draft(db, user, draft_id)
+        if fresh.status == "confirmed" and fresh.confirm_key == idempotency_key:
+            return await _confirm_response(db, user, fresh, replayed=True)
+        raise ConflictError("preview_stale", "预览已更新，请刷新后确认。")
+
+    try:
+        if payload.get("requires_choice"):
+            candidate_ids = {
+                candidate["matter_id"] for candidate in (draft.candidates_json or [])
+            }
+            if not body.matter_id or body.matter_id not in candidate_ids:
+                raise InvalidRequestError(
+                    "matter_choice_required", "存在多个可能事项，请先选择要接续的事项。"
+                )
+            payload["matter_id"] = body.matter_id
+            payload["requires_choice"] = False
+            payload["kind"] = "update"
+
+        matter: Matter | None = None
+        matter_id = payload.get("matter_id")
+        base_matter_version = draft.base_matter_version
+        if payload.get("kind") == "update":
+            if not matter_id:
+                raise InvalidRequestError("matter_required", "接续更新缺少事项。")
+            matter = await _get_matter(db, user, matter_id)
+            if base_matter_version is None:
+                # Ambiguous draft: pin the version at the moment the user chooses.
+                base_matter_version = matter.version
+            elif matter.version != base_matter_version:
+                raise ConflictError("matter_changed", "该事项已被修改，请重新整理。")
+            if matter.status not in ("active", "waiting"):
+                raise ConflictError("matter_not_active", "该事项当前不可接续。")
+
+        existing_todos: dict[str, MatterTodo] = {}
+        if matter is not None:
+            rows = (
+                await db.scalars(
+                    select(MatterTodo).where(MatterTodo.matter_id == matter.matter_id)
+                )
+            ).all()
+            existing_todos = {row.todo_id: row for row in rows}
+
+        proposed = payload.get("schedule")
+        schedule_row: ScheduleEvent | None = None
+        if proposed and proposed.get("schedule_id"):
             schedule_row = await db.scalar(
                 select(ScheduleEvent).where(
-                    ScheduleEvent.schedule_id == schedule_id,
+                    ScheduleEvent.schedule_id == proposed["schedule_id"],
                     ScheduleEvent.user_id == user.user_id,
                     ScheduleEvent.deleted_at.is_(None),
                 )
             )
             if schedule_row is None:
                 raise NotFoundError("schedule_not_found", "关联日程不存在。")
+            if proposed.get("schedule_id") and schedule_row.matter_id != matter_id:
+                raise ConflictError(
+                    "schedule_not_in_matter", "该日程属于另一个事项，不能挂到当前事项。"
+                )
+            if schedule_row.source not in (None, "web_native"):
+                raise InvalidRequestError(
+                    "schedule_not_editable", "设备导入的日程不能在应用内改写。"
+                )
             if (
                 draft.base_schedule_updated_at is not None
-                and schedule_row.updated_at is not None
                 and ensure_aware(schedule_row.updated_at)
                 != ensure_aware(draft.base_schedule_updated_at)
             ):
                 raise ConflictError("schedule_changed", "关联日程已变化，请重新整理。")
 
-    conflict = await _conflict_for_payload(
-        db,
-        runtime,
-        user,
-        payload,
-        settings=settings,
-        exclude_schedule_id=proposed_schedule.get("schedule_id") if proposed_schedule else None,
-    )
-    if conflict and conflict.get("has_conflict") and not body.acknowledge_conflict:
-        raise ConflictError(
-            "conflict_detected",
-            "本次变更与已有日程冲突，请先查看调整选项并确认。",
-        )
+        for item in payload.get("todos") or []:
+            if item.get("todo_id") and item["todo_id"] not in existing_todos:
+                raise InvalidRequestError("todo_not_in_matter", "待办不属于该事项。")
+        for todo_id in payload.get("complete_todo_ids") or []:
+            if todo_id not in existing_todos:
+                raise InvalidRequestError("todo_not_in_matter", "待办不属于该事项。")
 
-    now = datetime.now(UTC)
-    before = {"matter": None, "schedule": None}
-    if payload["kind"] == "create":
-        matter = Matter(
-            user_id=user.user_id,
-            title=(payload.get("title") or "未命名事项").strip(),
-            goal=payload.get("goal") or "",
-            next_step=payload.get("next_step"),
-            status="active",
-            last_progress_at=now,
-        )
-        db.add(matter)
-        await db.flush()
-    else:
-        assert matter is not None
-        before["matter"] = _matter_fields(matter)
-        if payload.get("title"):
-            matter.title = payload["title"].strip()
-        if payload.get("goal") is not None:
-            matter.goal = payload["goal"]
-        if payload.get("next_step"):
-            matter.next_step = payload["next_step"]
-        matter.version += 1
-        matter.last_progress_at = now
-
-    if body.create_schedule and proposed_schedule:
-        before["schedule"] = _schedule_snapshot(schedule_row)
-        sync_status = "pending_ios" if body.sync_to_ios else "local_only"
-        if schedule_row is None:
-            schedule_row = ScheduleEvent(
-                user_id=user.user_id,
-                matter_id=matter.matter_id,
-                title=proposed_schedule["title"],
-                starts_at=_parse_dt(proposed_schedule["starts_at"]),
-                ends_at=_parse_dt(proposed_schedule.get("ends_at")),
-                location=proposed_schedule.get("location"),
-                latitude=proposed_schedule.get("latitude"),
-                longitude=proposed_schedule.get("longitude"),
-                status="scheduled",
-                source="web_native",
-                sync_status=sync_status,
+        adjustment = payload.get("previous_adjustment")
+        if adjustment:
+            target = await db.scalar(
+                select(ScheduleEvent).where(
+                    ScheduleEvent.schedule_id == adjustment["schedule_id"],
+                    ScheduleEvent.user_id == user.user_id,
+                    ScheduleEvent.deleted_at.is_(None),
+                )
             )
-            db.add(schedule_row)
+            if target is None:
+                raise NotFoundError("schedule_not_found", "需要调整的相邻日程不存在。")
+            base = _parse_dt(adjustment["base_updated_at"], timezone)
+            if ensure_aware(target.updated_at) != base:
+                raise ConflictError("schedule_changed", "相邻日程已变化，请重新选择方案。")
+            delta = timedelta(seconds=int(adjustment["shift_seconds"]))
+            result = await db.execute(
+                update(ScheduleEvent)
+                .where(
+                    ScheduleEvent.schedule_id == target.schedule_id,
+                    ScheduleEvent.user_id == user.user_id,
+                    ScheduleEvent.updated_at == target.updated_at,
+                )
+                .values(
+                    starts_at=ensure_aware(target.starts_at) + delta,
+                    ends_at=(ensure_aware(target.ends_at) + delta)
+                    if target.ends_at
+                    else None,
+                    sync_status="local_only",
+                )
+            )
+            if result.rowcount == 0:
+                raise ConflictError("schedule_changed", "相邻日程已变化，请重新选择方案。")
+
+        now = datetime.now(UTC)
+        before = {"matter": None, "schedule": None}
+        if payload["kind"] == "create":
+            matter = Matter(
+                user_id=user.user_id,
+                title=(payload.get("title") or "未命名事项").strip(),
+                goal=payload.get("goal") or "",
+                next_step=payload.get("next_step"),
+                status="active",
+                last_progress_at=now,
+            )
+            db.add(matter)
             await db.flush()
         else:
-            schedule_row.title = proposed_schedule["title"]
-            schedule_row.starts_at = _parse_dt(proposed_schedule["starts_at"])
-            schedule_row.ends_at = _parse_dt(proposed_schedule.get("ends_at"))
-            schedule_row.location = proposed_schedule.get("location")
-            schedule_row.latitude = proposed_schedule.get("latitude")
-            schedule_row.longitude = proposed_schedule.get("longitude")
-            schedule_row.sync_status = sync_status
-            schedule_row.matter_id = matter.matter_id
+            assert matter is not None
+            before["matter"] = _matter_fields(matter)
+            values: dict = {"version": matter.version + 1, "last_progress_at": now}
+            if payload.get("title"):
+                values["title"] = payload["title"].strip()
+            if payload.get("goal") is not None:
+                values["goal"] = payload["goal"]
+            if payload.get("next_step"):
+                values["next_step"] = payload["next_step"]
+            result = await db.execute(
+                update(Matter)
+                .where(
+                    Matter.matter_id == matter.matter_id,
+                    Matter.user_id == user.user_id,
+                    Matter.version == base_matter_version,
+                )
+                .values(**values)
+            )
+            if result.rowcount == 0:
+                raise ConflictError("matter_changed", "该事项已被修改，请重新整理。")
+            await db.refresh(matter)
 
-    reminders_created: list[Reminder] = []
-    existing_todos = {
-        todo.todo_id: todo
-        for todo in (
-            await db.scalars(
-                select(MatterTodo).where(MatterTodo.matter_id == matter.matter_id)
-            )
-        ).all()
-    }
-    position = len(existing_todos)
-    for item in payload.get("todos") or []:
-        todo_id = item.get("todo_id")
-        if todo_id and todo_id in existing_todos:
-            todo = existing_todos[todo_id]
-            todo.title = item["title"]
-            todo.due_at = _parse_dt(item.get("due_at"))
-            todo.reminder_at = _parse_dt(item.get("reminder_at"))
-        else:
-            todo = MatterTodo(
-                matter_id=matter.matter_id,
-                user_id=user.user_id,
-                title=item["title"],
-                due_at=_parse_dt(item.get("due_at")),
-                reminder_at=_parse_dt(item.get("reminder_at")),
-                position=position,
-            )
-            position += 1
-            db.add(todo)
-            await db.flush()
-            existing_todos[todo.todo_id] = todo
-        if todo.reminder_at is not None:
-            reminder = await db.scalar(
+        if body.create_schedule and proposed:
+            before["schedule"] = _schedule_snapshot(schedule_row)
+            sync_status = "pending_ios" if body.sync_to_ios else "local_only"
+            values = {
+                "title": proposed["title"],
+                "starts_at": _parse_dt(proposed["starts_at"], timezone),
+                "ends_at": _parse_dt(proposed.get("ends_at"), timezone),
+                "location": proposed.get("location"),
+                "latitude": proposed.get("latitude"),
+                "longitude": proposed.get("longitude"),
+                "sync_status": sync_status,
+                "source": "web_native",
+                "matter_id": matter.matter_id,
+            }
+            if schedule_row is None:
+                schedule_row = ScheduleEvent(
+                    user_id=user.user_id,
+                    status="scheduled",
+                    **values,
+                )
+                db.add(schedule_row)
+                await db.flush()
+            else:
+                result = await db.execute(
+                    update(ScheduleEvent)
+                    .where(
+                        ScheduleEvent.schedule_id == schedule_row.schedule_id,
+                        ScheduleEvent.user_id == user.user_id,
+                        ScheduleEvent.updated_at == schedule_row.updated_at,
+                    )
+                    .values(**values)
+                )
+                if result.rowcount == 0:
+                    raise ConflictError("schedule_changed", "关联日程已变化，请重新整理。")
+                await db.refresh(schedule_row)
+
+        reminders_created: list[Reminder] = []
+        position = len(existing_todos)
+        for item in payload.get("todos") or []:
+            todo_id = item.get("todo_id")
+            if todo_id and todo_id in existing_todos:
+                todo = existing_todos[todo_id]
+                todo.title = item["title"]
+                todo.due_at = _parse_dt(item.get("due_at"), timezone)
+                todo.reminder_at = _parse_dt(item.get("reminder_at"), timezone)
+            else:
+                todo = MatterTodo(
+                    matter_id=matter.matter_id,
+                    user_id=user.user_id,
+                    title=item["title"],
+                    due_at=_parse_dt(item.get("due_at"), timezone),
+                    reminder_at=_parse_dt(item.get("reminder_at"), timezone),
+                    position=position,
+                )
+                position += 1
+                db.add(todo)
+                await db.flush()
+                existing_todos[todo.todo_id] = todo
+            pending = await db.scalar(
                 select(Reminder).where(
                     Reminder.user_id == user.user_id,
                     Reminder.todo_id == todo.todo_id,
                     Reminder.status == "pending",
                 )
             )
-            if reminder is None:
+            if todo.reminder_at is None:
+                if pending is not None:
+                    pending.status = "cancelled"
+                    pending.cancelled_at = now
+            elif pending is None:
                 reminder = Reminder(
                     user_id=user.user_id,
                     matter_id=matter.matter_id,
@@ -990,63 +1414,72 @@ async def confirm_draft(
                 await db.flush()
                 reminders_created.append(reminder)
             else:
-                reminder.trigger_at = todo.reminder_at
-                reminder.title = f"提醒：{todo.title}"
+                pending.trigger_at = todo.reminder_at
+                pending.title = f"提醒：{todo.title}"
 
-    for todo_id in payload.get("complete_todo_ids") or []:
-        todo = existing_todos.get(todo_id)
-        if todo is None:
-            continue
-        todo.status = "done"
-        todo.completed_at = now
+        for todo_id in payload.get("complete_todo_ids") or []:
+            todo = existing_todos.get(todo_id)
+            if todo is not None:
+                todo.status = "done"
+                todo.completed_at = now
 
-    db.add(
-        MatterProgress(
-            matter_id=matter.matter_id,
-            user_id=user.user_id,
-            text=payload.get("changes_note")
-            or payload.get("source_text")
-            or "更新事项",
-            kind="created" if payload["kind"] == "create" else "progress",
-            source_run_id=(payload.get("analysis") or {}).get("ai_run_id"),
+        conflict = await _conflict_for_payload(
+            db,
+            runtime,
+            user,
+            payload,
+            settings=settings,
+            timezone=timezone,
+            exclude_schedule_id=(proposed or {}).get("schedule_id"),
         )
-    )
-    change = MatterChange(
-        matter_id=matter.matter_id,
-        user_id=user.user_id,
-        draft_id=draft.draft_id,
-        change_type=payload["kind"],
-        before_json=json.loads(json.dumps(before, default=str)),
-        after_json={
-            "matter": _matter_fields(matter),
-            "schedule": _schedule_snapshot(schedule_row),
-            "reminder_ids": [reminder.reminder_id for reminder in reminders_created],
-            "completed_todo_ids": payload.get("complete_todo_ids") or [],
-        },
-    )
-    db.add(change)
-    draft.status = "confirmed"
-    draft.confirm_key = idempotency_key
-    await db.flush()
-    draft.result_json = {
-        "matter_id": matter.matter_id,
-        "schedule_id": schedule_row.schedule_id if schedule_row else None,
-        "reminder_ids": [reminder.reminder_id for reminder in reminders_created],
-        "change_id": change.change_id,
-    }
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        winner = await db.scalar(
-            select(MatterDraft).where(
-                MatterDraft.user_id == user.user_id,
-                MatterDraft.confirm_key == idempotency_key,
+        if conflict and conflict.get("has_conflict") and not body.acknowledge_conflict:
+            raise ConflictError(
+                "conflict_detected",
+                "本次变更与已有日程冲突，请先选择调整方案或明确接受风险。",
+            )
+
+        db.add(
+            MatterProgress(
+                matter_id=matter.matter_id,
+                user_id=user.user_id,
+                text=payload.get("changes_note") or payload.get("source_text") or "更新事项",
+                kind="created" if payload["kind"] == "create" else "progress",
+                source_run_id=(payload.get("analysis") or {}).get("ai_run_id"),
             )
         )
-        if winner is None or winner.draft_id != draft.draft_id:
-            raise ConflictError("confirm_race", "确认请求冲突，请刷新查看结果。") from None
-        return await _confirm_response(db, user, winner, replayed=True)
+        change = MatterChange(
+            matter_id=matter.matter_id,
+            user_id=user.user_id,
+            draft_id=draft.draft_id,
+            change_type=payload["kind"],
+            before_json=_jsonable(before),
+            after_json=_jsonable(
+                {
+                    "matter": _matter_fields(matter),
+                    "matter_version": matter.version,
+                    "schedule": _schedule_snapshot(schedule_row),
+                    "reminder_ids": [reminder.reminder_id for reminder in reminders_created],
+                    "completed_todo_ids": payload.get("complete_todo_ids") or [],
+                }
+            ),
+        )
+        db.add(change)
+        await db.flush()
+        draft.confirm_key = idempotency_key
+        draft.result_json = {
+            "matter_id": matter.matter_id,
+            "schedule_id": schedule_row.schedule_id if schedule_row else None,
+            "reminder_ids": [reminder.reminder_id for reminder in reminders_created],
+            "change_id": change.change_id,
+        }
+        await db.commit()
+    except AssistantError:
+        await db.rollback()
+        raise
+    except Exception:
+        await db.rollback()
+        raise
+
     await db.refresh(matter)
     await db.refresh(draft)
     return await _confirm_response(db, user, draft, replayed=False)
@@ -1089,9 +1522,16 @@ async def _confirm_response(
 
 
 async def revert_change(
-    db: AsyncSession, user: User, matter_id: str, change_id: str
+    db: AsyncSession,
+    user: User,
+    matter_id: str,
+    change_id: str,
+    *,
+    expected_version: int,
 ) -> dict:
     matter = await _get_matter(db, user, matter_id)
+    if matter.version != expected_version:
+        raise ConflictError("matter_changed", "事项已更新，撤回前请刷新。")
     change = await db.scalar(
         select(MatterChange).where(
             MatterChange.change_id == change_id,
@@ -1103,42 +1543,109 @@ async def revert_change(
         raise NotFoundError("change_not_found", "变更记录不存在。")
     if change.reverted_at is not None:
         raise ConflictError("already_reverted", "该变更已撤回。")
+    later = await db.scalar(
+        select(MatterChange)
+        .where(
+            MatterChange.matter_id == matter.matter_id,
+            MatterChange.created_at > change.created_at,
+            MatterChange.change_id != change.change_id,
+        )
+        .limit(1)
+    )
+    if later is not None:
+        raise ConflictError(
+            "later_changes", "该变更之后还有新的修改，不能直接撤回覆盖。"
+        )
     before = change.before_json or {}
     after = change.after_json or {}
     now = datetime.now(UTC)
-    if before.get("matter"):
-        for key, value in before["matter"].items():
-            setattr(matter, key, value)
-        matter.version += 1
-    before_schedule = before.get("schedule")
+
     after_schedule = after.get("schedule")
-    if after_schedule and before_schedule is None:
-        await db.execute(
-            update(ScheduleEvent)
-            .where(ScheduleEvent.schedule_id == after_schedule["schedule_id"])
-            .values(status="cancelled", deleted_at=now)
-        )
-    elif after_schedule and before_schedule is not None:
-        await db.execute(
-            update(ScheduleEvent)
-            .where(ScheduleEvent.schedule_id == after_schedule["schedule_id"])
-            .values(
-                title=before_schedule["title"],
-                starts_at=datetime.fromisoformat(before_schedule["starts_at"]),
-                ends_at=datetime.fromisoformat(before_schedule["ends_at"])
-                if before_schedule.get("ends_at")
-                else None,
-                location=before_schedule.get("location"),
-                latitude=before_schedule.get("latitude"),
-                longitude=before_schedule.get("longitude"),
+    before_schedule = before.get("schedule")
+    if after_schedule:
+        current = await db.scalar(
+            select(ScheduleEvent).where(
+                ScheduleEvent.schedule_id == after_schedule["schedule_id"],
+                ScheduleEvent.user_id == user.user_id,
             )
         )
+        if current is None:
+            raise ConflictError("schedule_changed", "关联日程已不存在。")
+        same = (
+            current.title == after_schedule["title"]
+            and _as_utc(current.starts_at)
+            == _parse_dt(after_schedule["starts_at"])
+            and _as_utc(current.ends_at)
+            == (
+                _parse_dt(after_schedule["ends_at"])
+                if after_schedule.get("ends_at")
+                else None
+            )
+            and current.location == after_schedule.get("location")
+        )
+        if not same:
+            raise ConflictError("schedule_changed", "关联日程已被修改，不能覆盖撤回。")
+        if before_schedule is None:
+            result = await db.execute(
+                update(ScheduleEvent)
+                .where(
+                    ScheduleEvent.schedule_id == current.schedule_id,
+                    ScheduleEvent.user_id == user.user_id,
+                )
+                .values(status="cancelled", deleted_at=now)
+            )
+        else:
+            result = await db.execute(
+                update(ScheduleEvent)
+                .where(
+                    ScheduleEvent.schedule_id == current.schedule_id,
+                    ScheduleEvent.user_id == user.user_id,
+                )
+                .values(
+                    title=before_schedule["title"],
+                    starts_at=_parse_dt(before_schedule["starts_at"]),
+                    ends_at=_parse_dt(before_schedule.get("ends_at")),
+                    location=before_schedule.get("location"),
+                    latitude=before_schedule.get("latitude"),
+                    longitude=before_schedule.get("longitude"),
+                    sync_status="local_only",
+                    deleted_at=None,
+                )
+            )
+        if result.rowcount == 0:
+            raise ConflictError("schedule_changed", "关联日程已被修改，不能覆盖撤回。")
+
     for reminder_id in after.get("reminder_ids") or []:
         await db.execute(
             update(Reminder)
             .where(Reminder.reminder_id == reminder_id, Reminder.status == "pending")
             .values(status="cancelled", cancelled_at=now)
         )
+    for todo_id in after.get("completed_todo_ids") or []:
+        await db.execute(
+            update(MatterTodo)
+            .where(
+                MatterTodo.todo_id == todo_id,
+                MatterTodo.matter_id == matter.matter_id,
+                MatterTodo.user_id == user.user_id,
+            )
+            .values(status="open", completed_at=None)
+        )
+
+    values = {"version": matter.version + 1}
+    if before.get("matter"):
+        values.update(before["matter"])
+    result = await db.execute(
+        update(Matter)
+        .where(
+            Matter.matter_id == matter.matter_id,
+            Matter.user_id == user.user_id,
+            Matter.version == expected_version,
+        )
+        .values(**values)
+    )
+    if result.rowcount == 0:
+        raise ConflictError("matter_changed", "事项已更新，撤回前请刷新。")
     change.reverted_at = now
     db.add(
         MatterProgress(

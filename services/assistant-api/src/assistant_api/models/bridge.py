@@ -48,6 +48,9 @@ class NexusRun(TimestampMixin, Base):
     last_event_sequence: Mapped[int] = mapped_column(default=0)
     request_text: Mapped[str] = mapped_column(String(4_000))
     result_json: Mapped[dict | None] = mapped_column(JSON)
+    # Original validated input, so a retried idempotency key reuses the first
+    # interpretation (including its "now") instead of rebuilding a different one.
+    context_json: Mapped[dict | None] = mapped_column(JSON)
     error_code: Mapped[str | None] = mapped_column(String(64))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

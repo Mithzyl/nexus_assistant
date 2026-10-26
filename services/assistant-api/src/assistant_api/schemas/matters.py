@@ -183,6 +183,8 @@ class ConflictOptionRead(BaseModel):
     recommended: bool = False
     proposed_start: UtcDateTime | None = None
     creates_todo: str | None = None
+    shift_seconds: int = 0
+    target_schedule_id: str | None = None
 
 
 class ConflictItemRead(BaseModel):
@@ -192,7 +194,8 @@ class ConflictItemRead(BaseModel):
     ends_at: UtcDateTime | None = None
     gap_seconds: int
     eta_seconds: int | None = None
-    eta_status: Literal["available", "unavailable", "not_needed"]
+    eta_status: Literal["available", "unverified", "not_applicable"]
+    relation: Literal["previous", "next", "overlap"] = "previous"
     reason: str
 
 
@@ -244,6 +247,26 @@ class DraftPatchRequest(BaseModel):
     complete_todo_ids: list[str] | None = None
 
 
+class DraftSelectMatterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    matter_id: str = Field(min_length=8, max_length=36)
+
+
+class DraftOptionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    option_id: Literal["A", "B", "C"]
+
+
+class RevertRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
 class ConfirmRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -252,6 +275,7 @@ class ConfirmRequest(BaseModel):
     create_schedule: bool = True
     sync_to_ios: bool = False
     acknowledge_conflict: bool = False
+    option_id: Literal["A", "B", "C"] | None = None
 
 
 class ConfirmResponse(BaseModel):
@@ -310,6 +334,7 @@ class IosRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     external_id: str = Field(min_length=1, max_length=255)
+    scope_key: str | None = Field(default=None, max_length=255)
     last_modified_at: datetime
     deleted: bool = False
     title: str = Field(default="", max_length=255)

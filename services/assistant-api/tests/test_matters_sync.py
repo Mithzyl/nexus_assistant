@@ -27,7 +27,11 @@ async def source_id(harness, *, assistant_enabled: bool = True, source_type: str
             "source_type": source_type,
             "device_id": f"device-{source_type}",
             "display_name": f"测试 {source_type}",
-            "upload_fields": ["title", "start", "end", "location", "status"],
+            "upload_fields": (
+                ["title", "due", "status"]
+                if source_type == "reminders"
+                else ["title", "start", "end", "location", "status"]
+            ),
             "sync_enabled": True,
             "assistant_enabled": assistant_enabled,
         },
@@ -354,12 +358,67 @@ async def test_revert_restores_the_previous_values(harness):
 
     reverted = await h.client.post(
         f"/api/v1/matters/{matter['matter_id']}/changes/{updated['change_id']}/revert",
+        json={"expected_version": updated["matter"]["version"]},
         headers=auth(h.token_a),
     )
     assert reverted.status_code == 200, reverted.text
     assert reverted.json()["matter"]["version"] == 3
     again = await h.client.post(
         f"/api/v1/matters/{matter['matter_id']}/changes/{updated['change_id']}/revert",
+        json={"expected_version": reverted.json()["matter"]["version"]},
         headers=auth(h.token_a),
     )
     assert again.status_code == 409
+
+@pytest.mark.asyncio
+async def test_reminder_status_survives_upload_and_batch_reuse_is_checked(harness):
+    h = harness
+    day = datetime.now(ZONE).date() + timedelta(days=1)
+    source = await source_id(h, source_type="reminders")
+    record = {
+        "external_id": "rem-1",
+        "last_modified_at": at(day, 9).isoformat(),
+        "title": "交材料",
+        "due_at": at(day, 10).isoformat(),
+        "status": "completed",
+    }
+    first = await h.client.post(
+        "/api/v1/sync/ios/snapshot",
+        json=snapshot(source, "rem-batch-0001", [record]),
+        headers=auth(h.token_a),
+    )
+    assert first.status_code == 200, first.text
+    async with h.app.state.session_factory() as db:
+        reminder = await db.scalar(
+            select(Reminder).where(Reminder.source_external_id == "rem-1")
+        )
+        assert reminder.status == "completed"
+        assert reminder.data_source_id == source
+
+    # Same batch id, different content: rejected instead of silently replayed.
+    changed = {**record, "title": "交材料（改）"}
+    mismatch = await h.client.post(
+        "/api/v1/sync/ios/snapshot",
+        json=snapshot(source, "rem-batch-0001", [changed]),
+        headers=auth(h.token_a),
+    )
+    assert mismatch.status_code == 409
+    assert mismatch.json()["error"]["code"] == "batch_content_mismatch"
+
+    # Older status snapshot does not reopen a completed reminder.
+    stale = {
+        **record,
+        "last_modified_at": (at(day, 9) - timedelta(hours=1)).isoformat(),
+        "status": "pending",
+    }
+    stale_result = await h.client.post(
+        "/api/v1/sync/ios/snapshot",
+        json=snapshot(source, "rem-batch-0002", [stale]),
+        headers=auth(h.token_a),
+    )
+    assert stale_result.json()["unchanged"] == 1
+    async with h.app.state.session_factory() as db:
+        reminder = await db.scalar(
+            select(Reminder).where(Reminder.source_external_id == "rem-1")
+        )
+        assert reminder.status == "completed"

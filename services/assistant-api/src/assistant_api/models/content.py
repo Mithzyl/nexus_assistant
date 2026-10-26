@@ -102,3 +102,6 @@ class ContentSyncBatch(TimestampMixin, Base):
     updated_count: Mapped[int] = mapped_column(Integer, default=0)
     unchanged_count: Mapped[int] = mapped_column(Integer, default=0)
     removed_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Hash of the submitted payload; lets a reused batch id with different
+    # content be rejected instead of silently returning the first result.
+    payload_sha256: Mapped[str | None] = mapped_column(String(64))

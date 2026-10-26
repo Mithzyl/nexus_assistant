@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from assistant_api.core.config import Settings
 from assistant_api.core.errors import InvalidRequestError, NotFoundError
-from assistant_api.models import Note, ScheduleEvent, TaskItem
+from assistant_api.models import ContentSource, Note, ScheduleEvent, TaskItem
 from assistant_api.models.base import as_utc
 from assistant_api.services.data_source_service import assistant_content
 
@@ -159,13 +159,23 @@ async def get_calendar_events(
         raise InvalidRequestError("invalid_window", "结束日期必须不早于开始日期。")
     start_at = datetime.combine(args.start_date, time.min, tzinfo=UTC)
     end_at = datetime.combine(args.end_date + timedelta(days=1), time.min, tzinfo=UTC)
+    authorized_sources = select(ContentSource.source_id).where(
+        ContentSource.user_id == user_id,
+        ContentSource.assistant_enabled.is_(True),
+    )
     rows = (
         await db.scalars(
             select(ScheduleEvent)
             .where(
                 ScheduleEvent.user_id == user_id,
+                ScheduleEvent.deleted_at.is_(None),
+                ScheduleEvent.status.notin_(("cancelled", "deleted")),
                 ScheduleEvent.starts_at >= start_at,
                 ScheduleEvent.starts_at < end_at,
+                or_(
+                    ScheduleEvent.data_source_id.is_(None),
+                    ScheduleEvent.data_source_id.in_(authorized_sources),
+                ),
             )
             .order_by(ScheduleEvent.starts_at)
             .limit(args.limit)

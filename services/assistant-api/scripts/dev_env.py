@@ -104,9 +104,11 @@ REQUIRED_COLUMNS = {
         "latitude",
         "longitude",
         "deleted_at",
+        "source_scope_key",
     ),
+    "reminders": ("source_scope_key", "data_source_id"),
 }
-REQUIRED_MIGRATIONS = ("0006_ai_task_purpose", "0007_matters")
+REQUIRED_MIGRATIONS = ("0006_ai_task_purpose", "0007_matters", "0008_source_auth")
 
 COMPONENT_MARKERS = {
     "stub": ("uvicorn", "app:app"),

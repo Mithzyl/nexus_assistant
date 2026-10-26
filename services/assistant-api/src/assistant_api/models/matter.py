@@ -154,8 +154,8 @@ class Reminder(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_reminders_user_trigger", "user_id", "trigger_at"),
         UniqueConstraint(
-            "user_id", "source", "source_external_id",
-            name="uq_reminders_user_source_external",
+            "user_id", "source", "data_source_id", "source_external_id",
+            name="uq_reminders_user_source_device_external",
         ),
     )
 
@@ -172,6 +172,8 @@ class Reminder(TimestampMixin, Base):
     sync_status: Mapped[str | None] = mapped_column(String(24))
     source: Mapped[str | None] = mapped_column(String(24))
     source_external_id: Mapped[str | None] = mapped_column(String(255))
+    source_scope_key: Mapped[str | None] = mapped_column(String(255))
+    data_source_id: Mapped[str | None] = mapped_column(String(36))
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_version: Mapped[int | None] = mapped_column(Integer)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

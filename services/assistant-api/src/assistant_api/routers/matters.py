@@ -81,11 +81,60 @@ async def intake_for_matter(
     return {"draft": draft, "replayed": replayed}
 
 
+@router.get("/matters/drafts", response_model=list[schemas.DraftRead])
+async def list_drafts(
+    db: DatabaseSession,
+    user: CurrentUser,
+    draft_status: str | None = Query(default=None, alias="status"),
+    matter_id: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=50),
+) -> list[dict]:
+    return await matters.list_drafts(
+        db, user, status=draft_status, matter_id=matter_id, limit=limit
+    )
+
+
 @router.get("/matters/drafts/{draft_id}", response_model=schemas.DraftRead)
 async def get_draft(
-    draft_id: str, db: DatabaseSession, user: CurrentUser
+    draft_id: str,
+    db: DatabaseSession,
+    settings: SettingsDependency,
+    runtime: CommuteRuntimeDependency,
+    user: CurrentUser,
 ) -> dict:
-    return await matters.get_draft(db, user, draft_id)
+    return await matters.get_draft(db, runtime, settings, user, draft_id)
+
+
+@router.post(
+    "/matters/drafts/{draft_id}/select-matter", response_model=schemas.DraftRead
+)
+async def select_matter(
+    draft_id: str,
+    payload: schemas.DraftSelectMatterRequest,
+    db: DatabaseSession,
+    settings: SettingsDependency,
+    runtime: CommuteRuntimeDependency,
+    user: CurrentUser,
+) -> dict:
+    return await matters.select_matter(
+        db, runtime, settings, user, draft_id, payload
+    )
+
+
+@router.post(
+    "/matters/drafts/{draft_id}/apply-option", response_model=schemas.DraftRead
+)
+async def apply_option(
+    draft_id: str,
+    payload: schemas.DraftOptionRequest,
+    db: DatabaseSession,
+    settings: SettingsDependency,
+    runtime: CommuteRuntimeDependency,
+    user: CurrentUser,
+) -> dict:
+    return await matters.apply_option(
+        db, runtime, settings, user, draft_id, payload
+    )
 
 
 @router.patch("/matters/drafts/{draft_id}", response_model=schemas.DraftRead)
@@ -212,9 +261,15 @@ async def delete_matter(
 
 @router.post("/matters/{matter_id}/todos/{todo_id}/complete", response_model=schemas.TodoRead)
 async def complete_todo(
-    matter_id: str, todo_id: str, db: DatabaseSession, user: CurrentUser
+    matter_id: str,
+    todo_id: str,
+    db: DatabaseSession,
+    user: CurrentUser,
+    cancel_reminders: bool = Query(default=False),
 ) -> dict:
-    return await matters.complete_todo(db, user, matter_id, todo_id, done=True)
+    return await matters.complete_todo(
+        db, user, matter_id, todo_id, done=True, cancel_reminders=cancel_reminders
+    )
 
 
 @router.post("/matters/{matter_id}/todos/{todo_id}/reopen", response_model=schemas.TodoRead)
@@ -231,10 +286,13 @@ async def reopen_todo(
 async def revert_change(
     matter_id: str,
     change_id: str,
+    payload: schemas.RevertRequest,
     db: DatabaseSession,
     user: CurrentUser,
 ) -> dict:
-    return await matters.revert_change(db, user, matter_id, change_id)
+    return await matters.revert_change(
+        db, user, matter_id, change_id, expected_version=payload.expected_version
+    )
 
 
 @router.get("/today", response_model=schemas.TodayRead)
@@ -268,6 +326,7 @@ async def list_reminders(
 async def commute_estimate_endpoint(
     payload: schemas.EstimateRequest,
     runtime: CommuteRuntimeDependency,
+    user: CurrentUser,
 ) -> dict:
     """POST is this implementation's choice (the plan did not specify a method)."""
 

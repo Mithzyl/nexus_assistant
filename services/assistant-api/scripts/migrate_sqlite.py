@@ -46,6 +46,11 @@ COLUMN_MIGRATIONS = (
     ("0007_matters", "schedules", "latitude", "FLOAT"),
     ("0007_matters", "schedules", "longitude", "FLOAT"),
     ("0007_matters", "schedules", "deleted_at", "DATETIME"),
+    ("0008_source_auth", "schedules", "source_scope_key", "VARCHAR(255)"),
+    ("0008_source_auth", "reminders", "source_scope_key", "VARCHAR(255)"),
+    ("0008_source_auth", "reminders", "data_source_id", "VARCHAR(36)"),
+    ("0008_source_auth", "content_sync_batches", "payload_sha256", "VARCHAR(64)"),
+    ("0008_source_auth", "nexus_runs", "context_json", "JSON"),
 )
 
 # Indexes on pre-existing tables cannot be added by metadata.create_all, so they
@@ -74,6 +79,28 @@ INDEX_MIGRATIONS = (
         "uq_schedules_user_source_external",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_schedules_user_source_external "
         "ON schedules (user_id, source, source_external_id)",
+    ),
+    (
+        "0008_source_auth",
+        "drop_old_schedule_index",
+        "DROP INDEX IF EXISTS uq_schedules_user_source_external",
+    ),
+    (
+        "0008_source_auth",
+        "drop_old_reminder_index",
+        "DROP INDEX IF EXISTS uq_reminders_user_source_external",
+    ),
+    (
+        "0008_source_auth",
+        "uq_schedules_user_source_device_external",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_schedules_user_source_device_external "
+        "ON schedules (user_id, source, data_source_id, source_external_id)",
+    ),
+    (
+        "0008_source_auth",
+        "uq_reminders_user_source_device_external",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_reminders_user_source_device_external "
+        "ON reminders (user_id, source, data_source_id, source_external_id)",
     ),
 )
 

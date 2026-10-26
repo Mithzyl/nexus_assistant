@@ -53,8 +53,8 @@ class ScheduleEvent(TimestampMixin, Base):
         Index("ix_schedules_user_start", "user_id", "starts_at"),
         Index("ix_schedules_matter", "matter_id"),
         UniqueConstraint(
-            "user_id", "source", "source_external_id",
-            name="uq_schedules_user_source_external",
+            "user_id", "source", "data_source_id", "source_external_id",
+            name="uq_schedules_user_source_device_external",
         ),
     )
 
@@ -76,6 +76,7 @@ class ScheduleEvent(TimestampMixin, Base):
     # to the product text's `web_confirmed_pending_ios`.
     sync_status: Mapped[str | None] = mapped_column(String(24))
     source_external_id: Mapped[str | None] = mapped_column(String(255))
+    source_scope_key: Mapped[str | None] = mapped_column(String(255))
     # Incoming Apple `last_modified_at`; `updated_at` remains the server edit time.
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_version: Mapped[int | None] = mapped_column(Integer)
