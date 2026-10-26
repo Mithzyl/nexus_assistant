@@ -676,10 +676,19 @@ struct CommuteAdvisoryView: View {
         }
     }
 
+    /// 只有后端明确处于“正在分析建议”时才说分析中；排队/未领取只说任务已保存。
+    private var emptyStateTitle: String {
+        guard store.processingStateText != nil else { return "还没有可展示的建议" }
+        if store.checkStatus == .running, store.checkPhase == .analyzing {
+            return "正在分析建议"
+        }
+        return "任务已保存"
+    }
+
     private var emptyState: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text(store.processingStateText != nil ? "分析正在进行" : "还没有可展示的建议")
+                Text(emptyStateTitle)
                     .font(.cardTitle)
                     .foregroundStyle(Palette.ink)
                 Text(store.processingStateText
