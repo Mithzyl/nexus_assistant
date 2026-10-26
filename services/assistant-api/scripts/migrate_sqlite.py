@@ -35,6 +35,17 @@ COLUMN_MIGRATIONS = (
     ("0006_ai_task_purpose", "nexus_runs", "business_ref", "VARCHAR(36)"),
     ("0006_ai_task_purpose", "nexus_runs", "input_version", "INTEGER"),
     ("0006_ai_task_purpose", "nexus_runs", "trigger", "VARCHAR(16)"),
+    # Matters reuse `schedules`; every added column is nullable for old rows.
+    ("0007_matters", "schedules", "source", "VARCHAR(24)"),
+    ("0007_matters", "schedules", "sync_status", "VARCHAR(24)"),
+    ("0007_matters", "schedules", "source_external_id", "VARCHAR(255)"),
+    ("0007_matters", "schedules", "source_updated_at", "DATETIME"),
+    ("0007_matters", "schedules", "source_version", "INTEGER"),
+    ("0007_matters", "schedules", "matter_id", "VARCHAR(36)"),
+    ("0007_matters", "schedules", "data_source_id", "VARCHAR(36)"),
+    ("0007_matters", "schedules", "latitude", "FLOAT"),
+    ("0007_matters", "schedules", "longitude", "FLOAT"),
+    ("0007_matters", "schedules", "deleted_at", "DATETIME"),
 )
 
 # Indexes on pre-existing tables cannot be added by metadata.create_all, so they
@@ -52,6 +63,17 @@ INDEX_MIGRATIONS = (
         "ix_nexus_runs_user_purpose_created",
         "CREATE INDEX IF NOT EXISTS ix_nexus_runs_user_purpose_created "
         "ON nexus_runs (user_id, purpose, created_at)",
+    ),
+    (
+        "0007_matters",
+        "ix_schedules_matter",
+        "CREATE INDEX IF NOT EXISTS ix_schedules_matter ON schedules (matter_id)",
+    ),
+    (
+        "0007_matters",
+        "uq_schedules_user_source_external",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_schedules_user_source_external "
+        "ON schedules (user_id, source, source_external_id)",
     ),
 )
 

@@ -26,6 +26,17 @@ from assistant_api.models.commute import (
     PushDevice,
 )
 from assistant_api.models.identity import NexusIdentityLink, User, UserProfile, UserSession
+from assistant_api.models.matter import (
+    MATTER_STATUSES,
+    SYNC_STATUSES,
+    TODO_STATUSES,
+    Matter,
+    MatterChange,
+    MatterDraft,
+    MatterProgress,
+    MatterTodo,
+    Reminder,
+)
 
 __all__ = [
     "AdvisoryAction",
@@ -45,8 +56,17 @@ __all__ = [
     "CommutePlan",
     "CommuteWeatherSnapshot",
     "ServiceHeartbeat",
+    "MATTER_STATUSES",
+    "Matter",
+    "MatterChange",
+    "MatterDraft",
+    "MatterProgress",
+    "MatterTodo",
     "NexusIdentityLink",
     "NexusRun",
+    "Reminder",
+    "SYNC_STATUSES",
+    "TODO_STATUSES",
     "Note",
     "NotificationOutbox",
     "PushAttempt",

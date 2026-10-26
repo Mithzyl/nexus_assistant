@@ -75,6 +75,12 @@ REQUIRED_TABLES = (
     "commute_eta_snapshots",
     "notification_outbox",
     "service_heartbeats",
+    "matters",
+    "matter_todos",
+    "matter_progress",
+    "matter_drafts",
+    "matter_changes",
+    "reminders",
 )
 REQUIRED_COLUMNS = {
     "nexus_runs": ("purpose", "business_ref", "input_version", "trigger"),
@@ -87,8 +93,20 @@ REQUIRED_COLUMNS = {
         "route_snapshot_hash",
     ),
     "commute_advisories": ("ai_analysis_json",),
+    "schedules": (
+        "source",
+        "sync_status",
+        "source_external_id",
+        "source_updated_at",
+        "source_version",
+        "matter_id",
+        "data_source_id",
+        "latitude",
+        "longitude",
+        "deleted_at",
+    ),
 }
-REQUIRED_MIGRATIONS = ("0006_ai_task_purpose",)
+REQUIRED_MIGRATIONS = ("0006_ai_task_purpose", "0007_matters")
 
 COMPONENT_MARKERS = {
     "stub": ("uvicorn", "app:app"),

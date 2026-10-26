@@ -129,6 +129,14 @@ class Settings(BaseSettings):
     commute_outbox_max_attempts: int = Field(default=4, ge=1, le=10)
     commute_data_retention_days: int = Field(default=30, ge=1, le=365)
 
+    # ---- Matters / work planning ------------------------------------------
+    matter_ai_timeout_seconds: float = Field(default=60.0, ge=10, le=180)
+    # Conflict scan: schedules within this many hours around the proposal.
+    matter_conflict_window_hours: int = Field(default=3, ge=1, le=12)
+    # Minimum slack between two appointments before a warning is raised.
+    matter_conflict_min_gap_seconds: int = Field(default=900, ge=0, le=3600)
+    matter_default_timezone: str = "Asia/Shanghai"
+
     @field_validator(
         "commute_weather_team_id",
         "commute_weather_key_id",

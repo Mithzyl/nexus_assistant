@@ -27,7 +27,14 @@ from assistant_api.core.errors import AssistantError
 from assistant_api.infrastructure.database import create_engine_and_factory
 from assistant_api.models import Base
 from assistant_api.nexus_client import NexusError, NexusPilotClient
-from assistant_api.routers import assistant, auth, data_sources, internal_tools
+from assistant_api.routers import (
+    assistant,
+    auth,
+    data_sources,
+    internal_tools,
+    matters,
+    sync_ios,
+)
 from assistant_api.services.run_service import shutdown_background_tasks
 
 
@@ -103,6 +110,8 @@ def create_app(
     app.include_router(data_sources.content_router)
     app.include_router(commute_router)
     app.include_router(bark_router)
+    app.include_router(matters.router)
+    app.include_router(sync_ios.router)
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
