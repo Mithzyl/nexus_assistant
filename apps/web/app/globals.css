@@ -1275,3 +1275,14 @@ a {
   color: var(--m-fog-deep);
 }
 .composer__intake:disabled { opacity: 0.5; }
+.todo-check {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 0;
+  background: none;
+  color: inherit;
+}
+.todo-row .link-button { flex: 0 0 auto; font-size: 12px; }

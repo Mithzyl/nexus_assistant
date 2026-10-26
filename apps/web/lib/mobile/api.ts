@@ -607,8 +607,10 @@ export interface MatterDraft {
 }
 
 export interface MatterIntakeResponse {
-  draft: MatterDraft;
+  draft: MatterDraft | null;
   replayed: boolean;
+  intent: "matter" | "question";
+  message: string | null;
 }
 
 export interface DraftPatchInput {
@@ -631,6 +633,13 @@ export interface DraftConfirmInput {
   option_id?: "A" | "B" | "C";
 }
 
+export interface MatterChangeSummary {
+  change_id: string;
+  change_type: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+}
+
 export interface DraftConfirmResponse {
   draft: MatterDraft;
   matter: MatterSummary;
@@ -638,6 +647,9 @@ export interface DraftConfirmResponse {
   reminders: MatterReminder[];
   change_id: string;
   replayed: boolean;
+  applied: boolean;
+  conflict: MatterConflict | null;
+  change: MatterChangeSummary | null;
 }
 
 export interface RevertResponse {

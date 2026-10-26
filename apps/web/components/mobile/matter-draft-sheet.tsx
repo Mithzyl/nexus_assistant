@@ -255,8 +255,13 @@ export function MatterDraftSheet({
         },
         confirmKey.current,
       );
-      setOutcome("confirmed");
       setCurrent(response.draft);
+      if (!response.applied) {
+        setOutcome("failed");
+        setMessage("服务器没有确认这次写入，请重新检查草稿后再试。");
+        return;
+      }
+      setOutcome("confirmed");
       onConfirmed(response);
     } catch (caught) {
       if (caught instanceof ApiError) {

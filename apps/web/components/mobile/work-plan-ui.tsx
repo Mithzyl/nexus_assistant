@@ -224,11 +224,17 @@ export function ScheduleEditSheet({
   open,
   onClose,
   onSave,
+  heading = "修改预览日程",
+  submitLabel = "保存到本机预览",
+  note = "保存只改本机预览；涉及正式日程或提醒时，仍需服务器确认后才生效。这里不会显示“已写入 iPhone”。",
 }: {
   schedule: WorkSchedule | null;
   open: boolean;
   onClose: () => void;
   onSave: (patch: Pick<WorkSchedule, "title" | "startsAt" | "endsAt" | "location">) => void;
+  heading?: string;
+  submitLabel?: string;
+  note?: string;
 }) {
   const [title, setTitle] = useState("");
   const [startsAt, setStartsAt] = useState("");
@@ -243,7 +249,7 @@ export function ScheduleEditSheet({
     }
   }, [open, schedule]);
   return (
-    <Sheet title="修改预览日程" open={open} onClose={onClose}>
+    <Sheet title={heading} open={open} onClose={onClose}>
       <div className="m-stack-12">
         <label className="field">
           <span className="field__label">标题</span>
@@ -273,9 +279,7 @@ export function ScheduleEditSheet({
           <span className="field__label">地点</span>
           <input className="input" value={location} onChange={(event) => setLocation(event.target.value)} />
         </label>
-        <p className="micro" style={{ margin: 0 }}>
-          保存只改本机预览；涉及正式日程或提醒时，仍需服务器确认后才生效。这里不会显示“已写入 iPhone”。
-        </p>
+        <p className="micro" style={{ margin: 0 }}>{note}</p>
         <button
           type="button"
           className="btn btn--primary"
@@ -293,7 +297,7 @@ export function ScheduleEditSheet({
             onClose();
           }}
         >
-          保存到本机预览
+          {submitLabel}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onClose}>
           取消

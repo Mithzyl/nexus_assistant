@@ -167,6 +167,16 @@ export function revertMatterChange(
   );
 }
 
+export function confirmSummary(response: DraftConfirmResponse): string {
+  if (!response.applied) return "服务器没有确认这次写入，请重新检查草稿。";
+  const parts: string[] = [];
+  if (response.schedule) parts.push(`日程「${response.schedule.title}」已更新`);
+  if (response.reminders.length > 0) parts.push(`${response.reminders.length} 个提醒已保存（未确认送达）`);
+  if (response.conflict?.has_conflict) parts.push("仍有一处时间冲突需要留意");
+  if (response.change) parts.push(`变更记录 ${response.change.change_type}`);
+  return parts.length > 0 ? parts.join("；") : "事项已更新";
+}
+
 export function newOperationKey(prefix: string): string {
   const random =
     typeof crypto !== "undefined" && "randomUUID" in crypto

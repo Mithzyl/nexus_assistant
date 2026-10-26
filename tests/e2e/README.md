@@ -102,7 +102,7 @@ passed from a single green run; wait for the backend fix and rerun both model ou
 ## Real matters, drafts and today
 
 `work_plan_check.py` (38 checks) runs against the isolated API built from
-`E2E_BACKEND_SRC` (backend/dev `02a79ed2` for this round). It verifies real
+`E2E_BACKEND_SRC` (backend/dev `55cb0fa9` for this round). It verifies real
 `GET /matters`, grouped cards, detail fields, versioned title edits, todo
 completion, deleting and reopening, the server-restored draft, conflict
 options, apply-option, confirm, draft close-without-save warning, account

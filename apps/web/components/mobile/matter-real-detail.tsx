@@ -21,13 +21,14 @@ import {
   newOperationKey,
   reopenMatter,
   reopenMatterTodo,
+  confirmSummary,
   revertMatterChange,
   updateMatter,
 } from "@/lib/mobile/matters-api";
 import { dateTimeLabel } from "@/lib/mobile/work-plan";
 import { useAuth, useUI } from "./providers";
 import { MatterDraftSheet } from "./matter-draft-sheet";
-import { ConfirmSheet, ProgressSheet } from "./work-plan-ui";
+import { ConfirmSheet, ProgressSheet, ScheduleEditSheet } from "./work-plan-ui";
 import { EmptyState, ErrorCard, LoadingCard, PageShell, Pill, Sheet } from "./ui";
 
 function syncLabel(record: MatterSchedule | MatterReminder): string {
@@ -48,20 +49,25 @@ function TodoRow({
   todo,
   busy,
   onToggle,
+  onEditTime,
 }: {
   todo: MatterTodo;
   busy: boolean;
   onToggle: () => void;
+  onEditTime: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className={`todo-row${todo.status === "done" ? " todo-row--done" : ""}`}
-      onClick={onToggle}
-      disabled={busy}
-      aria-pressed={todo.status === "done"}
-    >
-      {todo.status === "done" ? <Check size={16} /> : <Circle size={16} />}
+    <div className={`todo-row${todo.status === "done" ? " todo-row--done" : ""}`}>
+      <button
+        type="button"
+        className="todo-check"
+        onClick={onToggle}
+        disabled={busy}
+        aria-pressed={todo.status === "done"}
+        aria-label={todo.status === "done" ? `取消完成 ${todo.title}` : `完成 ${todo.title}`}
+      >
+        {todo.status === "done" ? <Check size={16} /> : <Circle size={16} />}
+      </button>
       <span className="grow" style={{ textAlign: "left" }}>
         <span style={{ display: "block" }}>{todo.title}</span>
         <span className="micro">
@@ -70,8 +76,18 @@ function TodoRow({
           {todo.status === "done" ? " · 已完成" : ""}
         </span>
       </span>
-    </button>
+      <button type="button" className="link-button" onClick={onEditTime} disabled={busy} aria-label={`调整 ${todo.title} 的时间`}>
+        时间
+      </button>
+    </div>
   );
+}
+
+function toLocalInput(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function MatterRealDetail({ id }: { id: string }) {
@@ -89,6 +105,11 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [editError, setEditError] = useState<string | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressDraft, setProgressDraft] = useState<Awaited<ReturnType<typeof intakeMatterProgress>>["draft"] | null>(null);
+  const [editSchedule, setEditSchedule] = useState<MatterSchedule | null>(null);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [todoEdit, setTodoEdit] = useState<MatterTodo | null>(null);
+  const [todoDue, setTodoDue] = useState("");
+  const [todoReminder, setTodoReminder] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
@@ -161,6 +182,10 @@ export function MatterRealDetail({ id }: { id: string }) {
     setProgressOpen(false);
     await run("progress", async () => {
       const result = await intakeMatterProgress(matter.matter_id, text, newOperationKey("web-progress"));
+      if (!result.draft) {
+        toast(result.message || "这句话更像问题，没有生成事项变更；请写清要调整的时间或进展。");
+        return;
+      }
       setProgressDraft(result.draft);
     });
   };
@@ -177,7 +202,7 @@ export function MatterRealDetail({ id }: { id: string }) {
   const onConfirmed = async (response: DraftConfirmResponse) => {
     setLastChangeId(response.change_id);
     setProgressDraft(null);
-    toast("已确认，正在重新读取事项");
+    toast(confirmSummary(response));
     await load();
   };
 
@@ -274,6 +299,15 @@ export function MatterRealDetail({ id }: { id: string }) {
                       <Pill tone={schedule.sync_status === "ios_synced" ? "green" : schedule.sync_status === "pending_ios" ? "amber" : "neutral"}>
                         {syncLabel(schedule)}
                       </Pill>
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => { setEditSchedule(schedule); setScheduleOpen(true); }}
+                        disabled={Boolean(busy) || schedule.source === "ios_eventkit"}
+                        title={schedule.source === "ios_eventkit" ? "苹果导入日程需在苹果端修改" : "调整时间或地点"}
+                      >
+                        <Pencil size={12} /> 调整
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -301,7 +335,17 @@ export function MatterRealDetail({ id }: { id: string }) {
             ) : (
               <div className="m-stack-10">
                 {matter.todos.map((todo) => (
-                  <TodoRow key={todo.todo_id} todo={todo} busy={busy === `todo-${todo.todo_id}`} onToggle={() => void toggleTodo(todo)} />
+                  <TodoRow
+                    key={todo.todo_id}
+                    todo={todo}
+                    busy={busy === `todo-${todo.todo_id}`}
+                    onToggle={() => void toggleTodo(todo)}
+                    onEditTime={() => {
+                      setTodoEdit(todo);
+                      setTodoDue(todo.due_at ? toLocalInput(todo.due_at) : "");
+                      setTodoReminder(todo.reminder_at ? toLocalInput(todo.reminder_at) : "");
+                    }}
+                  />
                 ))}
               </div>
             )}
@@ -398,6 +442,72 @@ export function MatterRealDetail({ id }: { id: string }) {
         </div>
       </Sheet>
 
+      <Sheet title="调整待办时间" open={Boolean(todoEdit)} onClose={() => setTodoEdit(null)}>
+        <div className="m-stack-12">
+          <p className="caption" style={{ margin: 0 }}>{todoEdit?.title}</p>
+          <label className="field">
+            <span className="field__label">截止时间</span>
+            <input className="input" type="datetime-local" value={todoDue} onChange={(event) => setTodoDue(event.target.value)} />
+          </label>
+          <label className="field">
+            <span className="field__label">提醒触发时间</span>
+            <input className="input" type="datetime-local" value={todoReminder} onChange={(event) => setTodoReminder(event.target.value)} />
+          </label>
+          <p className="micro" style={{ margin: 0 }}>两者分别提交。保存只生成待确认草稿，确认前不改正式待办或提醒。</p>
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={Boolean(busy) || !todoEdit}
+            onClick={() => {
+              if (!todoEdit) return;
+              const item = todoEdit;
+              const text = `把待办「${item.title}」的截止时间改为 ${todoDue ? new Date(todoDue).toISOString() : "不设"}，提醒时间改为 ${todoReminder ? new Date(todoReminder).toISOString() : "不设"}。`;
+              setTodoEdit(null);
+              void run("adjust-todo", async () => {
+                const result = await intakeMatterProgress(matter.matter_id, text, newOperationKey("web-todo-time"));
+                if (!result.draft) {
+                  toast(result.message || "服务器没有生成变更草稿，请补充时间后再试。");
+                  return;
+                }
+                setProgressDraft(result.draft);
+              });
+            }}
+          >
+            生成变更草稿
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={() => setTodoEdit(null)}>取消</button>
+        </div>
+      </Sheet>
+      <ScheduleEditSheet
+        schedule={editSchedule ? {
+          id: editSchedule.schedule_id,
+          title: editSchedule.title,
+          startsAt: editSchedule.starts_at,
+          endsAt: editSchedule.ends_at ?? editSchedule.starts_at,
+          location: editSchedule.location ?? "",
+          source: "web_native",
+          syncStatus: editSchedule.sync_status ?? "local_only",
+        } : null}
+        open={scheduleOpen}
+        heading="调整这条安排"
+        submitLabel="生成变更草稿"
+        note="不会直接改写正式日程。保存后会调用服务器生成待确认草稿，再核对时间、地点与冲突并确认。"
+        onClose={() => { setScheduleOpen(false); setEditSchedule(null); }}
+        onSave={(patch) => {
+          if (!editSchedule) return;
+          const text = `把「${editSchedule.title}」调整到 ${new Date(patch.startsAt).toISOString()} 至 ${new Date(patch.endsAt).toISOString()}${patch.location ? `，地点改为「${patch.location}」` : ""}。`;
+          setScheduleOpen(false);
+          setEditSchedule(null);
+          void run("adjust", async () => {
+            const result = await intakeMatterProgress(matter.matter_id, text, newOperationKey("web-adjust"));
+            if (!result.draft) {
+              toast(result.message || "服务器没有生成变更草稿，请补充时间或地点后再试。");
+              return;
+            }
+            setProgressDraft(result.draft);
+          });
+        }}
+      />
       <MatterDraftSheet
         draft={progressDraft}
         open={Boolean(progressDraft)}

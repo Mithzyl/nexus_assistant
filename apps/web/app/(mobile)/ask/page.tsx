@@ -18,7 +18,7 @@ import { useAuth, useUI } from "@/components/mobile/providers";
 import { LoadingCard, ScreenHeader } from "@/components/mobile/ui";
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
 import type { MatterDraft } from "@/lib/mobile/api";
-import { intakeMatter, listDrafts, newOperationKey } from "@/lib/mobile/matters-api";
+import { confirmSummary, intakeMatter, listDrafts, newOperationKey } from "@/lib/mobile/matters-api";
 import { formatDateTime } from "@/lib/mobile/format";
 import { readSession, writeSession } from "@/lib/mobile/storage";
 
@@ -319,6 +319,19 @@ export default function AskPage() {
     }
     try {
       const result = await intakeMatter(value, intakeKey.current.key);
+      if (result.intent === "question" || !result.draft) {
+        setDraft("");
+        writeSession("pa.web.ask.composer", "");
+        const created = await ask.submit(value);
+        if (!created) {
+          setDraft(value);
+          writeSession("pa.web.ask.composer", value);
+        } else {
+          toast("这句话按普通问题处理，没有创建事项");
+          intakeKey.current = null;
+        }
+        return;
+      }
       setIntakeDraft(result.draft);
     } catch (caught) {
       setComposerError(caught instanceof Error ? caught.message : "暂时无法整理这件事。");
@@ -589,7 +602,7 @@ export default function AskPage() {
           setIntakeDraft(null);
           setDraft("");
           intakeKey.current = null;
-          toast("事项变更已确认");
+          toast(confirmSummary(response));
         }}
       />
     </div>

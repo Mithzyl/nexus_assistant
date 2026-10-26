@@ -140,11 +140,11 @@ def main() -> int:
         check("title edit survives reload", "（真实纠正）" in body(page))
 
         # Todo completion writes to the server and survives reload.
-        todo = page.get_by_role("button", name=re.compile("催法务发合同修订版"))
+        todo = page.locator(".todo-row").filter(has_text="催法务发合同修订版").locator(".todo-check")
         before = todo.get_attribute("aria-pressed")
         todo.click()
         page.wait_for_timeout(800)
-        check("todo completes on server", page.get_by_role("button", name=re.compile("催法务发合同修订版")).get_attribute("aria-pressed") != before)
+        check("todo completes on server", page.locator(".todo-row").filter(has_text="催法务发合同修订版").locator(".todo-check").get_attribute("aria-pressed") != before)
         page.reload(wait_until="networkidle")
         page.wait_for_timeout(700)
 
