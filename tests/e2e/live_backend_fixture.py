@@ -40,6 +40,8 @@ ACCOUNTS = [
     ("acceptance-a@example.com", "验收甲", "甲的通勤计划"),
     ("acceptance-b@example.com", "验收乙", "乙的通勤计划"),
 ]
+# Used by the simulator runtime tests: a plan with no check yet.
+RUNTIME_ACCOUNT = ("runtime-a@example.com", "运行验证", "运行验证通勤")
 
 MODEL_TITLE = "模型建议：提前 45 分钟出发"
 
@@ -91,10 +93,113 @@ def http(method, url, *, token=None, payload=None, headers=None):
         return caught.code, parsed
 
 
+def _start_control(port: int, database: Path, env: dict, python: Path):
+    """Tiny test-only control plane for the simulator runtime tests.
+
+    It can set the worker heartbeat, run one worker tick, and stop/start the API
+    process so the app can be observed while the backend does not answer.
+    """
+
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import urlparse, parse_qs
+
+    state: dict = {"api": None, "api_factory": None}
+
+    def db_execute(sql: str, args: tuple = ()) -> None:
+        connection = sqlite3.connect(database, timeout=30)
+        try:
+            connection.execute(sql, args)
+            connection.commit()
+        finally:
+            connection.close()
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):  # noqa: D401 - quiet
+            return
+
+        def _json(self, payload: dict, status: int = 200) -> None:
+            raw = json.dumps(payload, ensure_ascii=False).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self):
+            if urlparse(self.path).path == "/stats":
+                connection = sqlite3.connect(database)
+                connection.row_factory = sqlite3.Row
+                checks = [dict(r) for r in connection.execute(
+                    "select check_id, plan_id, status from commute_checks")]
+                advisories = [dict(r) for r in connection.execute(
+                    "select advisory_id, check_id, title from commute_advisories")]
+                heartbeat = [dict(r) for r in connection.execute(
+                    "select component, last_seen_at from service_heartbeats")]
+                connection.close()
+                self._json({"checks": checks, "advisories": advisories,
+                            "heartbeats": heartbeat})
+                return
+            self._json({"error": "not_found"}, 404)
+
+        def do_POST(self):
+            try:
+                self._post()
+            except Exception as caught:  # noqa: BLE001 - report instead of dropping
+                self._json({"error": repr(caught)[:200]}, 500)
+
+        def _post(self):
+            parsed = urlparse(self.path)
+            query = parse_qs(parsed.query)
+            if parsed.path == "/heartbeat":
+                mode = (query.get("state") or ["online"])[0]
+                if mode == "never":
+                    db_execute("delete from service_heartbeats where component='worker'")
+                else:
+                    seen = datetime.now(timezone.utc)
+                    if mode == "stale":
+                        seen -= timedelta(hours=2)
+                    stamp = seen.strftime("%Y-%m-%d %H:%M:%S.%f")
+                    db_execute("delete from service_heartbeats where component='worker'")
+                    db_execute(
+                        "insert into service_heartbeats "
+                        "(component, instance_id, last_seen_at, created_at, updated_at) "
+                        "values ('worker', 'control', ?, ?, ?)",
+                        (stamp, stamp, stamp),
+                    )
+                self._json({"state": mode})
+                return
+            if parsed.path == "/worker":
+                done = subprocess.run(
+                    [str(python), "-m", "assistant_api.commute.worker", "--once"],
+                    cwd=API_DIR, env=env, text=True, capture_output=True, timeout=180,
+                )
+                self._json({"returncode": done.returncode,
+                            "output": (done.stdout + done.stderr)[-400:]})
+                return
+            if parsed.path in ("/api/stop", "/api/start"):
+                process = state.get("api")
+                if parsed.path == "/api/stop":
+                    stop(process)
+                    state["api"] = None
+                    self._json({"stopped": True})
+                else:
+                    factory = state["api_factory"]
+                    state["api"] = factory()
+                    self._json({"started": True})
+                return
+            self._json({"error": "not_found"}, 404)
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return state, server
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-port", type=int, default=8410)
     parser.add_argument("--stub-port", type=int, default=8420)
+    parser.add_argument("--control-port", type=int, default=8412)
     args = parser.parse_args()
 
     assistant_python = os.environ.get("ASSISTANT_PYTHON")
@@ -160,8 +265,10 @@ def main() -> int:
 
     log = (RUNTIME / "fixture.log").open("w")
     stub = api = None
+    control = None
+    control_server = None
     try:
-        for email, display, _ in ACCOUNTS:
+        for email, display, _ in [*ACCOUNTS, RUNTIME_ACCOUNT]:
             seeded = subprocess.run(
                 [str(python), "-m", "assistant_api.commands.seed_dev_user",
                  "--email", email, "--display-name", display],
@@ -182,14 +289,18 @@ def main() -> int:
         )
         wait_http(f"{stub_url}/health", timeout=20, label="stub")
 
-        api = subprocess.Popen(
-            [str(python), "-m", "uvicorn", "assistant_api.main:app", "--host", "127.0.0.1",
-             "--port", str(args.api_port), "--log-level", "warning"],
-            cwd=API_DIR, env=env, stdout=log, stderr=subprocess.STDOUT,
-        )
+        def start_api():
+            return subprocess.Popen(
+                [str(python), "-m", "uvicorn", "assistant_api.main:app",
+                 "--host", "127.0.0.1", "--port", str(args.api_port),
+                 "--log-level", "warning"],
+                cwd=API_DIR, env=env, stdout=log, stderr=subprocess.STDOUT,
+            )
+
+        api = start_api()
         wait_http(f"{api_url}/health", timeout=40, label="api")
 
-        fixture = {"api_url": api_url, "accounts": {}}
+        fixture = {"api_url": api_url, "control_url": f"http://127.0.0.1:{args.control_port}", "accounts": {}}
         for email, _, plan_name in ACCOUNTS:
             status, login = http("POST", f"{api_url}/api/v1/auth/login",
                                  payload={"email": email, "password": PASSWORD})
@@ -240,8 +351,44 @@ def main() -> int:
                 "ai_status": analysis.get("status"),
             }
 
+        # runtime account: a plan with no check, used by the simulator runtime tests
+        email_r, _, plan_name_r = RUNTIME_ACCOUNT
+        status, login_r = http("POST", f"{api_url}/api/v1/auth/login",
+                               payload={"email": email_r, "password": PASSWORD})
+        token_r = login_r["token"]
+        status, plan_r = http(
+            "POST", f"{api_url}/api/v1/commute-plans", token=token_r,
+            payload={
+                "name": plan_name_r, "enabled": True, "timezone": "Asia/Shanghai",
+                "weekdays": [1, 2, 3, 4, 5, 6, 7],
+                "arrival_local_time": target.strftime("%H:%M"),
+                "check_local_time": "07:30",
+                "transport_mode": "driving", "buffer_minutes": 10,
+                "notify_enabled": False,
+                "origin": {"label": "起点", "latitude": 31.2304, "longitude": 121.4737},
+                "destination": {"label": "终点", "latitude": 31.2019, "longitude": 121.606},
+            },
+        )
+        if status != 201:
+            raise RuntimeError(f"runtime plan: {status} {plan_r}")
+        fixture["accounts"][email_r] = {
+            "plan_id": plan_r["id"], "plan_name": plan_name_r,
+            "advisory_id": None, "ai_status": None,
+        }
+
+        # The two iOS read tests expect a backend that has not reported a worker yet.
+        connection = sqlite3.connect(database)
+        connection.execute("delete from service_heartbeats")
+        connection.commit()
+        connection.close()
+
+        control, control_server = _start_control(
+            args.control_port, database, env, python
+        )
+        control["api"] = api
+        control["api_factory"] = start_api
         (RUNTIME / "ready.json").write_text(json.dumps(fixture, ensure_ascii=False, indent=2))
-        print(f"READY {api_url} (db={database})", flush=True)
+        print(f"READY {api_url} control=http://127.0.0.1:{args.control_port} (db={database})", flush=True)
 
         stopping = {"stop": False}
 
@@ -254,6 +401,10 @@ def main() -> int:
             time.sleep(0.5)
         return 0
     finally:
+        if control is not None:
+            stop(control.get("api"))
+        if control_server is not None:
+            control_server.shutdown()
         stop(api)
         stop(stub)
         log.close()

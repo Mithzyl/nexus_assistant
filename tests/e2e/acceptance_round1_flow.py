@@ -35,6 +35,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone
 import uuid
 from pathlib import Path
 
@@ -307,6 +308,9 @@ def main() -> int:
         token_b = login(ACCOUNT_B)
         print("==> users seeded and logged in", flush=True)
 
+        shanghai = timezone(timedelta(hours=8))
+        target = (datetime.now(shanghai) + timedelta(minutes=15)).replace(second=0, microsecond=0)
+
         status, plan = http(
             "POST",
             f"{API_URL}/api/v1/commute-plans",
@@ -316,8 +320,8 @@ def main() -> int:
                 "enabled": True,
                 "timezone": "Asia/Shanghai",
                 "weekdays": [1, 2, 3, 4, 5, 6, 7],
-                "arrival_local_time": "23:00",
-                "check_local_time": "21:00",
+                "arrival_local_time": target.strftime("%H:%M"),
+                "check_local_time": (target - timedelta(minutes=10)).strftime("%H:%M"),
                 "transport_mode": "driving",
                 "buffer_minutes": 10,
                 "notify_enabled": False,
