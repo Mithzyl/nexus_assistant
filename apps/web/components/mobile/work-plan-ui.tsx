@@ -106,11 +106,13 @@ export function ProgressSheet({
   title,
   onClose,
   onSubmit,
+  note = "只更新本机预览，不会自动完成待办，也不会改动正式安排。",
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   onSubmit: (text: string) => void;
+  note?: string;
 }) {
   const [text, setText] = useState("");
   useEffect(() => {
@@ -120,7 +122,7 @@ export function ProgressSheet({
     <Sheet title="补充进展" open={open} onClose={onClose}>
       <div className="m-stack-12">
         <p className="caption" style={{ margin: 0 }}>
-          {title} · 只更新本机预览，不会自动完成待办，也不会改动正式安排。
+          {title} · {note}
         </p>
         <label className="field">
           <span className="field__label">这次发生了什么</span>

@@ -46,7 +46,7 @@ export default function LabPage() {
             <div className="m-stack-8 mt-12">
               <button type="button" className="btn btn--primary" onClick={() => {
                 if (!demo.enabled) demo.setEnabled(true);
-                router.push("/matters");
+                router.push("/me/lab/plan");
               }}>
                 打开事项预览 <ArrowRight size={14} />
               </button>
@@ -54,7 +54,7 @@ export default function LabPage() {
                 if (!demo.enabled) demo.setEnabled(true);
                 router.push("/today");
               }}>
-                查看今日时间线
+                查看正式今天
               </button>
               <button type="button" className="btn btn--quiet" onClick={() => {
                 plan.resetPreview();

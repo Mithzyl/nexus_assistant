@@ -230,6 +230,14 @@ export function findConflict(matter: WorkMatter, travelMinutes = 25): WorkConfli
   for (let index = 0; index < ordered.length - 1; index += 1) {
     const first = ordered[index];
     const second = ordered[index + 1];
+    if (
+      second.location === "线上" ||
+      second.title.includes("线上") ||
+      first.location === "线上" ||
+      first.title.includes("线上")
+    ) {
+      continue;
+    }
     const gap = Math.round(
       (new Date(second.startsAt).getTime() - new Date(first.endsAt).getTime()) / 60000,
     );
@@ -249,7 +257,7 @@ export function findConflict(matter: WorkMatter, travelMinutes = 25): WorkConfli
           },
           {
             id: "move",
-            title: "面谈改到 15:30",
+            title: `面谈改到 ${new Date(new Date(second.startsAt).getTime() + 30 * 60000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}`,
             detail: "保留洗牙安排，把「陆家嘴面谈」整体顺延 30 分钟。",
           },
           {
@@ -294,7 +302,7 @@ export function applyConflictOption(
     return {
       ...matter,
       schedules,
-      progress: chosen ? `已按「${chosen.title}」调整预览安排，等待确认后生效。` : matter.progress,
+      progress: chosen ? `已按「${chosen.title}」调整本机预览；正式安排仍需确认。` : matter.progress,
       history: chosen
         ? [
             {

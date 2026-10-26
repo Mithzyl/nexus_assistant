@@ -99,12 +99,13 @@ commands are in `tests/e2e/evidence/model-flow-failure-20261025/`. Do not claim 
 passed from a single green run; wait for the backend fix and rerun both model outcomes.
 
 
-## Work-plan preview
+## Real matters, drafts and today
 
-`work_plan_check.py` (36 checks) is run by the same runner. It verifies the
-browser-local work-plan preview: the `今天 / 事项 / 问助手 / 我的` labels,
-three matter groups, four detail blocks, local title/schedule/progress edits,
-todo toggling, conflict choice, stop/archive, delete and reload persistence,
-the lab separation for old consumer demos, the PWA manifest/icons, and no false
-iPhone-sync claim. This is **preview interaction only**; the backend still has
-no matter/schedule/reminder write API, so none of these edits touch the server.
+`work_plan_check.py` (38 checks) runs against the isolated API built from
+`E2E_BACKEND_SRC` (backend/dev `02a79ed2` for this round). It verifies real
+`GET /matters`, grouped cards, detail fields, versioned title edits, todo
+completion, deleting and reopening, the server-restored draft, conflict
+options, apply-option, confirm, draft close-without-save warning, account
+switch isolation, real `/today` schedules/reminders, and the lab-only preview.
+The preview under `/me/lab/plan` is browser-local and never mixed into the
+formal matters list.

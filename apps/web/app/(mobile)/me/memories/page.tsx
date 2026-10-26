@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { Brain, Pencil, Trash2 } from "lucide-react";
 
@@ -12,6 +12,7 @@ export default function MemoriesPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
+  const touchX = useRef<number | null>(null);
   const enabledCount = demo.memories.filter((memory) => memory.enabled).length;
 
   return (
@@ -66,7 +67,19 @@ export default function MemoriesPage() {
 
           <div className="m-stack-10 mt-14">
             {demo.memories.map((memory) => (
-              <div className="card" key={memory.id}>
+              <div
+                className="card"
+                key={memory.id}
+                onTouchStart={(event) => { touchX.current = event.touches[0]?.clientX ?? null; }}
+                onTouchEnd={(event) => {
+                  const start = touchX.current;
+                  const end = event.changedTouches[0]?.clientX ?? start;
+                  touchX.current = null;
+                  if (start !== null && end !== null && start - end > 60 && editing !== memory.id) {
+                    setDeleting(memory.id);
+                  }
+                }}
+              >
                 <div className="flex items-start justify-between gap-10">
                   <div className="grow">
                     <span className="micro">

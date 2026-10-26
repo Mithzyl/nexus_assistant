@@ -17,7 +17,11 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "services" / "assistant-api" / "src"))
+import os
+BACKEND_SRC = Path(
+    os.environ.get("E2E_BACKEND_SRC", str(ROOT / "services" / "assistant-api" / "src"))
+).resolve()
+sys.path.insert(0, str(BACKEND_SRC))
 
 from sqlalchemy import select  # noqa: E402
 
@@ -35,7 +39,13 @@ from assistant_api.models import (  # noqa: E402
     CommuteInstance,
     CommutePlan,
     CommuteWeatherSnapshot,
+    Matter,
+    MatterDraft,
+    MatterProgress,
+    MatterTodo,
     NexusRun,
+    Reminder,
+    ScheduleEvent,
     User,
     UserAsk,
 )
@@ -539,6 +549,164 @@ async def seed(database: str, fixture_path: Path) -> None:
         )
         session.add(check_b)
 
+        # Real matters/drafts for the web integration checks.
+        # Matters are read by /today using the real server clock in this test
+        # harness, so seed them on the current local day rather than the fixed
+        # commute clock (which is only patched for commute runtime).
+        matter_day = datetime.now(ZoneInfo(TZ)).date()
+
+        def at_local(hour: int, minute: int) -> datetime:
+            return datetime(
+                matter_day.year, matter_day.month, matter_day.day, hour, minute, tzinfo=ZoneInfo(TZ)
+            ).astimezone(UTC)
+
+        matter_lin = Matter(
+            matter_id=str(uuid4()),
+            user_id=user_a.user_id,
+            title="与林总谈年度合作合同",
+            goal="把年度合作条款谈定，并拿回双方签回的合同。",
+            status="active",
+            version=3,
+            next_step="明天 18:00 前催法务发修订版",
+            last_progress_at=NOW - timedelta(hours=3),
+            created_at=NOW - timedelta(days=2),
+            updated_at=NOW - timedelta(hours=3),
+        )
+        matter_vendor = Matter(
+            matter_id=str(uuid4()),
+            user_id=user_a.user_id,
+            title="供应商续约",
+            goal="在月底前完成年度框架协议的续签。",
+            status="waiting",
+            version=1,
+            next_step="周五前跟进盖章进度",
+            last_progress_at=NOW - timedelta(days=1),
+            created_at=NOW - timedelta(days=4),
+            updated_at=NOW - timedelta(days=1),
+        )
+        matter_archive = Matter(
+            matter_id=str(uuid4()),
+            user_id=user_a.user_id,
+            title="Q4 预算复盘",
+            goal="复盘 Q4 预算偏差。",
+            status="archived",
+            version=2,
+            next_step=None,
+            last_progress_at=NOW - timedelta(days=3),
+            archived_at=NOW - timedelta(days=3),
+            created_at=NOW - timedelta(days=6),
+            updated_at=NOW - timedelta(days=3),
+        )
+        session.add_all([matter_lin, matter_vendor, matter_archive])
+        await session.flush()
+
+        schedule_meeting = ScheduleEvent(
+            schedule_id=str(uuid4()),
+            user_id=user_a.user_id,
+            title="陆家嘴面谈",
+            starts_at=at_local(15, 0),
+            ends_at=at_local(16, 0),
+            location="陆家嘴",
+            status="scheduled",
+            source="web_native",
+            sync_status="local_only",
+            matter_id=matter_lin.matter_id,
+        )
+        schedule_dentist = ScheduleEvent(
+            schedule_id=str(uuid4()),
+            user_id=user_a.user_id,
+            title="静安寺洗牙",
+            starts_at=at_local(13, 30),
+            ends_at=at_local(14, 50),
+            location="静安寺",
+            status="scheduled",
+            source="web_native",
+            sync_status="local_only",
+            matter_id=matter_lin.matter_id,
+        )
+        session.add_all([schedule_meeting, schedule_dentist])
+        await session.flush()
+        todo_legal = MatterTodo(
+            todo_id=str(uuid4()),
+            matter_id=matter_lin.matter_id,
+            user_id=user_a.user_id,
+            title="催法务发合同修订版",
+            status="open",
+            position=0,
+            due_at=at_local(18, 0),
+            reminder_at=at_local(17, 30),
+        )
+        todo_print = MatterTodo(
+            todo_id=str(uuid4()),
+            matter_id=matter_lin.matter_id,
+            user_id=user_a.user_id,
+            title="打印两份盖章页",
+            status="done",
+            position=1,
+            due_at=at_local(12, 30),
+            completed_at=NOW - timedelta(hours=2),
+        )
+        session.add_all([todo_legal, todo_print])
+        await session.flush()
+        progress_one = MatterProgress(
+            progress_id=str(uuid4()),
+            matter_id=matter_lin.matter_id,
+            user_id=user_a.user_id,
+            text="和林总确认周四 15:00 在陆家嘴见面。",
+            kind="progress",
+        )
+        progress_two = MatterProgress(
+            progress_id=str(uuid4()),
+            matter_id=matter_lin.matter_id,
+            user_id=user_a.user_id,
+            text="把合同初稿发给法务，请他们出修订版。",
+            kind="progress",
+        )
+        session.add_all([progress_one, progress_two])
+        reminder_legal = Reminder(
+            reminder_id=str(uuid4()),
+            user_id=user_a.user_id,
+            matter_id=matter_lin.matter_id,
+            todo_id=todo_legal.todo_id,
+            title="催法务发合同修订版",
+            note="E2E 待处理提醒，未投递",
+            trigger_at=at_local(17, 30),
+            status="pending",
+            sync_status="local_only",
+            source="web_native",
+        )
+        session.add(reminder_legal)
+        draft = MatterDraft(
+            draft_id=str(uuid4()),
+            user_id=user_a.user_id,
+            kind="update",
+            matter_id=matter_lin.matter_id,
+            status="preview",
+            version=1,
+            payload_json={
+                "kind": "update",
+                "matter_id": matter_lin.matter_id,
+                "requires_choice": False,
+                "title": "与林总谈年度合作合同",
+                "goal": matter_lin.goal,
+                "next_step": matter_lin.next_step,
+                "schedule": {
+                    "schedule_id": None,
+                    "title": "临时电话",
+                    "starts_at": at_local(14, 55).isoformat(),
+                    "ends_at": at_local(15, 30).isoformat(),
+                    "location": "线上",
+                    "latitude": None,
+                    "longitude": None,
+                },
+                "todos": [],
+                "complete_todo_ids": [],
+            },
+            conflict_json={"has_conflict": False, "severity": "none", "window": {}, "conflicts": [], "options": []},
+            base_matter_version=3,
+        )
+        session.add(draft)
+
         # Chat history: 21 chats so the oldest falls outside /asks?limit=20.
         chat_runs: list[NexusRun] = []
         for index in range(21):
@@ -712,6 +880,18 @@ async def seed(database: str, fixture_path: Path) -> None:
             "plans": {key: plan.plan_id for key, plan in plans.items()},
             "plan_b": plan_b.plan_id,
             "check_b": check_b.check_id,
+            "matters": {
+                "lin": matter_lin.matter_id,
+                "vendor": matter_vendor.matter_id,
+                "archive": matter_archive.matter_id,
+            },
+            "draft": draft.draft_id,
+            "schedules": {
+                "meeting": schedule_meeting.schedule_id,
+                "dentist": schedule_dentist.schedule_id,
+            },
+            "todos": {"legal": todo_legal.todo_id, "print": todo_print.todo_id},
+            "reminder": reminder_legal.reminder_id,
             "checks": {key: check_fixture(check) for key, check in checks.items()},
             "runs": {
                 "internal": internal_run.local_run_id,

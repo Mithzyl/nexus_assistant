@@ -75,29 +75,32 @@ export function WorkPlanProvider({ children }: { children: React.ReactNode }) {
   const seedKey = accountId ? `${SEED_PREFIX}${accountId}` : null;
   const [matters, setMatters] = useState<WorkMatter[]>([]);
   const [ready, setReady] = useState(false);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   useEffect(() => {
     setReady(false);
+    setLoadedKey(null);
     if (!storageKey) {
       setMatters([]);
       setReady(true);
       return;
     }
     setMatters(readMatters(storageKey) ?? []);
+    setLoadedKey(storageKey);
     setReady(true);
   }, [storageKey]);
 
   useEffect(() => {
-    if (!ready || !storageKey) return;
+    if (!ready || !storageKey || loadedKey !== storageKey) return;
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(matters));
     } catch {
       // Preview still works in memory when storage is unavailable.
     }
-  }, [matters, ready, storageKey]);
+  }, [matters, ready, storageKey, loadedKey]);
 
   useEffect(() => {
-    if (!demo.enabled || !ready || !storageKey || !seedKey) return;
+    if (!demo.enabled || !ready || !storageKey || !seedKey || loadedKey !== storageKey) return;
     if (matters.length > 0) return;
     try {
       if (window.localStorage.getItem(seedKey) === "1") return;
@@ -106,7 +109,7 @@ export function WorkPlanProvider({ children }: { children: React.ReactNode }) {
       // fall through and seed in memory
     }
     setMatters(seedWorkMatters());
-  }, [demo.enabled, matters.length, ready, seedKey, storageKey]);
+  }, [demo.enabled, matters.length, ready, seedKey, storageKey, loadedKey]);
 
   const getMatter = useCallback(
     (id: string) => matters.find((matter) => matter.id === id),

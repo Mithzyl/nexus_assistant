@@ -13,7 +13,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "services" / "assistant-api" / "src"))
+import os
+BACKEND_SRC = Path(
+    os.environ.get("E2E_BACKEND_SRC", str(ROOT / "services" / "assistant-api" / "src"))
+).resolve()
+sys.path.insert(0, str(BACKEND_SRC))
 
 from assistant_api.commute import runtime as commute_runtime  # noqa: E402
 

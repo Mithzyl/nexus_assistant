@@ -6,6 +6,7 @@ import {
   ArrowUp,
   Cloud,
   Copy,
+  ListPlus,
   WifiOff,
   XCircle,
 } from "lucide-react";
@@ -13,8 +14,11 @@ import {
 import type { AskItem } from "@/components/mobile/ask-store";
 import { isVisibleChat, useAskStore } from "@/components/mobile/ask-store";
 import { Markdown } from "@/components/mobile/markdown";
-import { useAuth } from "@/components/mobile/providers";
+import { useAuth, useUI } from "@/components/mobile/providers";
 import { LoadingCard, ScreenHeader } from "@/components/mobile/ui";
+import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
+import type { MatterDraft } from "@/lib/mobile/api";
+import { intakeMatter, listDrafts, newOperationKey } from "@/lib/mobile/matters-api";
 import { formatDateTime } from "@/lib/mobile/format";
 import { readSession, writeSession } from "@/lib/mobile/storage";
 
@@ -218,6 +222,11 @@ export default function AskPage() {
   const ask = useAskStore();
   const [draft, setDraft] = useState("");
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [intakeDraft, setIntakeDraft] = useState<MatterDraft | null>(null);
+  const [pendingDrafts, setPendingDrafts] = useState<MatterDraft[]>([]);
+  const [organizing, setOrganizing] = useState(false);
+  const intakeKey = useRef<{ text: string; key: string } | null>(null);
+  const { toast } = useUI();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -238,6 +247,18 @@ export default function AskPage() {
   useEffect(() => {
     writeSession("pa.web.ask.composer", draft);
   }, [draft]);
+
+  useEffect(() => {
+    if (state !== "signedIn") {
+      setPendingDrafts([]);
+      return;
+    }
+    let alive = true;
+    void listDrafts("preview")
+      .then((rows) => { if (alive) setPendingDrafts(rows); })
+      .catch(() => { /* The intake/draft panel reports its own errors. */ });
+    return () => { alive = false; };
+  }, [state, user?.user_id]);
 
   useEffect(() => {
     const textarea = inputRef.current;
@@ -282,6 +303,28 @@ export default function AskPage() {
     window.setTimeout(() => {
       endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }, 80);
+  };
+
+  const organize = async () => {
+    const value = draft.trim();
+    if (!value) return;
+    if (state !== "signedIn") {
+      setComposerError("登录后才能整理事项，输入已保留。");
+      return;
+    }
+    setComposerError(null);
+    setOrganizing(true);
+    if (!intakeKey.current || intakeKey.current.text !== value) {
+      intakeKey.current = { text: value, key: newOperationKey("web-intake") };
+    }
+    try {
+      const result = await intakeMatter(value, intakeKey.current.key);
+      setIntakeDraft(result.draft);
+    } catch (caught) {
+      setComposerError(caught instanceof Error ? caught.message : "暂时无法整理这件事。");
+    } finally {
+      setOrganizing(false);
+    }
   };
 
   const copyAnswer = async (item: AskItem) => {
@@ -354,6 +397,26 @@ export default function AskPage() {
           </p>
         ) : null}
       </section>
+
+      {pendingDrafts.length > 0 ? (
+        <section style={{ padding: "0 var(--m-gutter)", marginBottom: 16 }}>
+          <div className="card card--amber">
+            <p className="card-title amber" style={{ fontSize: 15 }}>
+              有 {pendingDrafts.length} 条待确认整理
+            </p>
+            <p className="caption" style={{ margin: "4px 0 0" }}>
+              来自服务器的预览草稿，关闭页面后仍可在这里继续；不会自动反复弹出面板。
+            </p>
+            <div className="m-stack-8 mt-10">
+              {pendingDrafts.slice(0, 3).map((draftItem) => (
+                <button key={draftItem.draft_id} type="button" className="btn btn--secondary" onClick={() => setIntakeDraft(draftItem)}>
+                  {draftItem.payload.title || "未命名整理"}{draftItem.candidates?.length ? " · 需要选择事项" : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {timeline.length === 0 ? (
         <section style={{ padding: "0 var(--m-gutter)" }}>
@@ -458,12 +521,21 @@ export default function AskPage() {
           <p className="caption" style={{ margin: 0 }}>
             日历、提醒事项和笔记目前只读取已同步到服务器的副本；浏览器不能声称获得了系统读取权限。
           </p>
+          <p className="caption" style={{ margin: 0 }}>
+            普通提问不会自动创建事项。需要整理时，点输入框左侧的“整理”按钮；这会把当前文字明确送到事项整理入口，而不是从回答文字猜测保存成功。
+          </p>
         </div>
       </section>
 
       {composerError ? (
-        <p className="composer-hint" style={{ position: "fixed", bottom: "calc(112px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 36 }} role="alert">
+        <p className="composer-hint" style={{ position: "fixed", bottom: "calc(132px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 36 }} role="alert">
           {composerError}
+        </p>
+      ) : null}
+
+      {organizing ? (
+        <p className="composer-hint" style={{ position: "fixed", bottom: "calc(132px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 36 }}>
+          正在整理，服务器返回草稿后再让你确认…
         </p>
       ) : null}
 
@@ -489,6 +561,16 @@ export default function AskPage() {
         />
         <button
           type="button"
+          className="composer__intake"
+          disabled={!draft.trim() || state !== "signedIn" || organizing || ask.submitting}
+          onClick={() => void organize()}
+          aria-label="整理成事项"
+          title="把当前文字交给事项整理（不会自动从回答推断）"
+        >
+          {organizing ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <ListPlus size={17} />}
+        </button>
+        <button
+          type="button"
           className="composer__send"
           disabled={!canSend}
           onClick={() => void send()}
@@ -497,6 +579,19 @@ export default function AskPage() {
           {ask.submitting ? <span className="spinner" style={{ width: 15, height: 15 }} /> : <ArrowUp size={17} strokeWidth={2.4} />}
         </button>
       </div>
+
+      <MatterDraftSheet
+        draft={intakeDraft}
+        open={Boolean(intakeDraft)}
+        onClose={() => setIntakeDraft(null)}
+        onConfirmed={(response) => {
+          setPendingDrafts((rows) => rows.filter((row) => row.draft_id !== response.draft.draft_id));
+          setIntakeDraft(null);
+          setDraft("");
+          intakeKey.current = null;
+          toast("事项变更已确认");
+        }}
+      />
     </div>
   );
 }

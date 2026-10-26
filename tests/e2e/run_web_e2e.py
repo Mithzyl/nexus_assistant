@@ -66,6 +66,7 @@ def main() -> int:
     parser.add_argument("--web-port", type=int, default=3300)
     parser.add_argument("--api-port", type=int, default=8300)
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--only", choices=("web_flow_check.py", "runtime_state_check.py", "work_plan_check.py"))
     args = parser.parse_args()
 
     assistant_python = os.environ.get("ASSISTANT_PYTHON")
@@ -111,6 +112,12 @@ def main() -> int:
     shots.mkdir()
     database = runtime / "assistant.db"
     fixture = runtime / "fixture.json"
+    backend_src = Path(
+        os.environ.get(
+            "E2E_BACKEND_SRC",
+            str(ROOT / "services" / "assistant-api" / "src"),
+        )
+    ).resolve()
 
     seed = subprocess.run(
         [
@@ -122,6 +129,7 @@ def main() -> int:
             str(fixture),
         ],
         cwd=ROOT,
+        env={**os.environ, "E2E_BACKEND_SRC": str(backend_src)},
         text=True,
         capture_output=True,
     )
@@ -146,7 +154,8 @@ def main() -> int:
         "ASSISTANT_NEXUS_APPLICATION_TOKEN": "stub-application-token-32-characters",
         "ASSISTANT_TOOL_CALLBACK_TOKEN": "tool-callback-token-32-characters",
         "ASSISTANT_COMMUTE_PROVIDER_MODE": "mock",
-        "PYTHONPATH": str(ROOT / "services" / "assistant-api" / "src"),
+        "PYTHONPATH": str(backend_src),
+        "E2E_BACKEND_SRC": str(backend_src),
         "HTTP_PROXY": "",
         "HTTPS_PROXY": "",
         "ALL_PROXY": "",
@@ -195,7 +204,8 @@ def main() -> int:
             "E2E_SHOT_DIR": str(shots),
         }
         failed = 0
-        for name in ("web_flow_check.py", "runtime_state_check.py", "work_plan_check.py"):
+        names = (args.only,) if args.only else ("web_flow_check.py", "runtime_state_check.py", "work_plan_check.py")
+        for name in names:
             print(f"==> running Playwright flow {name}", flush=True)
             result = subprocess.run(
                 [sys.executable, str(ROOT / "tests" / "e2e" / name)],

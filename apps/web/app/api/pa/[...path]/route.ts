@@ -23,6 +23,9 @@ const ALLOWED_ROOTS = new Set([
   "checks",
   "advisories",
   "commute",
+  "matters",
+  "today",
+  "reminders",
 ]);
 
 const FORWARDED_HEADERS = [

@@ -423,3 +423,225 @@ export function renewSession() {
 export function logoutSession() {
   return apiRequest<{ revoked: boolean }>("/api/auth/logout", { method: "POST" });
 }
+
+/* Matters, drafts, today and reminders (backend/dev 74927adb) ---------------- */
+
+export type MatterGroup = "active" | "waiting" | "archived" | "all";
+export type MatterStatus = "active" | "waiting" | "archived" | "deleted";
+export type MatterScheduleSource = "web_native" | "ios_eventkit" | "ios_reminders";
+export type MatterSyncStatus = "local_only" | "pending_ios" | "ios_synced";
+export type MatterTodoStatus = "open" | "done";
+export type MatterReminderStatus = "pending" | "completed" | "cancelled";
+
+export interface MatterSummary {
+  matter_id: string;
+  title: string;
+  goal: string;
+  status: MatterStatus;
+  version: number;
+  next_step: string | null;
+  last_progress_at: string | null;
+  latest_progress: string | null;
+  open_todos: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MatterListResponse {
+  items: MatterSummary[];
+  next_cursor: string | null;
+}
+
+export interface MatterSchedule {
+  schedule_id: string;
+  matter_id: string | null;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  location: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  status: string;
+  source: MatterScheduleSource | null;
+  sync_status: MatterSyncStatus | null;
+  deleted_at: string | null;
+}
+
+export interface MatterTodo {
+  todo_id: string;
+  title: string;
+  status: MatterTodoStatus;
+  position: number;
+  due_at: string | null;
+  reminder_at: string | null;
+  completed_at: string | null;
+}
+
+export interface MatterProgress {
+  progress_id: string;
+  text: string;
+  kind: string;
+  created_at: string;
+}
+
+export interface MatterReminder {
+  reminder_id: string;
+  matter_id: string | null;
+  todo_id: string | null;
+  title: string;
+  note: string | null;
+  trigger_at: string;
+  status: MatterReminderStatus;
+  sync_status: MatterSyncStatus | null;
+  source: MatterScheduleSource | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+}
+
+export interface MatterDetail extends MatterSummary {
+  schedules: MatterSchedule[];
+  todos: MatterTodo[];
+  progress: MatterProgress[];
+  reminders: MatterReminder[];
+}
+
+export interface TodayView {
+  date: string;
+  timezone: string;
+  schedules: MatterSchedule[];
+  reminders: MatterReminder[];
+  pending_drafts: number;
+}
+
+export interface MatterUpdateInput {
+  expected_version: number;
+  title?: string;
+  goal?: string;
+  status?: "active" | "waiting";
+  next_step?: string;
+}
+
+export interface MatterVersionInput {
+  expected_version: number;
+  cancel_reminders?: boolean;
+}
+
+export interface DraftSchedule {
+  schedule_id?: string | null;
+  title: string;
+  starts_at: string;
+  ends_at?: string | null;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export interface DraftTodo {
+  todo_id?: string | null;
+  title: string;
+  due_at?: string | null;
+  reminder_at?: string | null;
+  status?: MatterTodoStatus;
+}
+
+export interface DraftPayload {
+  kind?: "create" | "update";
+  matter_id?: string | null;
+  requires_choice?: boolean;
+  title?: string | null;
+  goal?: string | null;
+  changes_note?: string | null;
+  next_step?: string | null;
+  schedule?: DraftSchedule | null;
+  todos?: DraftTodo[];
+  complete_todo_ids?: string[];
+  selected_option?: "A" | "B" | "C" | null;
+  source_text?: string | null;
+  analysis?: Record<string, unknown> | null;
+}
+
+export interface MatterConflictOption {
+  option_id: "A" | "B" | "C";
+  label: string;
+  detail: string;
+  recommended: boolean;
+  proposed_start: string | null;
+  creates_todo: string | null;
+  shift_seconds: number;
+  target_schedule_id: string | null;
+}
+
+export interface MatterConflictItem {
+  schedule_id: string | null;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  gap_seconds: number;
+  eta_seconds: number | null;
+  eta_status: "available" | "unverified" | "not_applicable";
+  relation: "previous" | "next" | "overlap";
+  reason: string;
+}
+
+export interface MatterConflict {
+  has_conflict: boolean;
+  severity: "none" | "tight" | "overlap";
+  window: Record<string, string>;
+  conflicts: MatterConflictItem[];
+  options: MatterConflictOption[];
+  eta_note: string | null;
+}
+
+export interface MatterDraft {
+  draft_id: string;
+  kind: "create" | "update";
+  status: "preview" | "confirmed" | "cancelled";
+  version: number;
+  matter_id: string | null;
+  payload: DraftPayload;
+  conflicts: MatterConflict | null;
+  candidates: Array<Record<string, unknown>> | null;
+  ai_run_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MatterIntakeResponse {
+  draft: MatterDraft;
+  replayed: boolean;
+}
+
+export interface DraftPatchInput {
+  expected_version: number;
+  title?: string;
+  goal?: string;
+  changes_note?: string;
+  next_step?: string;
+  schedule?: DraftSchedule | null;
+  todos?: DraftTodo[] | null;
+  complete_todo_ids?: string[] | null;
+}
+
+export interface DraftConfirmInput {
+  expected_version: number;
+  matter_id?: string;
+  create_schedule?: boolean;
+  sync_to_ios?: boolean;
+  acknowledge_conflict?: boolean;
+  option_id?: "A" | "B" | "C";
+}
+
+export interface DraftConfirmResponse {
+  draft: MatterDraft;
+  matter: MatterSummary;
+  schedule: MatterSchedule | null;
+  reminders: MatterReminder[];
+  change_id: string;
+  replayed: boolean;
+}
+
+export interface RevertResponse {
+  matter: MatterSummary;
+  change_id: string;
+  reverted_at: string;
+}

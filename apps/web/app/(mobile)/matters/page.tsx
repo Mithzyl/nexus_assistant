@@ -1,42 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowDownRight, ArrowRight, Plus, Sparkles } from "lucide-react";
+import { ArrowDownRight, FlaskConical, Plus, RefreshCw } from "lucide-react";
 
-import { useDemo, useUI } from "@/components/mobile/providers";
-import { PreviewBanner } from "@/components/mobile/work-plan-ui";
-import { useWorkPlan } from "@/components/mobile/work-plan-store";
-import { EmptyState, LoadingCard, ScreenHeader } from "@/components/mobile/ui";
-import { WORK_STATUS_LABEL, dateTimeLabel, type WorkMatter, type WorkMatterStatus } from "@/lib/mobile/work-plan";
+import { useAuth, useUI } from "@/components/mobile/providers";
+import { EmptyState, ErrorCard, LoadingCard, ScreenHeader } from "@/components/mobile/ui";
+import { useMatters } from "@/lib/mobile/use-matters";
+import type { MatterSummary } from "@/lib/mobile/api";
 
-function MatterCard({ matter }: { matter: WorkMatter }) {
+function MatterCard({ matter }: { matter: MatterSummary }) {
   return (
-    <Link href={`/matters/${matter.id}`} className="card matter-card">
-      <span className="card-title" style={{ display: "block" }}>
-        {matter.title}
+    <Link href={`/matters/${matter.matter_id}`} className="card matter-card">
+      <span className="card-title" style={{ display: "block" }}>{matter.title}</span>
+      <span className="matter-card__progress">
+        {matter.latest_progress || "还没有最新进展。"}
       </span>
-      <span className="matter-card__progress">{matter.progress}</span>
       <span className="matter-card__next">
         <ArrowDownRight size={13} />
-        <span>{matter.nextAction || "下一步待定"}</span>
-        {matter.nextAt ? <span className="matter-card__time">{dateTimeLabel(matter.nextAt)}</span> : null}
+        <span>{matter.next_step || "下一步待定"}</span>
+        {matter.open_todos > 0 ? <span className="matter-card__time">{matter.open_todos} 项待办</span> : null}
       </span>
-      {matter.stopped ? <span className="micro">已停止跟进</span> : null}
     </Link>
   );
 }
 
 export default function MattersPage() {
-  const router = useRouter();
-  const demo = useDemo();
-  const plan = useWorkPlan();
-  const { openCapture, toast } = useUI();
+  const { state, user } = useAuth();
+  const { openCapture } = useUI();
+  const signedIn = state === "signedIn";
+  const matters = useMatters(signedIn, user?.user_id ?? null);
 
-  const groups: Array<{ status: WorkMatterStatus; items: WorkMatter[] }> = [
-    { status: "active", items: plan.active },
-    { status: "waiting", items: plan.waiting },
-    { status: "archived", items: plan.archived },
+  const groups: Array<{ status: "active" | "waiting" | "archived"; label: string }> = [
+    { status: "active", label: "正在推进" },
+    { status: "waiting", label: "等待外部反馈" },
+    { status: "archived", label: "已完成／归档" },
   ];
 
   return (
@@ -51,80 +48,73 @@ export default function MattersPage() {
         }
       />
 
-      {!demo.enabled ? (
+      <div style={{ padding: "0 var(--m-gutter)" }}>
+        <div className="flex items-center justify-between gap-10">
+          <Link href="/me/lab" className="link-button">
+            <FlaskConical size={14} /> 实验室预览
+          </Link>
+          <button type="button" className="link-button" onClick={matters.refresh} disabled={matters.loading}>
+            <RefreshCw size={13} /> 刷新
+          </button>
+        </div>
+      </div>
+
+      {!signedIn ? (
+        <div style={{ padding: "0 var(--m-gutter)" }}>
+          <EmptyState title="登录后读取服务器事项" body="事项、日程和提醒都按当前账号保存在 PA 服务器；未登录不会显示示例。">
+            <Link href="/login" className="btn btn--secondary">登录 PA 账号</Link>
+          </EmptyState>
+        </div>
+      ) : matters.loading && matters.items.length === 0 ? (
+        <div style={{ padding: "0 var(--m-gutter)" }}>
+          <LoadingCard label="正在读取事项…" />
+        </div>
+      ) : matters.error ? (
+        <div style={{ padding: "0 var(--m-gutter)" }}>
+          <ErrorCard message={matters.error.message} onRetry={matters.refresh} />
+        </div>
+      ) : matters.items.length === 0 ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
-            title="事项服务尚未接通"
-            body="服务器还没有事项、日程和提醒的写入接口。正常模式不会把本地示例或演示事务冒充成已经保存的事项。"
+            title="还没有事项"
+            body="在问助手交代一件要持续跟进的事，或从实验室查看概念预览。正式事项只来自服务器。"
           >
             <div className="m-stack-8">
-              <Link href="/me/lab" className="btn btn--secondary">
-                查看实验室与概念预览
-              </Link>
-              <Link href="/ask" className="btn btn--secondary">
-                向助手交代一件事
-              </Link>
-              <button
-                type="button"
-                className="btn btn--quiet"
-                onClick={() => {
-                  demo.setEnabled(true);
-                  toast("已开启概念预览，仅使用本机示例");
-                }}
-              >
-                显式开启概念预览
-              </button>
+              <Link href="/ask" className="btn btn--secondary">去问助手</Link>
+              <Link href="/me/lab" className="btn btn--quiet">查看实验室预览</Link>
             </div>
           </EmptyState>
-          <p className="micro text-center mt-16">
-            计划接续的真实接口尚未提供，因此这里保持真实空状态，而不是铺一张假列表。
-          </p>
-        </div>
-      ) : !plan.ready ? (
-        <div style={{ padding: "0 var(--m-gutter)" }}>
-          <LoadingCard label="正在读取本机预览…" />
         </div>
       ) : (
         <>
-          <div style={{ padding: "0 var(--m-gutter)" }}>
-            <PreviewBanner />
-          </div>
-
-          {groups.map((group) => (
-            <section key={group.status} className="stack-12">
-              <div className="flex items-center justify-between gap-12" style={{ padding: "0 var(--m-gutter)" }}>
-                <h2 className="section-title" style={{ marginBottom: 0 }}>
-                  {WORK_STATUS_LABEL[group.status]}
-                </h2>
-                <span className="micro">{group.items.length}</span>
-              </div>
-              {group.items.length === 0 ? (
-                <p className="micro" style={{ padding: "0 var(--m-gutter)", margin: "4px 0 0" }}>
-                  {group.status === "archived" ? "还没有已完成或归档的事项。" : "这一组暂时为空。"}
-                </p>
-              ) : (
-                <div className="m-stack-10" style={{ padding: "0 var(--m-gutter)" }}>
-                  {group.items.map((matter) => (
-                    <MatterCard key={matter.id} matter={matter} />
-                  ))}
+          {groups.map((group) => {
+            const rows = matters.items.filter((matter) => matter.status === group.status);
+            return (
+              <section key={group.status} className="stack-12">
+                <div className="flex items-center justify-between gap-12" style={{ padding: "0 var(--m-gutter)" }}>
+                  <h2 className="section-title" style={{ marginBottom: 0 }}>{group.label}</h2>
+                  <span className="micro">{rows.length}</span>
                 </div>
-              )}
-            </section>
-          ))}
-
-          <div style={{ padding: "0 var(--m-gutter)" }}>
-            <button
-              type="button"
-              className="btn btn--secondary"
-              onClick={() => router.push("/me/lab")}
-            >
-              <Sparkles size={14} /> 实验室与概念预览
-              <ArrowRight size={14} />
-            </button>
-            <p className="micro text-center mt-8">
-              预览数据只在本浏览器；停止、删除和确认都不会改变服务器。
-            </p>
-          </div>
+                {rows.length === 0 ? (
+                  <p className="micro" style={{ padding: "0 var(--m-gutter)", margin: "4px 0 0" }}>这一组暂无事项。</p>
+                ) : (
+                  <div className="m-stack-10" style={{ padding: "0 var(--m-gutter)" }}>
+                    {rows.map((matter) => <MatterCard key={matter.matter_id} matter={matter} />)}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+          {matters.nextCursor ? (
+            <div style={{ padding: "0 var(--m-gutter)" }}>
+              <button type="button" className="btn btn--secondary" onClick={matters.loadMore} disabled={matters.loadingMore}>
+                {matters.loadingMore ? "正在加载…" : "加载更多"}
+              </button>
+            </div>
+          ) : null}
+          <p className="micro text-center" style={{ padding: "0 var(--m-gutter)" }}>
+            来自 PA 服务器 · 当前已读取 {matters.items.length} 条；没有把本地预览混入这里。
+          </p>
         </>
       )}
     </div>

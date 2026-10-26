@@ -47,7 +47,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
 
   if (!demo.enabled) {
     return (
-      <PageShell title="事项" fallbackHref="/matters">
+      <PageShell title="事项" fallbackHref="/me/lab/plan">
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
             title="这是概念预览中的事项"
@@ -60,10 +60,10 @@ export function WorkMatterDetail({ id }: { id: string }) {
 
   if (!matter) {
     return (
-      <PageShell title="事项" fallbackHref="/matters">
+      <PageShell title="事项" fallbackHref="/me/lab/plan">
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState title="这条预览事项不存在" body="它可能已被删除，或当前账号没有这条本机记录。">
-            <button type="button" className="btn btn--secondary" onClick={() => router.push("/matters")}>
+            <button type="button" className="btn btn--secondary" onClick={() => router.push("/me/lab/plan")}>
               返回事项
             </button>
           </EmptyState>
@@ -76,7 +76,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
     <PageShell
       title="事项详情"
       subtitle="本机概念预览 · 未写入服务器"
-      fallbackHref="/matters"
+      fallbackHref="/me/lab/plan"
       action={
         <button type="button" className="icon-button" onClick={() => setEditOpen(true)} aria-label="纠正事项">
           <Pencil size={17} />
@@ -129,7 +129,6 @@ export function WorkMatterDetail({ id }: { id: string }) {
                     <ScheduleRow
                       schedule={item}
                       onEdit={(next) => {
-                        setUndoSchedule(next);
                         setSchedule(next);
                         setScheduleOpen(true);
                       }}
@@ -281,7 +280,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
           plan.stopFollowing(matter.id);
           setStopOpen(false);
           toast("已在本机预览中停止跟进");
-          router.push("/matters");
+          router.push("/me/lab/plan");
         }}
       />
       <ConfirmSheet
@@ -294,7 +293,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
           plan.deleteMatter(matter.id);
           setDeleteOpen(false);
           toast("已删除本机预览");
-          router.push("/matters");
+          router.push("/me/lab/plan");
         }}
       />
     </PageShell>
