@@ -1,5 +1,8 @@
 # 第一轮联合验收记录（acceptance/round1）
 
+> **本文是 2026-10-25 第一轮联合验收的历史证据，不是当前验收标准，也不是最新版本结果。**
+> 当前验收要求以 [`产品规划-工作安排与计划接续.md`](产品规划-工作安排与计划接续.md) 第三部分「核心验收清单」六条为准，逐条对照见 [`测试与验收说明.md`](测试与验收说明.md)。文中的测试数量、合并记录和修复结果只对当时范围有效，不能替代现行六条验收。
+
 临时分支 `acceptance/round1`，工作目录
 `/Users/mith/Desktop/project/superapp-next-worktrees/acceptance`。
 `main` 与三个开发分支在本轮都没有改动或推送。
@@ -201,15 +204,6 @@ iOS 目前没有 runtime 模型，因此没有假装覆盖。
 5. 三个验收脚本依赖本目录的 `.tmp/backend-venv`、空闲端口与 Playwright，未纳入 CI。
 6. iOS 真机未验收，全部为 iPhone 18 Pro 模拟器。
 
-## 8. 建议合入 main 的内容（等待确认后再执行）
+## 8. 建议合入 main 的内容（任务清单已删除）
 
-- 三个分支的 6 个提交（见第 1 节）与 3 个合并提交。
-- 本记录、契约补充（`client-contract.json`、`openapi.json`、第 9.8 节文档）。
-- `unknown` 状态兼容修复（后端 + Web + iOS + 回归测试）。
-- AI 观察器缺失函数修复（`run_service.py` + `test_run_service_helpers.py`）。
-- 新增验收资产：`acceptance_round1_flow.py`、`acceptance_model_flows.py`、
-  `live_backend_fixture.py`、`LiveBackendUITests.swift`，以及 Nexus 桩的
-  `STUB_FINAL_TEXT` 测试开关。
-
-合入后建议在 main 上重跑一次后端测试、网页 `test:e2e` 与 iOS 构建，
-再由普通终端补跑 iOS 单元测试，之后才考虑推送与真实环境联调。
+> 2026-10-26 清理：本节原有“建议合入 main”的行动清单属于第一轮验收的后续安排，已过时，条目已删除。第 1、2、5、6 节的提交、缺陷与修复证据保留，不因删除行动清单而失效。当前开发与验收见 [`开发安排.md`](开发安排.md) 与 [`测试与验收说明.md`](测试与验收说明.md)。

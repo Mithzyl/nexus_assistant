@@ -1,5 +1,7 @@
 # Personal Assistant × NexusPilot 后端集成设计
 
+> 本文是 2026-10-23 至 2026-10-25 的后端集成设计与联调记录，不是当前产品规划。当前规划见 [`../产品规划-工作安排与计划接续.md`](../产品规划-工作安排与计划接续.md)，能力差距见 [`../最新规划落地对照-现有能力与差距.md`](../最新规划落地对照-现有能力与差距.md)。
+
 对齐对象：`/Users/mith/Desktop/project/llm_fusion_platform`（NexusPilot，版本 0.8.0，分支 `codex/general-agent-tool-loop`）。
 本文所有"已有/没有"的判断都来自该仓库当前代码，未采用路线图里的计划性描述。
 
