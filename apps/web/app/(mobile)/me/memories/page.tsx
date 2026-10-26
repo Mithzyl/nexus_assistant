@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Brain, Pencil } from "lucide-react";
+import { Brain, Pencil, Trash2 } from "lucide-react";
 
 import { useDemo } from "@/components/mobile/providers";
-import { EmptyState, PageShell, SwitchRow } from "@/components/mobile/ui";
+import { ConfirmDialog, EmptyState, PageShell, SwitchRow } from "@/components/mobile/ui";
 
 export default function MemoriesPage() {
   const demo = useDemo();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
   const enabledCount = demo.memories.filter((memory) => memory.enabled).length;
 
   return (
@@ -135,6 +136,13 @@ export default function MemoriesPage() {
                 <p className="micro" style={{ margin: "4px 0 0", lineHeight: 1.6 }}>
                   依据：{memory.source}
                 </p>
+                <button
+                  type="button"
+                  className="link-button danger-text mt-8"
+                  onClick={() => setDeleting(memory.id)}
+                >
+                  <Trash2 size={12} /> 删除这条经验
+                </button>
               </div>
             ))}
           </div>
@@ -145,6 +153,18 @@ export default function MemoriesPage() {
           </p>
         </>
       )}
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        title="删除这条经验？"
+        body="只删除当前演示会话中的这条本机经验，不会影响服务器或 AI 平台；刷新后可恢复示例。"
+        confirmLabel="删除"
+        danger
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => {
+          if (deleting) demo.deleteMemory(deleting);
+          setDeleting(null);
+        }}
+      />
     </PageShell>
   );
 }

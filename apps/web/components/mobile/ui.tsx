@@ -354,18 +354,52 @@ export function Sheet({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.classList.add("m-sheet-open");
+    const panel = panelRef.current;
+    const focusables = panel?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    (focusables?.[0] ?? panel)?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !panel) return;
+      const items = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((item) => item.offsetParent !== null);
+      if (items.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => {
       document.body.classList.remove("m-sheet-open");
       document.removeEventListener("keydown", onKey);
+      if (previous?.isConnected) previous.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -373,14 +407,16 @@ export function Sheet({
     <div
       className="sheet-backdrop"
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) closeRef.current();
       }}
     >
       <div
+        ref={panelRef}
         className="sheet-panel"
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
       >
         <div className="sheet-handle" />
         <div className="flex items-center gap-10" style={{ marginBottom: 14 }}>
@@ -390,7 +426,7 @@ export function Sheet({
           <button
             type="button"
             className="icon-button"
-            onClick={onClose}
+            onClick={() => closeRef.current()}
             aria-label="关闭"
             style={{ width: 40, height: 40 }}
           >

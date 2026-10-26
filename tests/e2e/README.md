@@ -97,3 +97,14 @@ sometimes returns 500 from `ensure_instance()` with
 SQLAlchemy 2.0.51 and 2.1.6 after the worktree import fix. Failure evidence and the exact
 commands are in `tests/e2e/evidence/model-flow-failure-20261025/`. Do not claim this flow
 passed from a single green run; wait for the backend fix and rerun both model outcomes.
+
+
+## Work-plan preview
+
+`work_plan_check.py` (36 checks) is run by the same runner. It verifies the
+browser-local work-plan preview: the `今天 / 事项 / 问助手 / 我的` labels,
+three matter groups, four detail blocks, local title/schedule/progress edits,
+todo toggling, conflict choice, stop/archive, delete and reload persistence,
+the lab separation for old consumer demos, the PWA manifest/icons, and no false
+iPhone-sync claim. This is **preview interaction only**; the backend still has
+no matter/schedule/reminder write API, so none of these edits touch the server.

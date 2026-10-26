@@ -9,11 +9,12 @@ import { Layers, MessageCircle, Sun, UserRound } from "lucide-react";
 
 import { AppProviders } from "./providers";
 import { AskProvider } from "./ask-store";
+import { WorkPlanProvider } from "./work-plan-store";
 
 const TABS = [
   { href: "/today", label: "今天", icon: Sun },
-  { href: "/matters", label: "事务", icon: Layers },
-  { href: "/ask", label: "助手", icon: MessageCircle },
+  { href: "/matters", label: "事项", icon: Layers },
+  { href: "/ask", label: "问助手", icon: MessageCircle },
   { href: "/me", label: "我的", icon: UserRound },
 ];
 
@@ -88,9 +89,11 @@ function Shell({ children }: { children: React.ReactNode }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AppProviders>
-      <AskProvider>
-        <Shell>{children}</Shell>
-      </AskProvider>
+      <WorkPlanProvider>
+        <AskProvider>
+          <Shell>{children}</Shell>
+        </AskProvider>
+      </WorkPlanProvider>
     </AppProviders>
   );
 }

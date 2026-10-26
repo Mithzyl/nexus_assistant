@@ -279,6 +279,7 @@ interface DemoValue {
   addMemory: (text: string) => void;
   toggleMemory: (id: string) => void;
   updateMemory: (id: string, text: string) => void;
+  deleteMemory: (id: string) => void;
   captureDemo: (sourceId: string | null, text?: string) => CaptureOutcome;
 }
 
@@ -474,6 +475,10 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     setMemories((current) =>
       current.map((memory) => (memory.id === id ? { ...memory, text } : memory)),
     );
+  }, []);
+
+  const deleteMemory = useCallback((id: string) => {
+    setMemories((current) => current.filter((memory) => memory.id !== id));
   }, []);
 
   const addUnknownMatter = useCallback(
@@ -699,6 +704,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
       addMemory,
       toggleMemory,
       updateMemory,
+      deleteMemory,
       captureDemo,
     }),
     [
@@ -728,6 +734,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
       addMemory,
       toggleMemory,
       updateMemory,
+      deleteMemory,
       captureDemo,
     ],
   );

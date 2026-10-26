@@ -299,7 +299,7 @@ export default function AskPage() {
 
   return (
     <div className="m-screen" style={{ paddingBottom: 220 }}>
-      <ScreenHeader title="助手" subtitle="连接 PA 服务器 · 每次提问独立处理" />
+      <ScreenHeader title="问助手" subtitle="连接 PA 服务器 · 每次提问独立处理" />
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
         {state === "signedIn" && user ? (

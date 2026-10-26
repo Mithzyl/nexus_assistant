@@ -4,8 +4,21 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "生活助手",
   description:
-    "Personal Assistant 移动 Web：今天、事务、助手与我的。",
+    "Personal Assistant 移动 Web：今天、事项、问助手与我的。",
   applicationName: "生活助手",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "生活助手",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {

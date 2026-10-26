@@ -8,22 +8,22 @@ const ROWS: Array<{ area: string; real: string; local: string }> = [
   {
     area: "今天",
     real: "日期、本机记录、服务器通勤建议",
-    local: "演示模式下的待确认卡片与整理记录",
+    local: "概念预览下的事项时间线与冲突调整；仅本机",
   },
   {
-    area: "事务",
+    area: "事项",
     real: "暂无服务器接口（明确空状态）",
-    local: "退款、订单、票据、心愿、项目、行程等演示交互",
+    local: "工作安排分组、详情、补充进展、停止/删除与冲突方案；仅本机预览",
   },
   {
-    area: "助手",
+    area: "问助手",
     real: "真实登录、提交问答、状态、SSE、取消、刷新恢复",
     local: "无示例回答；网络失败不会回退到演示答案",
   },
   {
     area: "我的",
     real: "账号与会话、内容来源与云端内容、Bark、通勤计划/检查/建议",
-    local: "个人记忆演示、收下内容的本地记录",
+    local: "个人记忆演示、收下内容的本地记录、实验室与同步状态说明",
   },
   {
     area: "记忆检索",
@@ -37,7 +37,7 @@ export default function AboutPage() {
     <PageShell title="关于生活助手" subtitle="Personal Assistant 的移动 Web 客户端">
       <section className="card">
         <p className="serif" style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>
-          今天、事务、助手、我的。
+          今天、事项、问助手、我的。
         </p>
         <p className="body-text muted mt-8" style={{ marginBottom: 0 }}>
           这是现有 PA 后端的浏览器客户端，不是管理后台、统计看板或 AI 平台控制台。
@@ -75,7 +75,7 @@ export default function AboutPage() {
           <li>Bark：复用现有账号绑定接口，只从服务器侧发送，浏览器不直接调用 Bark。</li>
           <li>分享入口：先实现粘贴与文本文件选择；系统分享与 Apple 备忘录不在此范围。</li>
           <li>Keychain：改用 httpOnly Cookie 保存会话；与原生 Keychain 不同，这是浏览器的合理替代。</li>
-          <li>PWA 安装、离线写入、后台同步未纳入核心范围；页面不会把安装入口描述成离线能力。</li>
+          <li>已提供 manifest、图标和 standalone 启动；离线写入、后台同步和关闭网页后的提醒仍未支持。</li>
         </ul>
       </section>
 

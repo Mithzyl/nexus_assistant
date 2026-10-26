@@ -16,11 +16,18 @@ import {
   Archive,
   UserRound,
   LogOut,
+  FlaskConical,
+  Database,
+  Smartphone,
+  CalendarDays,
 } from "lucide-react";
 
 import { useAuth, useDemo, useUI } from "@/components/mobile/providers";
+import { useWorkPlan } from "@/components/mobile/work-plan-store";
 import { ConfirmDialog, ScreenHeader, SwitchRow } from "@/components/mobile/ui";
 import { formatDateTime } from "@/lib/mobile/format";
+import { useApiResource } from "@/lib/mobile/use-api-resource";
+import type { DataSource } from "@/lib/mobile/api";
 
 const THEMES: Array<{ value: "system" | "light" | "dark"; label: string }> = [
   { value: "system", label: "跟随系统" },
@@ -61,14 +68,21 @@ function Row({
 export default function MePage() {
   const router = useRouter();
   const { state, user, expiresAt, error, renewing, renewMessage, logout, renew } = useAuth();
+  const signedIn = state === "signedIn";
   const demo = useDemo();
+  const plan = useWorkPlan();
+  const sources = useApiResource<DataSource[]>(signedIn ? "/api/pa/data-sources" : null, { enabled: signedIn });
   const { openCapture, theme, setTheme, toast } = useUI();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [busyLogout, setBusyLogout] = useState(false);
   const [logoutNote, setLogoutNote] = useState<string | null>(null);
 
-  const signedIn = state === "signedIn";
   const enabledMemories = demo.memories.filter((memory) => memory.enabled).length;
+  const lastSync = (sources.data ?? [])
+    .map((source) => source.last_sync_at)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1) ?? null;
 
   const accountTitle = (() => {
     if (state === "loading") return "正在验证会话…";
@@ -197,6 +211,38 @@ export default function MePage() {
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
         <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
+          数据与同步
+        </h2>
+        <div className="group">
+          <Row
+            href="/matters"
+            icon={<CalendarDays size={14} />}
+            title="内置日程与提醒"
+            detail={demo.enabled ? "本机概念预览；未写入服务器" : "接口尚未接通；暂无正式日程"}
+            status={demo.enabled ? `${plan.matters.length} 条预览` : "未接通"}
+          />
+          <Row
+            href="/me/sources"
+            icon={<Smartphone size={14} />}
+            title="iOS 客户端"
+            detail="未连接；上传授权与助手授权分别管理，上传副本不等于写回系统日历"
+            status="未连接"
+          />
+          <Row
+            href="/me/sources"
+            icon={<Database size={14} />}
+            title="内容副本最近同步"
+            detail={lastSync ? `最近一次上传批次：${formatDateTime(lastSync)}` : "还没有上传过内容副本"}
+            status={sources.loading ? "读取中" : lastSync ? "已上传" : "无记录"}
+          />
+        </div>
+        <p className="micro" style={{ margin: "8px 0 0" }}>
+          “内容副本已上传”只说明资料进了服务器；“写入 iPhone 系统日历”需要 iOS 回写凭据，当前没有，因此不会显示已写入状态。
+        </p>
+      </section>
+
+      <section style={{ padding: "0 var(--m-gutter)" }}>
+        <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
           通勤与提醒
         </h2>
         <div className="group">
@@ -286,7 +332,7 @@ export default function MePage() {
           <hr className="divider" />
           <SwitchRow
             title="演示模式（本地示例）"
-            detail="仅使用内置事务、原文与经验示例；开启后页面会明确标注，关闭时不混入真实页面。"
+            detail="使用本机事项/日程预览、个人经验与旧版消费示例；开启后页面明确标注，关闭时不混入真实页面。"
             checked={demo.enabled}
             onChange={() => {
               demo.setEnabled(!demo.enabled);
@@ -296,7 +342,7 @@ export default function MePage() {
         </div>
         {demo.enabled ? (
           <div className="notice notice--amber mt-8">
-            演示数据只保存在当前页面内，刷新后恢复初始状态；不会写入 PA 服务器，也不代表真实事务。
+            旧版消费演示刷新后恢复；计划接续预览保存在本机，删除后不再恢复。两者都不会写入 PA 服务器，也不代表真实事项。
           </div>
         ) : null}
       </section>
@@ -306,6 +352,12 @@ export default function MePage() {
           内容与隐私
         </h2>
         <div className="group">
+          <Row
+            href="/me/lab"
+            icon={<FlaskConical size={14} />}
+            title="实验室"
+            detail="消费售后、愿望清单与计划接续预览；概念预览，不进入正式数据"
+          />
           <Row
             href="/me/privacy"
             icon={<Lock size={14} />}

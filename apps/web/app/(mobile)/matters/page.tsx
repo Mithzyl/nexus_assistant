@@ -1,192 +1,131 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowDownRight,
-  Check,
-  ClipboardCheck,
-  Plus,
-  Sparkles,
-  Ticket,
-  Wallet,
-} from "lucide-react";
+import { ArrowDownRight, ArrowRight, Plus, Sparkles } from "lucide-react";
 
-import { MATTER_KIND_LABEL, REFUND_STAGE_LABEL, type MatterKind } from "@/lib/mobile/demo";
 import { useDemo, useUI } from "@/components/mobile/providers";
-import { EmptyState, Pill, ScreenHeader } from "@/components/mobile/ui";
+import { PreviewBanner } from "@/components/mobile/work-plan-ui";
+import { useWorkPlan } from "@/components/mobile/work-plan-store";
+import { EmptyState, LoadingCard, ScreenHeader } from "@/components/mobile/ui";
+import { WORK_STATUS_LABEL, dateTimeLabel, type WorkMatter, type WorkMatterStatus } from "@/lib/mobile/work-plan";
 
-type Filter = "active" | "done" | "all";
-
-function kindIcon(kind: MatterKind) {
-  if (kind === "refund") return <Wallet size={15} />;
-  if (kind === "ticket") return <Ticket size={15} />;
-  if (kind === "wish") return <Sparkles size={15} />;
-  if (kind === "project") return <ClipboardCheck size={15} />;
-  if (kind === "travel") return <ArrowDownRight size={15} />;
-  if (kind === "order") return <ClipboardCheck size={15} />;
-  return <Check size={15} />;
+function MatterCard({ matter }: { matter: WorkMatter }) {
+  return (
+    <Link href={`/matters/${matter.id}`} className="card matter-card">
+      <span className="card-title" style={{ display: "block" }}>
+        {matter.title}
+      </span>
+      <span className="matter-card__progress">{matter.progress}</span>
+      <span className="matter-card__next">
+        <ArrowDownRight size={13} />
+        <span>{matter.nextAction || "下一步待定"}</span>
+        {matter.nextAt ? <span className="matter-card__time">{dateTimeLabel(matter.nextAt)}</span> : null}
+      </span>
+      {matter.stopped ? <span className="micro">已停止跟进</span> : null}
+    </Link>
+  );
 }
 
 export default function MattersPage() {
   const router = useRouter();
   const demo = useDemo();
+  const plan = useWorkPlan();
   const { openCapture, toast } = useUI();
-  const [filter, setFilter] = useState<Filter>("active");
 
-  const matters = demo.enabled
-    ? demo.matters.filter((matter) =>
-        filter === "all" ? true : matter.status === filter,
-      )
-    : [];
+  const groups: Array<{ status: WorkMatterStatus; items: WorkMatter[] }> = [
+    { status: "active", items: plan.active },
+    { status: "waiting", items: plan.waiting },
+    { status: "archived", items: plan.archived },
+  ];
 
   return (
-    <div className="m-screen" style={{ paddingBottom: 8 }}>
+    <div className="m-screen m-stack-18" style={{ paddingBottom: 28 }}>
       <ScreenHeader
-        title="事务"
-        subtitle="同一件事，汇集订单、通知和下一步"
+        title="事项"
+        subtitle="需要持续推进的事，以及下一步"
         action={
-          <button
-            type="button"
-            className="icon-button"
-            onClick={() => openCapture("choose")}
-            aria-label="交给助手"
-          >
+          <button type="button" className="icon-button" onClick={() => openCapture("choose")} aria-label="交给助手">
             <Plus size={18} />
           </button>
         }
       />
 
-      {demo.enabled ? (
-        <>
-          <div className="chip-row" style={{ padding: "4px var(--m-gutter) 14px" }}>
-            {(
-              [
-                ["active", "进行中"],
-                ["done", "已完成"],
-                ["all", "全部"],
-              ] as Array<[Filter, string]>
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                className="chip"
-                aria-pressed={filter === value}
-                onClick={() => setFilter(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="m-stack-10" style={{ padding: "0 var(--m-gutter)" }}>
-            {matters.length === 0 ? (
-              <EmptyState
-                title="这里还没有事务"
-                body={
-                  filter === "done"
-                    ? "处理完的退款、看过的电影会出现在这里。"
-                    : "收下一份订单或通知后，它会出现在这里。"
-                }
-              />
-            ) : (
-              matters.map((matter) => (
-                <button
-                  key={matter.id}
-                  type="button"
-                  className="card"
-                  onClick={() => router.push(`/matters/${matter.id}`)}
-                  style={{ width: "100%", textAlign: "left" }}
-                >
-                  <span className="card-head">
-                    <span className="tile tile--sm">{kindIcon(matter.kind)}</span>
-                    <span className="grow">
-                      <span className="card-title" style={{ display: "block" }}>
-                        {matter.title}
-                      </span>
-                      <span className="caption" style={{ display: "block", marginTop: 3 }}>
-                        {matter.subtitle}
-                      </span>
-                    </span>
-                    {matter.amount ? (
-                      <span
-                        className="tabular"
-                        style={{ fontSize: 15, fontWeight: 600, whiteSpace: "nowrap" }}
-                      >
-                        ¥{matter.amount}
-                      </span>
-                    ) : null}
-                  </span>
-
-                  <span
-                    className="flex items-center gap-8 mt-10"
-                    style={{ flexWrap: "wrap" }}
-                  >
-                    <Pill tone="fog">{MATTER_KIND_LABEL[matter.kind]}</Pill>
-                    {matter.refundStage ? (
-                      <Pill tone={matter.refundStage === "received" ? "green" : "amber"}>
-                        {REFUND_STAGE_LABEL[matter.refundStage]}
-                      </Pill>
-                    ) : null}
-                    <span className="grow" />
-                    <span className="micro">{matter.dateText}</span>
-                  </span>
-
-                  {matter.nextStep ? (
-                    <>
-                      <hr className="divider mt-10" />
-                      <span className="flex items-center gap-6 mt-8">
-                        <ArrowDownRight size={12} className="fog" />
-                        <span className="caption grow" style={{ margin: 0 }}>
-                          {matter.nextStep}
-                        </span>
-                        <span className="chevron">›</span>
-                      </span>
-                    </>
-                  ) : null}
-                </button>
-              ))
-            )}
-          </div>
-
-          <p className="micro text-center mt-16" style={{ padding: "0 var(--m-gutter)" }}>
-            演示模式 · 本地示例数据，不代表服务器上的真实事务
-          </p>
-        </>
-      ) : (
+      {!demo.enabled ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
-            title="服务器还没有事务接口"
-            body="当前 PA 后端只提供账号、问答、内容来源和通勤；退款、订单、票据、心愿等整理结果尚未开放接口。正常模式不会用示例冒充服务器数据。"
+            title="事项服务尚未接通"
+            body="服务器还没有事项、日程和提醒的写入接口。正常模式不会把本地示例或演示事务冒充成已经保存的事项。"
           >
-            <div style={{ display: "grid", gap: 8 }}>
-              <Link href="/me/sources" className="btn btn--secondary">
-                查看已同步的内容来源
+            <div className="m-stack-8">
+              <Link href="/me/lab" className="btn btn--secondary">
+                查看实验室与概念预览
               </Link>
               <Link href="/ask" className="btn btn--secondary">
-                向助手提问
+                向助手交代一件事
               </Link>
               <button
                 type="button"
                 className="btn btn--quiet"
                 onClick={() => {
                   demo.setEnabled(true);
-                  toast("已开启演示模式，仅使用本地示例");
+                  toast("已开启概念预览，仅使用本机示例");
                 }}
               >
-                显式开启演示模式了解交互
+                显式开启概念预览
               </button>
             </div>
           </EmptyState>
+          <p className="micro text-center mt-16">
+            计划接续的真实接口尚未提供，因此这里保持真实空状态，而不是铺一张假列表。
+          </p>
+        </div>
+      ) : !plan.ready ? (
+        <div style={{ padding: "0 var(--m-gutter)" }}>
+          <LoadingCard label="正在读取本机预览…" />
+        </div>
+      ) : (
+        <>
+          <div style={{ padding: "0 var(--m-gutter)" }}>
+            <PreviewBanner />
+          </div>
 
-          <div className="notice mt-16">
-            <strong>为什么不直接显示列表？</strong>
-            <p style={{ margin: "4px 0 0" }}>
-              “商家已发起退款”不等于“已到账”，金额相同也不代表同一订单。这些状态需要服务器保存事实，浏览器不会凭空推断。
+          {groups.map((group) => (
+            <section key={group.status} className="stack-12">
+              <div className="flex items-center justify-between gap-12" style={{ padding: "0 var(--m-gutter)" }}>
+                <h2 className="section-title" style={{ marginBottom: 0 }}>
+                  {WORK_STATUS_LABEL[group.status]}
+                </h2>
+                <span className="micro">{group.items.length}</span>
+              </div>
+              {group.items.length === 0 ? (
+                <p className="micro" style={{ padding: "0 var(--m-gutter)", margin: "4px 0 0" }}>
+                  {group.status === "archived" ? "还没有已完成或归档的事项。" : "这一组暂时为空。"}
+                </p>
+              ) : (
+                <div className="m-stack-10" style={{ padding: "0 var(--m-gutter)" }}>
+                  {group.items.map((matter) => (
+                    <MatterCard key={matter.id} matter={matter} />
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+
+          <div style={{ padding: "0 var(--m-gutter)" }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => router.push("/me/lab")}
+            >
+              <Sparkles size={14} /> 实验室与概念预览
+              <ArrowRight size={14} />
+            </button>
+            <p className="micro text-center mt-8">
+              预览数据只在本浏览器；停止、删除和确认都不会改变服务器。
             </p>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

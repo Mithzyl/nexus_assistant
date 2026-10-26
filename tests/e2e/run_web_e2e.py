@@ -195,7 +195,7 @@ def main() -> int:
             "E2E_SHOT_DIR": str(shots),
         }
         failed = 0
-        for name in ("web_flow_check.py", "runtime_state_check.py"):
+        for name in ("web_flow_check.py", "runtime_state_check.py", "work_plan_check.py"):
             print(f"==> running Playwright flow {name}", flush=True)
             result = subprocess.run(
                 [sys.executable, str(ROOT / "tests" / "e2e" / name)],
