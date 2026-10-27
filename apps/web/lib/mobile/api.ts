@@ -68,6 +68,38 @@ export interface DataSource {
   item_count: number;
 }
 
+export interface ShortcutToken {
+  token_id: string;
+  source_id: string;
+  display_name: string;
+  enabled: boolean;
+  last_used_at: string | null;
+  created_at: string;
+  revoked_at: string | null;
+}
+
+export interface ShortcutTokenCreated extends ShortcutToken {
+  credential: string;
+  credential_returned_once: true;
+}
+
+export interface CalendarSubscription {
+  subscription_id: string;
+  enabled: boolean;
+  matter_ids: string[];
+  last_read_at: string | null;
+  created_at: string;
+  updated_at: string;
+  feed_url: string | null;
+  link_returned_once: boolean;
+  note: string | null;
+}
+
+export interface CalendarSubscriptionStatus {
+  exists: boolean;
+  subscription: CalendarSubscription | null;
+}
+
 export interface ContentItem {
   item_id: string;
   source_id: string;
@@ -461,6 +493,11 @@ export interface MatterSchedule {
   location: string | null;
   latitude: number | null;
   longitude: number | null;
+  coordinate_system: "gcj02" | "wgs84" | "unknown";
+  location_city: string | null;
+  location_address: string | null;
+  location_source: string | null;
+  location_external_id: string | null;
   status: string;
   source: MatterScheduleSource | null;
   sync_status: MatterSyncStatus | null;
@@ -510,6 +547,10 @@ export interface TodayRoute {
   reason_code: string | null;
   message: string | null;
   advisory_id: string | null;
+  duration_seconds: number | null;
+  mode: "driving" | "walking" | "transit" | null;
+  fetched_at: string | null;
+  origin_basis: "user_confirmed" | "previous_schedule" | null;
 }
 
 export interface TodaySchedule extends MatterSchedule {
@@ -584,6 +625,11 @@ export interface DraftSchedule {
   location?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  coordinate_system?: "gcj02" | "wgs84" | "unknown";
+  location_city?: string | null;
+  location_address?: string | null;
+  location_source?: string | null;
+  location_external_id?: string | null;
 }
 
 export interface DraftTodo {
@@ -691,14 +737,87 @@ export interface MatterIntakeResponse {
   draft: MatterDraft | null;
   replayed: boolean;
   intent: "matter" | "question";
+  outcome: "answer" | "draft" | "needs_clarification" | "processing" | "unknown";
   message: string | null;
   answer: string | null;
+  clarify: string | null;
+  local_run_id: string | null;
+  parent_run_id: string | null;
+}
+
+export interface MatterIntakeResult {
+  local_run_id: string;
+  parent_run_id: string | null;
+  request_text: string;
+  intent: "matter" | "question";
+  outcome:
+    | "answer"
+    | "draft"
+    | "needs_clarification"
+    | "processing"
+    | "unknown"
+    | "failed"
+    | "cancelled";
+  status: string;
+  answer: string | null;
+  clarify: string | null;
+  matter_id: string | null;
+  draft_id: string | null;
+  draft: MatterDraft | null;
+  created_at: string;
+  completed_at: string | null;
 }
 
 export interface MatterEditInput {
   idempotency_key: string;
   schedule_id?: string;
   todo_id?: string;
+}
+
+export interface PlaceCandidate {
+  provider: string;
+  provider_place_id: string;
+  name: string;
+  address: string | null;
+  city: string | null;
+  latitude: number;
+  longitude: number;
+  coordinate_system: "gcj02" | "wgs84" | "unknown";
+  source: string;
+  selection_token: string;
+}
+
+export interface PlaceSearchResponse {
+  query: string;
+  city: string | null;
+  search_type: "place" | "address";
+  ambiguous: boolean;
+  candidates: PlaceCandidate[];
+  reason_code: string | null;
+}
+
+export interface RouteEstimate {
+  status: "available" | "unavailable";
+  provider: string;
+  mode: "driving" | "walking" | "transit";
+  duration_seconds: number | null;
+  distance_meters: number | null;
+  walking_distance_meters: number | null;
+  transfer_count: number | null;
+  transfers_summary: string | null;
+  fare_cny: number | null;
+  fare_kind: string | null;
+  fare_notice: string | null;
+  fetched_at: string | null;
+  request_depart_at: string | null;
+  target_arrival_at: string | null;
+  source: "server_provider";
+  reason_code: string | null;
+  timing_basis: string | null;
+  accuracy_notice: string | null;
+  origin_basis: "user_confirmed" | "previous_schedule";
+  origin_schedule_id: string | null;
+  schedule_id: string | null;
 }
 
 export interface DraftPatchInput {

@@ -5,10 +5,12 @@ import {
   affectedScheduleSummary,
   changeReasonText,
   classifyMatterDraft,
+  conflictReasonText,
   conflictHasUnverifiedRoute,
   deadlineTiming,
   isRecordChangedError,
   manualEditSelection,
+  mergeIntakeHistory,
   optionConsequences,
   summarizeMatterChange,
   todayChangeSummary,
@@ -148,4 +150,41 @@ test("affected history summary uses the source matter instead of raw payload", (
   assert.match(summary, /面谈/);
   assert.doesNotMatch(summary, /update/);
   assert.doesNotMatch(summary, /未设置/);
+});
+
+test("route conflict reasons are translated and never expose codes", () => {
+  assert.match(conflictReasonText("eta_short", "available"), /时间可能不够/);
+  assert.match(conflictReasonText("gap_short_route_unverified", "unverified"), /尚未核实/);
+  assert.doesNotMatch(conflictReasonText("next_too_close", "available"), /next_too_close/);
+});
+
+test("unified history keeps server rows and only non-duplicate local fallback", () => {
+  const merged = mergeIntakeHistory(
+    [
+      {
+        local_run_id: "run-1",
+        request_text: "今天天气",
+        answer: "多云",
+        clarify: null,
+      },
+    ],
+    [
+      {
+        id: "old-1",
+        localRunId: "run-1",
+        question: "今天天气",
+        answer: "多云",
+        createdAt: "2026-10-27T00:00:00Z",
+      },
+      {
+        id: "old-2",
+        question: "旧问题",
+        answer: "旧回答",
+        createdAt: "2026-10-26T00:00:00Z",
+      },
+    ],
+  );
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].local_run_id, "run-1");
+  assert.equal(merged[1].id, "old-2");
 });

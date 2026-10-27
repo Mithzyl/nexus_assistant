@@ -8,6 +8,7 @@ import { Trash2 } from "lucide-react";
 import type { DataSource } from "@/lib/mobile/api";
 import { ApiError, apiRequest } from "@/lib/mobile/api";
 import { formatDateTime } from "@/lib/mobile/format";
+import { uploadFailureText, uploadStatusText } from "@/lib/mobile/source-labels";
 import { useApiResource, errorText } from "@/lib/mobile/use-api-resource";
 import { useAuth } from "@/components/mobile/providers";
 import {
@@ -146,7 +147,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
               </Pill>
               {data.last_sync_status ? (
                 <Pill tone={data.last_sync_status === "ok" ? "green" : "amber"}>
-                  最近同步 {data.last_sync_status}
+                  最近同步{uploadStatusText(data.last_sync_status)}
                 </Pill>
               ) : null}
             </div>
@@ -154,7 +155,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
               {data.last_sync_at
                 ? `最近同步于 ${formatDateTime(data.last_sync_at)}`
                 : "还没有成功同步的记录。"}
-              {data.last_error_code ? ` 最近错误：${data.last_error_code}` : ""}
+              {data.last_error_code ? ` ${uploadFailureText(data.last_error_code)}` : ""}
             </p>
           </div>
 
@@ -227,13 +228,9 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
                 没有列出范围；来源仍可能在等待首次上传。
               </p>
             ) : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {data.scope_keys.map((scope) => (
-                  <span className="pill pill--fog" key={scope} style={{ fontFamily: "var(--m-mono)", fontSize: 11 }}>
-                    {scope}
-                  </span>
-                ))}
-              </div>
+              <p className="caption" style={{ margin: 0 }}>
+                当前已授权 {data.scope_keys.length} 个范围。具体范围由快捷指令或原生客户端选择，网页不显示内部范围标识。
+              </p>
             )}
           </div>
 

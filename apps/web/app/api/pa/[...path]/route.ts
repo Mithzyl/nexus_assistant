@@ -26,6 +26,8 @@ const ALLOWED_ROOTS = new Set([
   "matters",
   "today",
   "reminders",
+  "calendar-subscription",
+  "sync",
 ]);
 
 const FORWARDED_HEADERS = [

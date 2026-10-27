@@ -79,6 +79,33 @@ export function isRecordChangedError(code) {
   ].includes(String(code || ""));
 }
 
+/** Translate conflict reason codes without exposing server field names. */
+export function conflictReasonText(reason, etaStatus) {
+  if (etaStatus === "unverified") return "两段路线的路程耗时尚未核实，不能判定时间充裕。";
+  if (reason === "overlap") return "两条安排时间重叠，需要调整其中一个安排。";
+  if (reason === "eta_short") return "按服务器返回的行程耗时，与上一项之间的时间可能不够。";
+  if (reason === "next_too_close") return "留给下一项安排的时间可能不足。";
+  if (reason === "gap_short_route_unverified") return "间隔较短，路程尚未核实。";
+  return "服务器提示这段安排可能衔接不上。";
+}
+
+/** Merge older local answer cache into server history without duplicate bubbles. */
+export function mergeIntakeHistory(serverRows, localRows) {
+  const server = Array.isArray(serverRows) ? serverRows : [];
+  const local = Array.isArray(localRows) ? localRows : [];
+  const runIds = new Set(server.map((item) => item.local_run_id).filter(Boolean));
+  const fingerprints = new Set(
+    server.map((item) => `${item.request_text}\u0000${item.answer || item.clarify || ""}`),
+  );
+  return [
+    ...server,
+    ...local.filter((item) => {
+      if (item.localRunId && runIds.has(item.localRunId)) return false;
+      return !fingerprints.has(`${item.question}\u0000${item.answer}`);
+    }),
+  ];
+}
+
 function formatInstant(value) {
   if (!value) return "未设置";
   const date = new Date(value);

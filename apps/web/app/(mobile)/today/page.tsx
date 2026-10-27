@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bell, CalendarClock, ChevronRight, FileText, MapPin, RefreshCw, Trash2 } from "lucide-react";
 
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
+import { RouteTextCard } from "@/components/mobile/route-text-card";
 import { TodayCommuteCard } from "@/components/mobile/commute-card";
 import { useAuth, useLocalRecords, useUI, type LocalRecord } from "@/components/mobile/providers";
 import {
@@ -97,6 +98,7 @@ interface TimelineRow {
   routeDetail?: string | null;
   routeLabel?: string;
   routeTone?: "neutral" | "amber" | "green" | "red";
+  schedule?: TodaySchedule;
 }
 
 export default function TodayPage() {
@@ -127,6 +129,7 @@ export default function TodayPage() {
         routeDetail: route.detail,
         routeLabel: route.label,
         routeTone: route.tone,
+        schedule: item,
       };
     });
     const reminderRows: TimelineRow[] = data.reminders.map((item) => ({
@@ -324,9 +327,9 @@ export default function TodayPage() {
             {rows.length === 0 ? (
               <EmptyState title="今天没有安排" body="服务器确认没有日程或待处理提醒。" />
             ) : (
-              <div className="card card--tight">
+              <div className="m-stack-8">
                 {rows.map((row) => (
-                  <div key={row.id} className="timeline-link">
+                  <div key={row.id} className="card card--tight timeline-link">
                     <span className="timeline-time">{time(row.at, todayData.data?.timezone)}</span>
                     <span className="timeline-dot" aria-hidden="true" />
                     <span className="grow">
@@ -348,11 +351,43 @@ export default function TodayPage() {
                       <span className="caption" style={{ display: "block", margin: "2px 0 0" }}>
                         {row.detail}
                       </span>
-                      {row.routeLabel ? (
-                        <span className="timeline-route">
-                          <Pill tone={row.routeTone}>{row.routeLabel}</Pill>
-                          {row.routeDetail ? <span>{row.routeDetail}</span> : null}
-                        </span>
+                      {row.schedule ? (
+                        <RouteTextCard
+                          embedded
+                          originLabel={
+                            row.schedule.route.origin_basis === "previous_schedule"
+                              ? "从上一项安排出发"
+                              : row.schedule.route.origin_basis === "user_confirmed"
+                                ? "从已确认起点出发"
+                                : "出发地未提供"
+                          }
+                          destinationLabel={row.schedule.location || row.schedule.title}
+                          arrivalAt={row.schedule.starts_at}
+                          mode={row.schedule.route.mode}
+                          durationSeconds={row.schedule.route.duration_seconds}
+                          state={
+                            row.schedule.route.status === "available"
+                              ? "verified"
+                              : row.schedule.route.status === "unavailable"
+                                ? "unavailable"
+                                : "unverified"
+                          }
+                          notice={
+                            row.schedule.route.status === "available"
+                              ? row.schedule.route.fetched_at
+                                ? `路线结果取得于 ${dateTime(row.schedule.route.fetched_at, todayData.data?.timezone)}`
+                                : "路线结果由服务器返回。"
+                              : row.schedule.route.message || "尚无与该日程关联的路线结果。"
+                          }
+                          mapTarget={{
+                            label: row.schedule.location_address || row.schedule.location,
+                            latitude: row.schedule.latitude,
+                            longitude: row.schedule.longitude,
+                            coordinateSystem: row.schedule.coordinate_system,
+                            address: row.schedule.location_address,
+                            city: row.schedule.location_city,
+                          }}
+                        />
                       ) : null}
                     </span>
                     {row.kind === "reminder" ? (

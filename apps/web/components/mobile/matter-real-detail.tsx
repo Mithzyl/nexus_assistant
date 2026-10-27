@@ -11,6 +11,8 @@ import type {
   MatterReminder,
   MatterSchedule,
   MatterTodo,
+  RouteEstimate,
+  TodayRoute,
 } from "@/lib/mobile/api";
 import { ApiError } from "@/lib/mobile/api";
 import {
@@ -19,6 +21,7 @@ import {
   createMatterEditDraft,
   deleteMatter,
   getMatter,
+  getToday,
   intakeMatterProgress,
   listMatterChanges,
   newOperationKey,
@@ -39,6 +42,8 @@ import {
 import { dateTimeLabel } from "@/lib/mobile/work-plan";
 import { useAuth, useUI } from "./providers";
 import { MatterDraftSheet } from "./matter-draft-sheet";
+import { RouteTextCard } from "./route-text-card";
+import { RoutePlannerSheet } from "./route-planner-sheet";
 import { ConfirmSheet, ProgressSheet } from "./work-plan-ui";
 import {
   ConfirmDialog,
@@ -125,6 +130,10 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [changes, setChanges] = useState<MatterChange[]>([]);
   const [changesLoading, setChangesLoading] = useState(true);
   const [changesError, setChangesError] = useState<string | null>(null);
+  const [routeBySchedule, setRouteBySchedule] = useState<Record<string, TodayRoute>>({});
+  const [routeDetails, setRouteDetails] = useState<Record<string, RouteEstimate>>({});
+  const [routePlannerSchedule, setRoutePlannerSchedule] =
+    useState<MatterSchedule | null>(null);
   const [revertTarget, setRevertTarget] = useState<MatterChange | null>(null);
 
   const load = useCallback(async () => {
@@ -161,6 +170,40 @@ export function MatterRealDetail({ id }: { id: string }) {
   useEffect(() => {
     void load();
   }, [load, user?.user_id]);
+
+  useEffect(() => {
+    if (!matter || matter.schedules.length === 0) {
+      setRouteBySchedule({});
+      setRouteDetails({});
+      return;
+    }
+    setRouteDetails({});
+    let alive = true;
+    const dates = Array.from(
+      new Set(
+        matter.schedules.map((schedule) =>
+          new Date(schedule.starts_at).toLocaleDateString("en-CA"),
+        ),
+      ),
+    );
+    void Promise.all(dates.map((date) => getToday(date)))
+      .then((views) => {
+        if (!alive) return;
+        const next: Record<string, TodayRoute> = {};
+        for (const view of views) {
+          for (const schedule of view.schedules) {
+            next[schedule.schedule_id] = schedule.route;
+          }
+        }
+        setRouteBySchedule(next);
+      })
+      .catch(() => {
+        if (alive) setRouteBySchedule({});
+      });
+    return () => {
+      alive = false;
+    };
+  }, [matter]);
 
   const run = async (key: string, action: () => Promise<void>) => {
     setBusy(key);
@@ -294,6 +337,24 @@ export function MatterRealDetail({ id }: { id: string }) {
     });
   };
 
+  const onRouteEstimated = (scheduleId: string, result: RouteEstimate) => {
+    setRouteDetails((current) => ({ ...current, [scheduleId]: result }));
+    setRouteBySchedule((current) => ({
+      ...current,
+      [scheduleId]: {
+        status: "available",
+        reason_code: null,
+        message: "路线结果由服务器返回。",
+        advisory_id: null,
+        duration_seconds: result.duration_seconds,
+        mode: result.mode,
+        fetched_at: result.fetched_at,
+        origin_basis: result.origin_basis,
+      },
+    }));
+    requestTodayRefresh();
+  };
+
   if (loading && !matter) {
     return <PageShell title="事项详情" fallbackHref="/matters"><div style={{ padding: "0 var(--m-gutter)" }}><LoadingCard label="正在读取事项…" /></div></PageShell>;
   }
@@ -398,6 +459,64 @@ export function MatterRealDetail({ id }: { id: string }) {
                         <Pencil size={12} /> 调整
                       </button>
                     </div>
+                    <RouteTextCard
+                      embedded
+                      originLabel={
+                        routeBySchedule[schedule.schedule_id]?.origin_basis === "previous_schedule"
+                          ? "从上一项安排出发"
+                          : routeBySchedule[schedule.schedule_id]?.origin_basis === "user_confirmed"
+                            ? "从已确认起点出发"
+                            : "出发地未提供"
+                      }
+                      destinationLabel={schedule.location || schedule.title}
+                      arrivalAt={schedule.starts_at}
+                      mode={
+                        routeDetails[schedule.schedule_id]?.mode ??
+                        routeBySchedule[schedule.schedule_id]?.mode ??
+                        null
+                      }
+                      durationSeconds={
+                        routeDetails[schedule.schedule_id]?.duration_seconds ??
+                        routeBySchedule[schedule.schedule_id]?.duration_seconds ??
+                        null
+                      }
+                      distanceMeters={routeDetails[schedule.schedule_id]?.distance_meters}
+                      walkingDistanceMeters={
+                        routeDetails[schedule.schedule_id]?.walking_distance_meters
+                      }
+                      transferCount={routeDetails[schedule.schedule_id]?.transfer_count}
+                      transfersSummary={
+                        routeDetails[schedule.schedule_id]?.transfers_summary
+                      }
+                      fareCny={routeDetails[schedule.schedule_id]?.fare_cny}
+                      fareNotice={routeDetails[schedule.schedule_id]?.fare_notice}
+                      timingBasis={routeDetails[schedule.schedule_id]?.timing_basis}
+                      accuracyNotice={routeDetails[schedule.schedule_id]?.accuracy_notice}
+                      state={
+                        routeBySchedule[schedule.schedule_id]?.status === "available"
+                          ? "verified"
+                          : routeBySchedule[schedule.schedule_id]?.status === "unavailable"
+                            ? "unavailable"
+                            : "unverified"
+                      }
+                      notice={
+                        routeBySchedule[schedule.schedule_id]?.status === "available"
+                          ? routeBySchedule[schedule.schedule_id]?.fetched_at
+                            ? `路线结果取得于 ${dateTimeLabel(routeBySchedule[schedule.schedule_id].fetched_at || "")}`
+                            : "路线结果由服务器返回。"
+                          : routeBySchedule[schedule.schedule_id]?.message ||
+                            "服务器尚未把这条日程关联到路线结果，不能沿用独立通勤建议。"
+                      }
+                      mapTarget={{
+                        label: schedule.location_address || schedule.location,
+                        latitude: schedule.latitude,
+                        longitude: schedule.longitude,
+                        coordinateSystem: schedule.coordinate_system,
+                        address: schedule.location_address,
+                        city: schedule.location_city,
+                      }}
+                      onPlanRoute={() => setRoutePlannerSchedule(schedule)}
+                    />
                   </div>
                 ))}
                 {matter.reminders
@@ -596,6 +715,25 @@ export function MatterRealDetail({ id }: { id: string }) {
           void load();
           requestTodayRefresh();
         }}
+      />
+      <RoutePlannerSheet
+        open={Boolean(routePlannerSchedule)}
+        schedule={routePlannerSchedule}
+        previousSchedules={matter.schedules
+          .filter(
+            (schedule) =>
+              routePlannerSchedule &&
+              schedule.schedule_id !== routePlannerSchedule.schedule_id &&
+              new Date(schedule.starts_at).getTime() <
+                new Date(routePlannerSchedule.starts_at).getTime(),
+          )
+          .sort(
+            (left, right) =>
+              new Date(right.ends_at || right.starts_at).getTime() -
+              new Date(left.ends_at || left.starts_at).getTime(),
+          )}
+        onClose={() => setRoutePlannerSchedule(null)}
+        onEstimated={onRouteEstimated}
       />
       <Sheet
         title="助手回答"

@@ -16,26 +16,31 @@ import type {
   MatterConflict,
   MatterDraft,
   MatterTodoStatus,
+  PlaceCandidate,
 } from "@/lib/mobile/api";
 import { ApiError } from "@/lib/mobile/api";
 import {
   applyDraftOption,
   cancelDraft as cancelDraftRequest,
   confirmDraft,
+  confirmPlaceSelection,
   getDraft,
   newOperationKey,
   patchDraft,
+  searchPlaces,
   selectDraftMatter,
 } from "@/lib/mobile/matters-api";
 import {
   affectedScheduleSummary,
   classifyMatterDraft,
+  conflictReasonText,
   conflictHasUnverifiedRoute,
   isRecordChangedError,
   manualEditSelection,
   optionConsequences,
 } from "@/lib/mobile/matter-draft.mjs";
 import { dateTimeLabel } from "@/lib/mobile/work-plan";
+import { RouteTextCard } from "./route-text-card";
 import { Sheet } from "./ui";
 
 interface EditableTodo {
@@ -144,6 +149,13 @@ export function MatterDraftSheet({
   const [selectedOption, setSelectedOption] = useState<"A" | "B" | "C" | null>(null);
   const [selectedImpact, setSelectedImpact] = useState<string[]>([]);
   const [selectedAffected, setSelectedAffected] = useState<MatterAffectedSchedule[]>([]);
+  const [placeQuery, setPlaceQuery] = useState("");
+  const [placeCity, setPlaceCity] = useState("");
+  const [placeSearchType, setPlaceSearchType] = useState<"place" | "address">("place");
+  const [placeCandidates, setPlaceCandidates] = useState<PlaceCandidate[]>([]);
+  const [selectedPlaceToken, setSelectedPlaceToken] = useState<string | null>(null);
+  const [placeSearching, setPlaceSearching] = useState(false);
+  const [placeError, setPlaceError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -167,6 +179,11 @@ export function MatterDraftSheet({
     setStartsAt(toLocalInput(next.payload.schedule?.starts_at));
     setEndsAt(toLocalInput(next.payload.schedule?.ends_at));
     setLocation(next.payload.schedule?.location ?? "");
+    setPlaceQuery(next.payload.schedule?.location ?? "");
+    setPlaceCity(next.payload.schedule?.location_city ?? "");
+    setPlaceCandidates([]);
+    setSelectedPlaceToken(null);
+    setPlaceError(null);
     setTodos(editableTodos(next.payload.todos));
     setCreateSchedule(Boolean(next.payload.schedule));
     setSelectedMatter(next.matter_id ?? "");
@@ -365,14 +382,29 @@ export function MatterDraftSheet({
     }
     const shouldSaveSchedule = directSchedule || (mode !== "todo" && createSchedule && scheduleVisible);
     if (shouldSaveSchedule && start) {
+      const locationChanged =
+        location.trim() !== (current.payload.schedule?.location ?? "").trim();
       input.schedule = {
         schedule_id: current.payload.schedule?.schedule_id ?? null,
         title: scheduleTitle.trim(),
         starts_at: start,
         ends_at: end,
         location: location.trim() || null,
-        latitude: current.payload.schedule?.latitude ?? null,
-        longitude: current.payload.schedule?.longitude ?? null,
+        latitude: locationChanged ? null : current.payload.schedule?.latitude ?? null,
+        longitude: locationChanged ? null : current.payload.schedule?.longitude ?? null,
+        coordinate_system: locationChanged
+          ? "unknown"
+          : current.payload.schedule?.coordinate_system ?? "unknown",
+        location_city: locationChanged ? null : current.payload.schedule?.location_city ?? null,
+        location_address: locationChanged
+          ? null
+          : current.payload.schedule?.location_address ?? null,
+        location_source: locationChanged
+          ? null
+          : current.payload.schedule?.location_source ?? null,
+        location_external_id: locationChanged
+          ? null
+          : current.payload.schedule?.location_external_id ?? null,
       };
     } else if (mode === "create" && !createSchedule) {
       input.schedule = null;
@@ -410,8 +442,61 @@ export function MatterDraftSheet({
     }
   };
 
+  const searchPlaceCandidates = async () => {
+    const query = placeQuery.trim();
+    if (!query) {
+      setPlaceError("请输入地点名称或更详细的地址。");
+      return;
+    }
+    setPlaceSearching(true);
+    setPlaceError(null);
+    setSelectedPlaceToken(null);
+    try {
+      const result = await searchPlaces(
+        query,
+        placeCity.trim() || null,
+        placeSearchType,
+      );
+      setPlaceCandidates(result.candidates);
+      if (result.candidates.length === 0) {
+        setPlaceError("没有找到可用候选，请补充城市或更详细的地址后再试。");
+      }
+    } catch (caught) {
+      setPlaceCandidates([]);
+      setPlaceError(caught instanceof Error ? caught.message : "地点查询失败。");
+    } finally {
+      setPlaceSearching(false);
+    }
+  };
+
+  const selectPlaceCandidate = async () => {
+    if (!current || !selectedPlaceToken) return;
+    setActionBusy("place");
+    setPlaceError(null);
+    try {
+      const next = await confirmPlaceSelection(current.draft_id, selectedPlaceToken);
+      hydrate(next);
+      setMessage("地点已写入服务器预览，路线与冲突已重新计算。");
+    } catch (caught) {
+      if (caught instanceof ApiError && isRecordChangedError(caught.code)) {
+        setPlaceError("记录已发生变化，请刷新后检查。");
+        await load();
+      } else {
+        setPlaceError(
+          caught instanceof Error ? caught.message : "这个地点候选不能保存。",
+        );
+      }
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   const confirm = async () => {
     if (!current) return;
+    if (dirty) {
+      setFieldError("请先保存当前修改并重新核对路线与冲突。");
+      return;
+    }
     if (needsChoice && !selectedMatter) {
       setFieldError("请先选择这条整理要接续哪件事项。");
       return;
@@ -665,10 +750,111 @@ export function MatterDraftSheet({
                         onChange={(event) => {
                           markManualEdit();
                           setLocation(event.target.value);
+                          setPlaceCandidates([]);
+                          setSelectedPlaceToken(null);
                         }}
                         placeholder="可留空"
                       />
                     </label>
+                    <p className="micro" style={{ margin: "4px 0 0" }}>
+                      {current.payload.schedule?.latitude !== null &&
+                      current.payload.schedule?.latitude !== undefined
+                        ? `已确认地点：${current.payload.schedule.location || location}${current.payload.schedule.location_address ? ` · ${current.payload.schedule.location_address}` : ""}${current.payload.schedule.location_city ? ` · ${current.payload.schedule.location_city}` : ""}`
+                        : "当前只有文字地点，没有已确认坐标。手工输入地点不会自动生成坐标。"}
+                    </p>
+                    <div className="place-search">
+                      <p className="micro" style={{ margin: 0 }}>查找并确认地点</p>
+                      <div className="grid-2">
+                        <label className="field">
+                          <span className="field__label">名称或地址</span>
+                          <input
+                            className="input"
+                            value={placeQuery}
+                            onChange={(event) => setPlaceQuery(event.target.value)}
+                            placeholder="例如：静安寺"
+                          />
+                        </label>
+                        <label className="field">
+                          <span className="field__label">城市</span>
+                          <input
+                            className="input"
+                            value={placeCity}
+                            onChange={(event) => setPlaceCity(event.target.value)}
+                            placeholder="例如：上海"
+                          />
+                        </label>
+                      </div>
+                      <div className="chip-row">
+                        {(["place", "address"] as const).map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            className="chip chip--sm"
+                            aria-pressed={placeSearchType === type}
+                            onClick={() => {
+                              setPlaceSearchType(type);
+                              setPlaceCandidates([]);
+                              setSelectedPlaceToken(null);
+                            }}
+                          >
+                            {type === "place" ? "地点" : "地址"}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--small"
+                          onClick={() => void searchPlaceCandidates()}
+                          disabled={placeSearching || actionBusy !== null}
+                        >
+                          {placeSearching ? "正在查找…" : "查找候选"}
+                        </button>
+                      </div>
+                      {placeCandidates.length > 0 ? (
+                        <div className="m-stack-8 mt-10" role="radiogroup" aria-label="地点候选">
+                          {placeCandidates.map((candidate) => (
+                            <button
+                              key={candidate.provider_place_id}
+                              type="button"
+                              role="radio"
+                              aria-checked={selectedPlaceToken === candidate.selection_token}
+                              className={`choice-card${selectedPlaceToken === candidate.selection_token ? " choice-card--selected" : ""}`}
+                              onClick={() => setSelectedPlaceToken(candidate.selection_token)}
+                            >
+                              <span className="choice-card__dot">
+                                {selectedPlaceToken === candidate.selection_token ? <Check size={12} /> : null}
+                              </span>
+                              <span className="grow">
+                                <span className="choice-card__title">{candidate.name}</span>
+                                <span className="choice-card__detail">
+                                  {[candidate.city, candidate.address].filter(Boolean).join(" · ") || "地址未提供"}
+                                  {" · "}
+                                  {candidate.coordinate_system === "gcj02"
+                                    ? "高德坐标 GCJ-02"
+                                    : candidate.coordinate_system === "wgs84"
+                                      ? "WGS-84"
+                                      : "坐标系未说明"}
+                                </span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      {selectedPlaceToken ? (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--small mt-8"
+                          onClick={() => void selectPlaceCandidate()}
+                          disabled={actionBusy !== null || busy}
+                        >
+                          {actionBusy === "place" ? "正在保存地点…" : "使用这个地点并重新计算路线"}
+                        </button>
+                      ) : null}
+                      {placeError ? (
+                        <p className="danger-text" style={{ margin: "6px 0 0" }}>
+                          {placeError}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 ) : (
                   <p className="caption mt-8" style={{ marginBottom: 0 }}>
@@ -748,29 +934,82 @@ export function MatterDraftSheet({
               </div>
             ) : null}
 
-            {routeUnverified && !conflict?.has_conflict ? (
+            {dirty ? (
+              <div className="notice notice--amber">
+                当前有未保存的修改，旧路线耗时和冲突结果不再作为有效结论。请先保存并重新核对。
+              </div>
+            ) : null}
+
+            {!dirty && routeUnverified && !conflict?.has_conflict ? (
               <div className="notice notice--amber">
                 路程尚未核实。服务器没有发现确定的时间冲突，但不能视为所有风险已排除。
               </div>
             ) : null}
 
-            {conflict?.has_conflict ? (
+            {!dirty && conflict?.has_conflict ? (
               <div className="notice notice--amber">
                 <strong>
                   <AlertTriangle size={14} /> 时间冲突
                 </strong>
                 <p className="caption" style={{ margin: "4px 0 0" }}>{conflictNote}</p>
                 {conflict.conflicts.map((item, index) => (
-                  <p
+                  <RouteTextCard
                     key={`${item.schedule_id ?? "conflict"}-${index}`}
-                    className="micro"
-                    style={{ margin: "4px 0 0" }}
-                  >
-                    {item.title} · {item.relation === "overlap" ? "时间重叠" : `间隔 ${Math.round(item.gap_seconds / 60)} 分钟`}
-                    {item.eta_seconds
-                      ? ` · 路程 ${Math.round(item.eta_seconds / 60)} 分钟`
-                      : " · 路程未核实"}
-                  </p>
+                    embedded
+                    originLabel={
+                      item.relation === "previous"
+                        ? item.title
+                        : item.relation === "next"
+                          ? scheduleTitle || "本次安排"
+                          : item.title
+                    }
+                    destinationLabel={
+                      item.relation === "previous"
+                        ? scheduleTitle || location || "本次安排"
+                        : item.relation === "next"
+                          ? item.title
+                          : scheduleTitle || location || "本次安排"
+                    }
+                    departureAt={
+                      item.relation === "previous"
+                        ? item.ends_at
+                        : item.relation === "next"
+                          ? fromLocalInput(endsAt)
+                          : item.ends_at
+                    }
+                    arrivalAt={
+                      item.relation === "next"
+                        ? item.starts_at
+                        : fromLocalInput(startsAt)
+                    }
+                    mode={null}
+                    durationSeconds={item.eta_seconds}
+                    instruction={conflictReasonText(item.reason, item.eta_status)}
+                    state={
+                      item.eta_status === "unverified"
+                        ? "unverified"
+                        : item.relation === "overlap"
+                          ? "tight"
+                          : "tight"
+                    }
+                    notice={
+                      item.relation === "overlap"
+                        ? "这是时间重叠，不是通勤耗时结论。"
+                        : `两项安排间隔 ${Math.round(item.gap_seconds / 60)} 分钟。`
+                    }
+                    mapTarget={{
+                      label:
+                        current.payload.schedule?.location_address ||
+                        location ||
+                        null,
+                      latitude: current.payload.schedule?.latitude ?? null,
+                      longitude: current.payload.schedule?.longitude ?? null,
+                      coordinateSystem:
+                        current.payload.schedule?.coordinate_system ?? "unknown",
+                      address: current.payload.schedule?.location_address ?? null,
+                      city: current.payload.schedule?.location_city ?? null,
+                    }}
+                  />
                 ))}
                 {conflict.options.length > 0 ? (
                   <div className="m-stack-8 mt-8" role="radiogroup" aria-label="调整方案">
@@ -894,6 +1133,7 @@ export function MatterDraftSheet({
                 (mode === "create" && !title.trim()) ||
                 (directSchedule && (!scheduleTitle.trim() || !startsAt)) ||
                 (needsChoice && !selectedMatter) ||
+                dirty ||
                 selectedOptionBlocked ||
                 (hasConflictOptions && !selectedOption)
               }

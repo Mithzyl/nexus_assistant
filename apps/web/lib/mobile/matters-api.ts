@@ -12,12 +12,15 @@ import {
   type MatterEditInput,
   type MatterGroup,
   type MatterIntakeResponse,
+  type MatterIntakeResult,
   type MatterListResponse,
   type MatterSummary,
   type MatterTodo,
   type MatterUpdateInput,
   type MatterVersionInput,
   type RevertResponse,
+  type PlaceSearchResponse,
+  type RouteEstimate,
   type TodayView,
 } from "./api";
 
@@ -158,10 +161,71 @@ export function cancelDraft(draftId: string): Promise<MatterDraft> {
   return apiRequest<MatterDraft>(pa(`/matters/drafts/${id(draftId)}/cancel`), { method: "POST" });
 }
 
-export function intakeMatter(text: string, idempotencyKey: string): Promise<MatterIntakeResponse> {
+export function intakeMatter(
+  text: string,
+  idempotencyKey: string,
+  continuationRunId?: string | null,
+): Promise<MatterIntakeResponse> {
   return apiRequest<MatterIntakeResponse>(pa("/matters/intake"), {
     method: "POST",
-    body: { text, idempotency_key: idempotencyKey },
+    body: {
+      text,
+      idempotency_key: idempotencyKey,
+      ...(continuationRunId ? { continuation_run_id: continuationRunId } : {}),
+    },
+  });
+}
+
+export function listIntakeResults(limit = 20, signal?: AbortSignal): Promise<MatterIntakeResult[]> {
+  return apiRequest<MatterIntakeResult[]>(pa(`/matters/intake?limit=${limit}`), { signal });
+}
+
+export function getIntakeResult(
+  localRunId: string,
+  signal?: AbortSignal,
+): Promise<MatterIntakeResult> {
+  return apiRequest<MatterIntakeResult>(pa(`/matters/intake/${id(localRunId)}`), { signal });
+}
+
+export function searchPlaces(
+  query: string,
+  city: string | null,
+  searchType: "place" | "address" = "place",
+): Promise<PlaceSearchResponse> {
+  return apiRequest<PlaceSearchResponse>(pa("/commute/places/search"), {
+    method: "POST",
+    body: {
+      query,
+      ...(city?.trim() ? { city: city.trim() } : {}),
+      search_type: searchType,
+      limit: 5,
+    },
+  });
+}
+
+export function confirmPlaceSelection(
+  draftId: string,
+  selectionToken: string,
+): Promise<MatterDraft> {
+  return apiRequest<MatterDraft>(pa("/commute/places/confirm"), {
+    method: "POST",
+    body: { draft_id: draftId, selection_token: selectionToken },
+  });
+}
+
+export function estimateRoute(input: {
+  origin?: { latitude: number; longitude: number; coordinate_system: string; city?: string | null };
+  origin_schedule_id?: string;
+  destination: { latitude: number; longitude: number; coordinate_system: string; city?: string | null };
+  mode: "driving" | "walking" | "transit";
+  depart_at?: string;
+  arrive_by?: string;
+  schedule_id?: string;
+  origin_basis?: "user_confirmed" | "previous_schedule";
+}): Promise<RouteEstimate> {
+  return apiRequest<RouteEstimate>(pa("/commute/estimate"), {
+    method: "POST",
+    body: input,
   });
 }
 

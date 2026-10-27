@@ -17,11 +17,9 @@ import {
   UserRound,
   LogOut,
   FlaskConical,
-  Database,
-  Smartphone,
-  CalendarDays,
 } from "lucide-react";
 
+import { DataConnections } from "@/components/mobile/data-connections";
 import { useAuth, useDemo, useUI } from "@/components/mobile/providers";
 import { ConfirmDialog, ScreenHeader, SwitchRow } from "@/components/mobile/ui";
 import { formatDateTime } from "@/lib/mobile/format";
@@ -78,56 +76,6 @@ export default function MePage() {
   const [logoutNote, setLogoutNote] = useState<string | null>(null);
 
   const enabledMemories = demo.memories.filter((memory) => memory.enabled).length;
-  const lastSync = (sources.data ?? [])
-    .map((source) => source.last_sync_at)
-    .filter((value): value is string => Boolean(value))
-    .sort()
-    .at(-1) ?? null;
-  const iosSources = (sources.data ?? []).filter(
-    (source) => source.source_type === "calendar" || source.source_type === "reminders",
-  );
-  const appCalendarState = (() => {
-    if (!signedIn) return { detail: "登录后读取内置日程和提醒。", status: "需登录" };
-    if (matters.loading && matters.items.length === 0) {
-      return { detail: "正在向 PA 服务器读取应用内日程。", status: "读取中" };
-    }
-    if (matters.error) {
-      return {
-        detail: "这次读取失败；不代表应用内日程未接通，可稍后重试。",
-        status: "读取失败",
-      };
-    }
-    return {
-      detail:
-        matters.items.length > 0
-          ? `应用内日程与提醒可用，当前读取 ${matters.items.length} 个事项。`
-          : "应用内日程与提醒可用，当前没有正式事项。",
-      status: "可用",
-    };
-  })();
-  const iosConnectionState = (() => {
-    if (!signedIn) return { detail: "登录后读取苹果端来源连接状态。", status: "需登录" };
-    if (sources.loading && !sources.data) {
-      return { detail: "正在读取苹果端来源状态。", status: "读取中" };
-    }
-    if (sources.error) {
-      return {
-        detail: "这次来源状态读取失败；不代表苹果端尚未连接。",
-        status: "读取失败",
-      };
-    }
-    if (iosSources.length > 0) {
-      return {
-        detail: `${iosSources.length} 个来自苹果端的日历或提醒来源；上传副本不等于写回系统应用。`,
-        status: "已连接",
-      };
-    }
-    return {
-      detail: "服务器暂无苹果端日历或提醒来源。上传副本不等于写回系统应用。",
-      status: "尚未连接",
-    };
-  })();
-
   const accountTitle = (() => {
     if (state === "loading") return "正在验证会话…";
     if (signedIn && user) return user.display_name;
@@ -253,37 +201,20 @@ export default function MePage() {
         </div>
       </section>
 
-      <section style={{ padding: "0 var(--m-gutter)" }}>
-        <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
-          数据与同步
-        </h2>
-        <div className="group">
-          <Row
-            href="/matters"
-            icon={<CalendarDays size={14} />}
-            title="内置日程与提醒"
-            detail={appCalendarState.detail}
-            status={appCalendarState.status}
-          />
-          <Row
-            href="/me/sources"
-            icon={<Smartphone size={14} />}
-            title="iOS 客户端"
-            detail={iosConnectionState.detail}
-            status={iosConnectionState.status}
-          />
-          <Row
-            href="/me/sources"
-            icon={<Database size={14} />}
-            title="内容副本最近同步"
-            detail={lastSync ? `最近一次上传批次：${formatDateTime(lastSync)}` : "还没有上传过内容副本"}
-            status={sources.loading ? "读取中" : lastSync ? "已上传" : "无记录"}
-          />
-        </div>
-        <p className="micro" style={{ margin: "8px 0 0" }}>
-          应用内日程与苹果端连接状态分别读取；提醒只表示服务器有记录，尚未确认送达。
-        </p>
-      </section>
+      <DataConnections
+        signedIn={signedIn}
+        mattersLoading={matters.loading}
+        mattersError={Boolean(matters.error)}
+        matters={matters.items}
+        sourcesLoading={sources.loading}
+        sourcesError={Boolean(sources.error)}
+        sources={sources.data ?? []}
+        onRetry={() => {
+          matters.refresh();
+          sources.reload();
+        }}
+        onSourcesChanged={sources.reload}
+      />
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
         <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>

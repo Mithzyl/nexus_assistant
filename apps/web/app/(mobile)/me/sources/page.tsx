@@ -8,6 +8,7 @@ import { Archive, CalendarDays, FileText, NotebookPen } from "lucide-react";
 import type { ContentItem, DataSource } from "@/lib/mobile/api";
 import { useApiResource, errorText } from "@/lib/mobile/use-api-resource";
 import { formatDateTime } from "@/lib/mobile/format";
+import { uploadFailureText } from "@/lib/mobile/source-labels";
 import { useAuth } from "@/components/mobile/providers";
 import {
   EmptyState,
@@ -165,7 +166,7 @@ export default function SourcesPage() {
                     </span>
                     {source.last_error_code ? (
                       <span className="micro red" style={{ display: "block", marginTop: 8 }}>
-                        最近一次同步有错误：{source.last_error_code}
+                        最近一次同步失败：{uploadFailureText(source.last_error_code)}
                       </span>
                     ) : null}
                   </button>

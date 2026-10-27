@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUp,
   Cloud,
   Copy,
-  ListPlus,
   WifiOff,
   XCircle,
 } from "lucide-react";
@@ -17,13 +16,29 @@ import { Markdown } from "@/components/mobile/markdown";
 import { useAuth, useUI } from "@/components/mobile/providers";
 import { LoadingCard, ScreenHeader } from "@/components/mobile/ui";
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
-import type { MatterDraft } from "@/lib/mobile/api";
-import { confirmSummary, intakeMatter, listDrafts, newOperationKey } from "@/lib/mobile/matters-api";
+import type { MatterDraft, MatterIntakeResult } from "@/lib/mobile/api";
+import { ApiError } from "@/lib/mobile/api";
+import {
+  confirmSummary,
+  getIntakeResult,
+  intakeMatter,
+  listDrafts,
+  listIntakeResults,
+  newOperationKey,
+} from "@/lib/mobile/matters-api";
+import { mergeIntakeHistory } from "@/lib/mobile/matter-draft.mjs";
 import { formatDateTime } from "@/lib/mobile/format";
-import { accountKey, readSession, writeSession } from "@/lib/mobile/storage";
+import {
+  accountKey,
+  readJson,
+  readSession,
+  writeJson,
+  writeSession,
+} from "@/lib/mobile/storage";
 
 interface IntakeAnswer {
   id: string;
+  localRunId?: string | null;
   question: string;
   answer: string;
   createdAt: string;
@@ -232,54 +247,100 @@ export default function AskPage() {
   const [intakeDraft, setIntakeDraft] = useState<MatterDraft | null>(null);
   const [pendingDrafts, setPendingDrafts] = useState<MatterDraft[]>([]);
   const [intakeAnswers, setIntakeAnswers] = useState<IntakeAnswer[]>([]);
-  const [organizing, setOrganizing] = useState(false);
-  const intakeKey = useRef<{ text: string; key: string } | null>(null);
+  const [serverIntakeResults, setServerIntakeResults] = useState<MatterIntakeResult[]>([]);
+  const [processing, setProcessing] = useState(false);
+  const [supplementQuestion, setSupplementQuestion] = useState<string | null>(null);
+  const [operationFailure, setOperationFailure] = useState<string | null>(null);
+  const [continuationRunId, setContinuationRunId] = useState<string | null>(null);
+  const [recoveryRunId, setRecoveryRunId] = useState<string | null>(null);
+  const [intakeHistoryLoading, setIntakeHistoryLoading] = useState(false);
+  const intakeKey = useRef<{
+    text: string;
+    key: string;
+    continuationRunId: string | null;
+  } | null>(null);
   const hydratedAnswerKey = useRef<string | null>(null);
+  const intakeHistorySeq = useRef(0);
   const { toast } = useUI();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const restored = useRef(false);
+  const restoredComposerKey = useRef<string | null>(null);
   const intakeAnswerStorageKey = accountKey("pa.web.intakeAnswers", user?.user_id ?? null);
+  const composerStorageKey = accountKey("pa.web.ask.composer", user?.user_id ?? null);
 
   useEffect(() => {
-    if (restored.current) return;
-    restored.current = true;
+    restoredComposerKey.current = null;
     const captured = readSession<string>("pa.web.ask.draft", "");
     if (captured) {
       setDraft(captured);
       writeSession("pa.web.ask.draft", "");
     } else {
-      setDraft(readSession<string>("pa.web.ask.composer", ""));
+      setDraft(readSession<string>(composerStorageKey, ""));
     }
-  }, []);
+    const timer = window.setTimeout(() => {
+      restoredComposerKey.current = composerStorageKey;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [composerStorageKey, user?.user_id]);
 
   useEffect(() => {
-    writeSession("pa.web.ask.composer", draft);
-  }, [draft]);
+    if (restoredComposerKey.current !== composerStorageKey) return;
+    writeSession(composerStorageKey, draft);
+  }, [composerStorageKey, draft]);
 
   useEffect(() => {
-    const stored = readSession<IntakeAnswer[]>(intakeAnswerStorageKey, []);
+    hydratedAnswerKey.current = null;
+    const stored = readJson<IntakeAnswer[]>(intakeAnswerStorageKey, []);
     setIntakeAnswers(stored);
-    hydratedAnswerKey.current = intakeAnswerStorageKey;
+    const timer = window.setTimeout(() => {
+      hydratedAnswerKey.current = intakeAnswerStorageKey;
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [intakeAnswerStorageKey]);
 
   useEffect(() => {
     if (hydratedAnswerKey.current !== intakeAnswerStorageKey) return;
-    writeSession(intakeAnswerStorageKey, intakeAnswers.slice(0, 20));
+    writeJson(intakeAnswerStorageKey, intakeAnswers.slice(0, 20));
   }, [intakeAnswerStorageKey, intakeAnswers]);
 
-  useEffect(() => {
-    if (state !== "signedIn") {
-      setPendingDrafts([]);
-      return;
+  const refreshServerIntake = useCallback(async (signal?: AbortSignal) => {
+    if (state !== "signedIn") return;
+    const requestId = ++intakeHistorySeq.current;
+    setIntakeHistoryLoading(true);
+    const [draftResult, historyResult] = await Promise.allSettled([
+      listDrafts("preview", null, signal),
+      listIntakeResults(20, signal),
+    ]);
+    if (!signal?.aborted && requestId === intakeHistorySeq.current) {
+      if (draftResult.status === "fulfilled") {
+        setPendingDrafts(draftResult.value);
+      }
+      if (historyResult.status === "fulfilled") {
+        setServerIntakeResults(historyResult.value);
+      }
+      setIntakeHistoryLoading(false);
     }
-    let alive = true;
-    void listDrafts("preview")
-      .then((rows) => { if (alive) setPendingDrafts(rows); })
-      .catch(() => { /* The intake/draft panel reports its own errors. */ });
-    return () => { alive = false; };
-  }, [state, user?.user_id]);
+  }, [state]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    intakeHistorySeq.current += 1;
+    setServerIntakeResults([]);
+    setPendingDrafts([]);
+    setIntakeDraft(null);
+    setSupplementQuestion(null);
+    setOperationFailure(null);
+    setContinuationRunId(null);
+    setRecoveryRunId(null);
+    intakeKey.current = null;
+    if (state === "signedIn") {
+      void refreshServerIntake(controller.signal);
+    } else {
+      setIntakeHistoryLoading(false);
+    }
+    return () => controller.abort();
+  }, [refreshServerIntake, state, user?.user_id]);
 
   useEffect(() => {
     const textarea = inputRef.current;
@@ -301,76 +362,157 @@ export default function AskPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newest?.phase, newest?.answer]);
 
-  const canSend = draft.trim().length > 0 && state === "signedIn" && !ask.submitting;
+  const canSend = draft.trim().length > 0 && state === "signedIn" && !processing;
 
   const send = async (text?: string) => {
     const value = (text ?? draft).trim();
     if (!value) return;
+    if (processing) return;
     if (state !== "signedIn") {
-      setComposerError("登录后才能向服务器提问，输入已保留。");
+      setComposerError("登录后才能交给助手，输入已保留。");
       return;
     }
     if (value.length > 4000) {
-      setComposerError("问题最多 4000 个字符。");
+      setComposerError("这段内容最多 4000 个字符。");
       return;
     }
     setComposerError(null);
-    setDraft("");
-    writeSession("pa.web.ask.composer", "");
-    const created = await ask.submit(value);
-    if (!created) {
-      setDraft(value);
-    }
-    window.setTimeout(() => {
-      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }, 80);
-  };
-
-  const organize = async () => {
-    const value = draft.trim();
-    if (!value) return;
-    if (state !== "signedIn") {
-      setComposerError("登录后才能整理事项，输入已保留。");
-      return;
-    }
-    setComposerError(null);
-    setOrganizing(true);
-    if (!intakeKey.current || intakeKey.current.text !== value) {
-      intakeKey.current = { text: value, key: newOperationKey("web-intake") };
+    setSupplementQuestion(null);
+    setOperationFailure(null);
+    setProcessing(true);
+    if (
+      !intakeKey.current ||
+      intakeKey.current.text !== value ||
+      intakeKey.current.continuationRunId !== continuationRunId
+    ) {
+      intakeKey.current = {
+        text: value,
+        key: newOperationKey("web-intake"),
+        continuationRunId,
+      };
     }
     try {
-      const result = await intakeMatter(value, intakeKey.current.key);
-      if (result.intent === "question") {
+      const result = await intakeMatter(
+        value,
+        intakeKey.current.key,
+        continuationRunId,
+      );
+      if (result.outcome === "answer") {
         if (!result.answer) {
-          setComposerError(result.message || "服务器没有返回可读的回答，输入已保留。");
+          setOperationFailure(
+            result.message || "服务器没有返回可读的回答，输入已经保留。",
+          );
           return;
         }
         setIntakeAnswers((current) => [
           ...current,
           {
             id: `${Date.now()}-${value.slice(0, 20)}`,
+            localRunId: result.local_run_id,
             question: value,
             answer: result.answer as string,
             createdAt: new Date().toISOString(),
           },
         ].slice(-20));
         setDraft("");
-        writeSession("pa.web.ask.composer", "");
-        toast("服务器已在整理入口直接回答，没有再次提交问答");
+        writeSession(composerStorageKey, "");
+        toast("服务器已直接回答");
         intakeKey.current = null;
+        setContinuationRunId(null);
+        setRecoveryRunId(result.local_run_id);
+        void refreshServerIntake();
+        return;
+      }
+      if (result.outcome === "needs_clarification") {
+        setSupplementQuestion(
+          result.clarify || result.message || "请补充缺失的信息。",
+        );
+        setContinuationRunId(result.local_run_id);
+        setRecoveryRunId(result.local_run_id);
+        setDraft("");
+        writeSession(composerStorageKey, "");
+        intakeKey.current = null;
+        void refreshServerIntake();
+        return;
+      }
+      if (result.outcome === "processing" || result.outcome === "unknown") {
+        setOperationFailure(
+          "正在核实结果。输入和恢复入口已保留，不会自动重新创建事项。",
+        );
+        setRecoveryRunId(result.local_run_id);
+        void refreshServerIntake();
+        return;
+      }
+      if (result.outcome === "draft" && result.draft) {
+        setIntakeDraft(result.draft);
+        setContinuationRunId(null);
+        setRecoveryRunId(result.local_run_id);
+        toast("已生成待确认变更，尚未写入正式安排");
+        void refreshServerIntake();
         return;
       }
       if (!result.draft) {
-        setComposerError(
+        setOperationFailure(
           result.message || "服务器没有生成事项草稿，当前输入已保留。",
+        );
+        setRecoveryRunId(result.local_run_id);
+        void refreshServerIntake();
+        return;
+      }
+    } catch (caught) {
+      if (
+        caught instanceof ApiError &&
+        (caught.status >= 500 ||
+          caught.code.includes("timeout") ||
+          caught.code.includes("unknown"))
+      ) {
+        setOperationFailure(
+          "正在核实结果。输入和本次操作标识已保留，可查询原结果或用同一次操作继续。",
         );
         return;
       }
-      setIntakeDraft(result.draft);
-    } catch (caught) {
-      setComposerError(caught instanceof Error ? caught.message : "暂时无法整理这件事。");
+      setComposerError(caught instanceof Error ? caught.message : "暂时无法交给助手。");
+      void refreshServerIntake();
     } finally {
-      setOrganizing(false);
+      setProcessing(false);
+    }
+  };
+
+  const recoverResult = async () => {
+    setOperationFailure(null);
+    try {
+      const result = recoveryRunId
+        ? await getIntakeResult(recoveryRunId)
+        : (await listIntakeResults(20)).find(
+            (item) => item.request_text === draft.trim(),
+          );
+      if (!result) {
+        setOperationFailure(
+          "服务器暂时没有找到这次结果。可以保留原输入和操作标识继续原来的处理。",
+        );
+        return;
+      }
+      setRecoveryRunId(result.local_run_id);
+      if (result.outcome === "draft" && result.draft) {
+        setIntakeDraft(result.draft);
+        setContinuationRunId(null);
+        toast("已读取服务器保存的待确认结果");
+      } else if (result.outcome === "needs_clarification") {
+        setSupplementQuestion(result.clarify || "请补充缺失的信息。");
+        setContinuationRunId(result.local_run_id);
+      } else if (result.outcome === "answer") {
+        setContinuationRunId(null);
+        toast("服务器回答已恢复到历史");
+      } else if (result.outcome === "processing" || result.outcome === "unknown") {
+        setOperationFailure("服务器仍在核实这次结果，请稍后再次查询。");
+      } else {
+        setOperationFailure("这次操作没有形成可继续的结果，输入已保留。");
+      }
+      await refreshServerIntake();
+    } catch (caught) {
+      setOperationFailure(
+        caught instanceof Error ? caught.message : "暂时无法查询原结果。",
+      );
     }
   };
 
@@ -386,10 +528,14 @@ export default function AskPage() {
   };
 
   const timeline = [...ask.items].reverse();
+  const unifiedHistory = mergeIntakeHistory(
+    serverIntakeResults.filter((item) => item.outcome !== "draft"),
+    intakeAnswers,
+  );
 
   return (
     <div className="m-screen" style={{ paddingBottom: 220 }}>
-      <ScreenHeader title="问助手" subtitle="连接 PA 服务器 · 每次提问独立处理" />
+      <ScreenHeader title="问助手" subtitle="说一件事、一个问题或最新进展" />
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
         {state === "signedIn" && user ? (
@@ -449,10 +595,10 @@ export default function AskPage() {
         <section style={{ padding: "0 var(--m-gutter)", marginBottom: 16 }}>
           <div className="card card--amber">
             <p className="card-title amber" style={{ fontSize: 15 }}>
-              有 {pendingDrafts.length} 条待确认整理
+              有 {pendingDrafts.length} 条待确认变更
             </p>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              来自服务器的预览草稿，关闭页面后仍可在这里继续；不会自动反复弹出面板。
+              从服务器恢复，不会因为重新打开页面反复弹出。
             </p>
             <div className="m-stack-8 mt-10">
               {pendingDrafts.slice(0, 3).map((draftItem) => (
@@ -469,40 +615,73 @@ export default function AskPage() {
         </section>
       ) : null}
 
-      {intakeAnswers.length > 0 ? (
+      {unifiedHistory.length > 0 ? (
         <section className="ask-stream" style={{ marginBottom: 16 }}>
-          {intakeAnswers.map((item) => (
-            <div key={item.id}>
-              <div className="bubble-user">{item.question}</div>
+          {unifiedHistory.map((item) => {
+            const serverItem = "request_text" in item;
+            const question = serverItem ? item.request_text : item.question;
+            const answer = serverItem ? item.answer : item.answer;
+            const clarify = serverItem ? item.clarify : null;
+            const outcome = serverItem ? item.outcome : "answer";
+            const createdAt = serverItem ? item.created_at : item.createdAt;
+            const key = serverItem ? item.local_run_id : item.id;
+            return (
+            <div key={key}>
+              <div className="bubble-user">{question}</div>
               <div className="card mt-10">
                 <div className="flex items-center justify-between gap-10">
-                  <span className="micro">助手在事项整理中直接回答</span>
-                  <span className="micro">{formatDateTime(item.createdAt)}</span>
+                  <span className="micro">
+                    {outcome === "needs_clarification"
+                      ? "还需要补充信息"
+                      : outcome === "processing"
+                        ? "正在核实结果"
+                        : outcome === "unknown"
+                          ? "结果暂不确定"
+                          : outcome === "failed"
+                            ? "处理失败"
+                            : outcome === "cancelled"
+                              ? "已取消"
+                              : "服务器直接回答"}
+                  </span>
+                  <span className="micro">{formatDateTime(createdAt)}</span>
                 </div>
                 <div className="mt-8">
-                  <Markdown source={item.answer} />
+                  {answer ? <Markdown source={answer} /> : null}
+                  {clarify ? <p className="body-text" style={{ margin: 0 }}>{clarify}</p> : null}
+                  {!answer && !clarify ? (
+                    <p className="caption" style={{ margin: 0 }}>
+                      {outcome === "processing" || outcome === "unknown"
+                        ? "服务器尚未返回确定结果，可保留原输入后继续查询。"
+                        : "这次操作没有形成可继续的回答。"}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
+          {intakeHistoryLoading ? <LoadingCard label="正在同步统一输入历史…" /> : null}
         </section>
       ) : null}
 
-      {timeline.length === 0 ? (
+      {timeline.length === 0 && unifiedHistory.length === 0 ? (
         <section style={{ padding: "0 var(--m-gutter)" }}>
           <div className="card">
             <p className="card-title" style={{ fontSize: 18 }}>
-              问一句，交给服务器处理。
+              直接说，交给助手理解。
             </p>
             <p className="body-text muted mt-8">
-              提问会提交到 PA 后端，由服务器等待并保存最终回答。这里不会伪造打字机效果，也不会连接上游服务。
+              助手会判断是回答、补充问题，还是生成一张待确认变更卡；确认前不会写入正式安排。
             </p>
             <div className="mt-12" style={{ display: "grid", gap: 8 }}>
               {SUGGESTIONS.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
-                  onClick={() => void send(suggestion)}
+                  onClick={() => {
+                    setDraft(suggestion);
+                    void send(suggestion);
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -586,13 +765,13 @@ export default function AskPage() {
         <div style={{ display: "grid", gap: 6 }}>
           <span className="micro">关于这版回答</span>
           <p className="caption" style={{ margin: 0 }}>
-            每次提问独立发送，当前接口没有会话上下文，不会自动带上上一轮。回答与完成时间来自 PA 服务器保存的结果；这里不展示上游服务名、工作流或调试信息。
+            一次发送只调用一个统一入口。服务器返回回答时直接显示；返回事项草稿时使用底部确认面板，不把同一句话再次发送给另一个入口。
           </p>
           <p className="caption" style={{ margin: 0 }}>
             日历、提醒事项和笔记目前只读取已同步到服务器的副本；浏览器不能声称获得了系统读取权限。
           </p>
           <p className="caption" style={{ margin: 0 }}>
-            普通提问不会自动创建事项。需要整理时，点输入框左侧的“整理”按钮；这会把当前文字明确送到事项整理入口，而不是从回答文字猜测保存成功。
+            正式日程和提醒只在你确认变更卡后写入。待确认内容会从服务器恢复；多候选事项可在面板中直接选择，不需要重输背景。
           </p>
         </div>
       </section>
@@ -603,9 +782,51 @@ export default function AskPage() {
         </p>
       ) : null}
 
-      {organizing ? (
+      {supplementQuestion ? (
+        <div className="composer-operation" role="status">
+          <strong>还需要补充一点</strong>
+          <p>{supplementQuestion}</p>
+          <span>
+            下方会接续刚才的事项和已填写内容发送，不需要重述背景。
+          </span>
+          <button
+            type="button"
+            className="link-button mt-6"
+            onClick={() => {
+              setContinuationRunId(null);
+              setSupplementQuestion(null);
+            }}
+          >
+            改作新的输入
+          </button>
+        </div>
+      ) : null}
+
+      {operationFailure ? (
+        <div className="composer-operation composer-operation--amber" role="alert">
+          <strong>
+            {operationFailure.includes("正在核实") ? "正在核实结果" : "还没拿到确定结果"}
+          </strong>
+          <p>{operationFailure}</p>
+          <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
+            <button type="button" className="btn btn--secondary btn--small" onClick={() => void recoverResult()}>
+              查询原结果
+            </button>
+            <button
+              type="button"
+              className="btn btn--quiet btn--small"
+              onClick={() => void send(draft)}
+              disabled={!draft.trim() || processing}
+            >
+              继续原操作
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {processing ? (
         <p className="composer-hint" style={{ position: "fixed", bottom: "calc(132px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 36 }}>
-          正在整理，服务器返回草稿后再让你确认…
+          正在理解内容，服务器返回结果后再继续…
         </p>
       ) : null}
 
@@ -625,28 +846,18 @@ export default function AskPage() {
               if (canSend) void send();
             }
           }}
-          placeholder={state === "signedIn" ? "问一件已经记下的事" : "登录后才能向服务器提问"}
-          aria-label="向助手提问"
+          placeholder={state === "signedIn" ? "说一件事、一个问题或最新进展" : "登录后才能交给助手"}
+          aria-label="交给助手"
           maxLength={4000}
         />
-        <button
-          type="button"
-          className="composer__intake"
-          disabled={!draft.trim() || state !== "signedIn" || organizing || ask.submitting}
-          onClick={() => void organize()}
-          aria-label="整理成事项"
-          title="把当前文字交给事项整理（不会自动从回答推断）"
-        >
-          {organizing ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <ListPlus size={17} />}
-        </button>
         <button
           type="button"
           className="composer__send"
           disabled={!canSend}
           onClick={() => void send()}
-          aria-label="发送问题"
+          aria-label="发送"
         >
-          {ask.submitting ? <span className="spinner" style={{ width: 15, height: 15 }} /> : <ArrowUp size={17} strokeWidth={2.4} />}
+          {processing ? <span className="spinner" style={{ width: 15, height: 15 }} /> : <ArrowUp size={17} strokeWidth={2.4} />}
         </button>
       </div>
 
@@ -660,11 +871,13 @@ export default function AskPage() {
           setDraft("");
           intakeKey.current = null;
           toast(confirmSummary(response));
+          void refreshServerIntake();
         }}
         onDraftCancelled={(cancelled) => {
           setPendingDrafts((rows) => rows.filter((row) => row.draft_id !== cancelled.draft_id));
           setIntakeDraft(null);
           toast("草稿已取消");
+          void refreshServerIntake();
         }}
       />
     </div>
