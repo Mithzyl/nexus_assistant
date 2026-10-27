@@ -10,6 +10,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Header, Query, Request, Response, status
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from assistant_api.commute.runtime import CommuteRuntime
 from assistant_api.core.deps import (
@@ -20,7 +21,9 @@ from assistant_api.core.deps import (
     SettingsDependency,
 )
 from assistant_api.schemas import matters as schemas
-from assistant_api.services import commute_estimate, matters
+from assistant_api.core.errors import InvalidRequestError, NotFoundError
+from assistant_api.models import ScheduleEvent
+from assistant_api.services import commute_estimate, commute_places, matters, schedule_routes
 
 router = APIRouter(prefix="/api/v1", tags=["matters"])
 
@@ -31,28 +34,52 @@ class EmptyBody(BaseModel):
 
 def _intake_response(
     *,
-    draft: dict | None,
-    replayed: bool,
-    intent: str,
-    answer: str | None,
+    result: dict,
     response: Response,
 ) -> dict:
-    if intent == "question":
+    outcome = result["outcome"]
+    if outcome in ("answer", "needs_clarification"):
         response.status_code = 200
-        return {
-            "draft": None,
-            "replayed": replayed,
-            "intent": "question",
-            "message": "这句话更像问题或闲聊，已直接回答，不会创建事项。",
-            "answer": answer,
-        }
+    elif outcome == "draft":
+        response.status_code = 201
     return {
-        "draft": draft,
-        "replayed": replayed,
-        "intent": "matter",
-        "message": None,
-        "answer": None,
+        "draft": result.get("draft"),
+        "replayed": bool(result.get("replayed")),
+        "intent": result.get("intent", "matter"),
+        "outcome": outcome,
+        "message": (
+            "这句话更像问题或闲聊，已直接回答，不会创建事项。"
+            if outcome == "answer"
+            else "还需要补充信息后才能形成待确认安排。"
+            if outcome == "needs_clarification"
+            else None
+        ),
+        "answer": result.get("answer"),
+        "clarify": result.get("clarify"),
+        "pending_context": result.get("pending_context") or {},
+        "local_run_id": result["local_run_id"],
+        "parent_run_id": result.get("parent_run_id"),
     }
+
+
+@router.get("/matters/intake", response_model=list[schemas.IntakeResultRead])
+async def list_intake_results(
+    db: DatabaseSession,
+    user: CurrentUser,
+    limit: int = Query(default=20, ge=1, le=50),
+) -> list[dict]:
+    """List the caller's unified input operations, including unfinished runs."""
+
+    return await matters.list_intake_results(db, user, limit=limit)
+
+
+@router.get("/matters/intake/{local_run_id}", response_model=schemas.IntakeResultRead)
+async def get_intake_result(
+    local_run_id: str, db: DatabaseSession, user: CurrentUser
+) -> dict:
+    """Reload one answer, clarification, draft or unresolved processing state."""
+
+    return await matters.get_intake_result(db, user, local_run_id)
 
 
 @router.post("/matters/intake", response_model=schemas.IntakeResponse, status_code=201)
@@ -66,7 +93,7 @@ async def intake(
     user: CurrentUser,
     response: Response,
 ) -> dict:
-    draft, replayed, intent, answer = await matters.intake(
+    result = await matters.intake(
         db,
         client,
         settings,
@@ -75,14 +102,9 @@ async def intake(
         user=user,
         text=payload.text,
         idempotency_key=payload.idempotency_key,
+        continuation_run_id=payload.continuation_run_id,
     )
-    return _intake_response(
-        draft=draft,
-        replayed=replayed,
-        intent=intent,
-        answer=answer,
-        response=response,
-    )
+    return _intake_response(result=result, response=response)
 
 
 @router.post(
@@ -101,7 +123,7 @@ async def intake_for_matter(
     user: CurrentUser,
     response: Response,
 ) -> dict:
-    draft, replayed, intent, answer = await matters.intake(
+    result = await matters.intake(
         db,
         client,
         settings,
@@ -111,14 +133,9 @@ async def intake_for_matter(
         text=payload.text,
         idempotency_key=payload.idempotency_key,
         matter_id=matter_id,
+        continuation_run_id=payload.continuation_run_id,
     )
-    return _intake_response(
-        draft=draft,
-        replayed=replayed,
-        intent=intent,
-        answer=answer,
-        response=response,
-    )
+    return _intake_response(result=result, response=response)
 
 
 @router.post(
@@ -387,22 +404,108 @@ async def list_reminders(
     )
 
 
+@router.post("/commute/places/search", response_model=schemas.PlaceSearchResponse)
+async def commute_place_search(
+    payload: schemas.PlaceSearchRequest,
+    runtime: CommuteRuntimeDependency,
+    settings: SettingsDependency,
+    user: CurrentUser,
+) -> dict:
+    """Search places or addresses; multiple results remain explicit candidates."""
+
+    return await commute_places.search_places(
+        runtime,
+        secret=settings.tool_callback_token.get_secret_value(),
+        query=payload.query,
+        city=payload.city,
+        search_type=payload.search_type,
+        limit=payload.limit,
+    )
+
+
+@router.post("/commute/places/confirm", response_model=schemas.DraftRead)
+async def commute_place_confirm(
+    payload: schemas.PlaceSelectionRequest,
+    db: DatabaseSession,
+    settings: SettingsDependency,
+    runtime: CommuteRuntimeDependency,
+    user: CurrentUser,
+) -> dict:
+    """Apply a signed candidate to a preview and recalculate conflicts."""
+
+    return await matters.apply_place_selection(
+        db,
+        runtime,
+        settings,
+        user,
+        draft_id=payload.draft_id,
+        selection_token=payload.selection_token,
+        secret=settings.tool_callback_token.get_secret_value(),
+    )
+
+
 @router.post("/commute/estimate", response_model=schemas.EstimateResponse)
 async def commute_estimate_endpoint(
     payload: schemas.EstimateRequest,
+    db: DatabaseSession,
     runtime: CommuteRuntimeDependency,
     user: CurrentUser,
 ) -> dict:
     """POST is this implementation's choice (the plan did not specify a method)."""
 
-    return await commute_estimate.estimate(
+    origin = payload.origin
+    origin_basis = payload.origin_basis
+    origin_schedule_fingerprint = None
+    if payload.origin_schedule_id:
+        previous = await db.scalar(
+            select(ScheduleEvent).where(
+                ScheduleEvent.schedule_id == payload.origin_schedule_id,
+                ScheduleEvent.user_id == user.user_id,
+                ScheduleEvent.deleted_at.is_(None),
+            )
+        )
+        if previous is None:
+            raise NotFoundError("schedule_not_found", "起点日程不存在。")
+        if previous.latitude is None or previous.longitude is None:
+            raise InvalidRequestError(
+                "origin_coordinates_missing", "上一条日程没有可用坐标，请补充地点。"
+            )
+        origin = schemas.Coordinate(
+            latitude=previous.latitude,
+            longitude=previous.longitude,
+            coordinate_system=previous.coordinate_system or "unknown",
+            city=previous.location_city,
+        )
+        origin_basis = "previous_schedule"
+        origin_schedule_fingerprint = schedule_routes.schedule_fingerprint(previous)
+    assert origin is not None
+
+    result = await commute_estimate.estimate(
         runtime,
-        origin=(payload.origin.latitude, payload.origin.longitude),
+        origin=(origin.latitude, origin.longitude),
         destination=(payload.destination.latitude, payload.destination.longitude),
         mode=payload.mode,
         depart_at=payload.depart_at,
         arrive_by=payload.arrive_by,
+        origin_city=origin.city,
+        destination_city=payload.destination.city,
+        origin_coordinate_system=origin.coordinate_system,
+        destination_coordinate_system=payload.destination.coordinate_system,
+        origin_basis=origin_basis,
+        origin_schedule_id=payload.origin_schedule_id,
+        schedule_id=payload.schedule_id,
     )
+    if payload.schedule_id and result["status"] == "available":
+        if origin_schedule_fingerprint is not None:
+            result["origin_schedule_fingerprint"] = origin_schedule_fingerprint
+        stored = await schedule_routes.save_for_schedule(
+            db,
+            user,
+            schedule_id=payload.schedule_id,
+            result=result,
+        )
+        return {**result, **stored}
+    return result
 
 
 __all__ = ["router"]

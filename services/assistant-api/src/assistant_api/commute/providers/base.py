@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol
 
-TransportMode = Literal["driving", "walking"]
+TransportMode = Literal["driving", "walking", "transit"]
 LocationRole = Literal["origin", "destination"]
 
 
@@ -115,6 +115,25 @@ class EtaResult:
     duration_seconds: int
     distance_meters: int | None
     response_basis: str = "departAt"
+    walking_distance_meters: int | None = None
+    transfer_count: int | None = None
+    transfers_summary: str | None = None
+    fare_cny: float | None = None
+    fare_kind: str | None = None
+    timing_basis: str = "provider_departure_time"
+
+
+@dataclass(frozen=True)
+class PlaceResult:
+    provider: str
+    provider_place_id: str
+    name: str
+    address: str | None
+    city: str | None
+    latitude: float
+    longitude: float
+    coordinate_system: str
+    source: str
 
 
 @dataclass(frozen=True)
@@ -187,7 +206,22 @@ class RouteEtaProvider(Protocol):
         mode: TransportMode,
         request_depart_at: datetime,
         target_arrival_at: datetime,
+        origin_city: str | None = None,
+        destination_city: str | None = None,
     ) -> EtaResult: ...
+
+
+class PlaceProvider(Protocol):
+    available: bool
+
+    async def search(
+        self,
+        *,
+        query: str,
+        city: str | None,
+        limit: int,
+        search_type: Literal["place", "address"],
+    ) -> list[PlaceResult]: ...
 
 
 class AdviceTextProvider(Protocol):

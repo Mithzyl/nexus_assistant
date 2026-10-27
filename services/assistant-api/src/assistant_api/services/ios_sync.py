@@ -49,6 +49,7 @@ REMINDER_FIELDS = {
     "status": "status",
     "notes": "notes",
 }
+SUBSCRIPTION_EVENT_UID_PREFIX = "pa-schedule-"
 
 
 def _dt(value: datetime | None) -> datetime | None:
@@ -135,6 +136,14 @@ async def apply_snapshot(
 
     # Validate authorization before writing anything.
     for index, record in enumerate(payload.records):
+        if (
+            source.source_type == "calendar"
+            and record.external_id.startswith(SUBSCRIPTION_EVENT_UID_PREFIX)
+        ):
+            raise InvalidRequestError(
+                "subscription_echo_not_allowed",
+                "快捷指令不能上传本应用生成的日历订阅事件，以免形成重复循环。",
+            )
         provided = set(record.model_fields_set)
         mapped = {allowed_mapping[key] for key in provided if key in allowed_mapping}
         unauthorized = mapped - allowed_fields

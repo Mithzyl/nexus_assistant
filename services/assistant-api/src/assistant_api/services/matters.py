@@ -8,11 +8,13 @@ proves the preview version and (when needed) acknowledges a conflict.
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from datetime import UTC, date, datetime, time, timedelta
+from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -34,6 +36,7 @@ from assistant_api.models import (
     MatterTodo,
     NexusRun,
     Reminder,
+    ScheduleRouteResult,
     ScheduleEvent,
     User,
     UserProfile,
@@ -41,7 +44,7 @@ from assistant_api.models import (
 from assistant_api.models.base import new_id
 from assistant_api.nexus_client import NexusPilotClient
 from assistant_api.schemas import matters as schemas
-from assistant_api.services import matter_plan, run_service
+from assistant_api.services import ai_tasks, matter_plan, run_service, schedule_routes
 from assistant_api.services.matter_conflicts import can_edit_schedule, evaluate_conflict
 
 
@@ -158,6 +161,11 @@ def _schedule_snapshot(schedule: ScheduleEvent | None) -> dict | None:
         "source_run_id": schedule.source_run_id,
         "latitude": schedule.latitude,
         "longitude": schedule.longitude,
+        "coordinate_system": schedule.coordinate_system or "unknown",
+        "location_city": schedule.location_city,
+        "location_address": schedule.location_address,
+        "location_source": schedule.location_source,
+        "location_external_id": schedule.location_external_id,
         "source": schedule.source,
         "sync_status": schedule.sync_status,
         "source_external_id": schedule.source_external_id,
@@ -291,6 +299,11 @@ SCHEDULE_SNAPSHOT_KEYS = frozenset(
         "data_source_id",
         "latitude",
         "longitude",
+        "coordinate_system",
+        "location_city",
+        "location_address",
+        "location_source",
+        "location_external_id",
         "deleted_at",
         "updated_at",
     }
@@ -427,6 +440,11 @@ def _serialize_schedule(schedule: ScheduleEvent) -> dict:
         "location": schedule.location,
         "latitude": schedule.latitude,
         "longitude": schedule.longitude,
+        "coordinate_system": schedule.coordinate_system or "unknown",
+        "location_city": schedule.location_city,
+        "location_address": schedule.location_address,
+        "location_source": schedule.location_source,
+        "location_external_id": schedule.location_external_id,
         "status": schedule.status,
         "source": schedule.source,
         "sync_status": schedule.sync_status,
@@ -506,18 +524,133 @@ async def _serialize_matters(
 
 
 def _serialize_draft(draft: MatterDraft) -> dict:
+    payload = draft.payload_json or {}
     return {
         "draft_id": draft.draft_id,
         "kind": draft.kind,
         "status": draft.status,
         "version": draft.version,
         "matter_id": draft.matter_id,
-        "payload": draft.payload_json or {},
+        "payload": payload,
         "conflicts": draft.conflict_json,
+        "action_plan": payload.get("action_plan") or [],
+        "communication_draft": payload.get("communication_draft"),
         "candidates": draft.candidates_json,
         "ai_run_id": draft.ai_run_id,
         "created_at": draft.created_at,
         "updated_at": draft.updated_at,
+    }
+
+
+def _build_action_plan(payload: dict) -> list[dict]:
+    """Summarize proposed effects without replacing the single-schedule field."""
+
+    plan: list[dict] = []
+    if payload.get("kind") == "create":
+        plan.append({"kind": "create_matter", "title": payload.get("title")})
+    elif payload.get("proposed_status"):
+        plan.append(
+            {
+                "kind": "update_matter_status",
+                "matter_id": payload.get("matter_id"),
+                "status": payload["proposed_status"],
+                "reason": payload.get("changes_note"),
+            }
+        )
+    schedule = payload.get("schedule")
+    if schedule:
+        plan.append(
+            {
+                "kind": (
+                    "update_schedule"
+                    if schedule.get("schedule_id")
+                    else "create_schedule"
+                ),
+                "schedule_id": schedule.get("schedule_id"),
+                "title": schedule.get("title"),
+                "starts_at": schedule.get("starts_at"),
+                "location": schedule.get("location"),
+            }
+        )
+    for item in payload.get("related_schedules") or []:
+        plan.append(
+            {
+                "kind": "context_only",
+                "role": item.get("kind"),
+                "schedule_id": item.get("schedule_id"),
+                "title": item.get("title"),
+                "starts_at": item.get("starts_at"),
+                "location": item.get("location"),
+            }
+        )
+    for item in payload.get("affected") or []:
+        plan.append(
+            {
+                "kind": "update_schedule",
+                "role": "affected_schedule",
+                "schedule_id": item.get("schedule_id"),
+                "title": item.get("title"),
+                "starts_at": item.get("after_starts_at"),
+                "location": item.get("location"),
+                "status": "pending_external_confirmation",
+            }
+        )
+    for item in payload.get("todos") or []:
+        plan.append(
+            {
+                "kind": "update_todo" if item.get("todo_id") else "create_todo",
+                "todo_id": item.get("todo_id"),
+                "title": item.get("title"),
+                "due_at": item.get("due_at"),
+                "reminder_at": item.get("reminder_at"),
+            }
+        )
+    for todo_id in payload.get("complete_todo_ids") or []:
+        plan.append({"kind": "complete_todo", "todo_id": todo_id})
+    for item in payload.get("reminder_cancellations") or []:
+        plan.append(
+            {
+                "kind": "cancel_reminder",
+                "reminder_id": item.get("reminder_id"),
+                "title": item.get("title"),
+                "trigger_at": item.get("trigger_at"),
+            }
+        )
+    return plan
+
+
+def _communication_draft(body: dict, option_id: str, timezone: str) -> dict | None:
+    """Build copyable wording from the selected option, without sending anything."""
+
+    if option_id == "C":
+        return None
+    zone = ZoneInfo(timezone)
+    schedule = body.get("schedule") or {}
+    title = schedule.get("title") or body.get("title") or "这项安排"
+    starts_at = schedule.get("starts_at")
+    location = schedule.get("location")
+    if option_id == "B" and body.get("affected"):
+        item = body["affected"][0]
+        title = item.get("title") or title
+        starts_at = item.get("after_starts_at")
+        location = item.get("location")
+    if not starts_at:
+        return None
+    local = _parse_dt(starts_at, timezone).astimezone(zone)
+    when = local.strftime("%m月%d日 %H:%M")
+    place = f"，地点在{location}" if location else ""
+    reply = f"您好，关于「{title}」，建议调整到{when}{place}，麻烦确认这个时间是否方便。"
+    return {
+        "reply_text": reply,
+        "option_id": option_id,
+        "target_title": title,
+        "target_starts_at": _parse_dt(starts_at, timezone),
+        "external_change_required": option_id in {"A", "B"},
+        "external_change_status": (
+            "pending_external_confirmation"
+            if option_id in {"A", "B"}
+            else "not_sent"
+        ),
     }
 
 
@@ -545,10 +678,13 @@ async def _conflict_for_payload(
         ends_at=end,
         latitude=schedule.get("latitude"),
         longitude=schedule.get("longitude"),
+        coordinate_system=schedule.get("coordinate_system"),
+        location_city=schedule.get("location_city"),
         exclude_schedule_id=exclude_schedule_id,
         window_hours=settings.matter_conflict_window_hours,
         min_gap_seconds=settings.matter_conflict_min_gap_seconds,
         adjusted=adjusted,
+        context_schedules=payload.get("related_schedules"),
     )
 
 
@@ -819,6 +955,80 @@ async def _match_active_matter(
     return None, []
 
 
+def _schedule_text_score(schedule: ScheduleEvent, text: str) -> int:
+    """Score local schedule titles and locations against the user's words."""
+
+    normalized = re.sub(r"\s+", "", text).lower()
+    title = re.sub(r"\s+", "", schedule.title or "").lower()
+    location = re.sub(r"\s+", "", schedule.location or "").lower()
+    if title and title in normalized:
+        return 10
+    if location and len(location) >= 2 and location in normalized:
+        return 7
+    score = 0
+    for term, weight in ((title, 6), (location, 4)):
+        if len(term) < 2:
+            continue
+        blocks = SequenceMatcher(None, term, normalized).get_matching_blocks()
+        longest = max((block.size for block in blocks), default=0)
+        if longest >= 2:
+            score = max(score, weight + min(longest, 5))
+    return score
+
+
+async def _matching_schedules(
+    db: AsyncSession,
+    user: User,
+    *,
+    text: str,
+    matter_id: str | None = None,
+    limit: int = 8,
+) -> list[ScheduleEvent]:
+    """Find schedules locally so private calendar rows never enter the model prompt."""
+
+    now = datetime.now(UTC)
+    authorized_sources = set(
+        (
+            await db.scalars(
+                select(ContentSource.source_id).where(
+                    ContentSource.user_id == user.user_id,
+                    ContentSource.assistant_enabled.is_(True),
+                )
+            )
+        ).all()
+    )
+    active_matters = set(
+        (
+            await db.scalars(
+                select(Matter.matter_id).where(
+                    Matter.user_id == user.user_id,
+                    Matter.deleted_at.is_(None),
+                    Matter.status.in_(("active", "waiting")),
+                )
+            )
+        ).all()
+    )
+    query = select(ScheduleEvent).where(
+        ScheduleEvent.user_id == user.user_id,
+        ScheduleEvent.deleted_at.is_(None),
+        ScheduleEvent.status.notin_(("cancelled", "deleted")),
+        ScheduleEvent.starts_at >= now - timedelta(days=1),
+        ScheduleEvent.starts_at < now + timedelta(days=120),
+    )
+    if matter_id:
+        query = query.where(ScheduleEvent.matter_id == matter_id)
+    rows = (await db.scalars(query.order_by(ScheduleEvent.starts_at).limit(100))).all()
+    matched = []
+    for row in rows:
+        if row.matter_id is not None and row.matter_id not in active_matters:
+            continue
+        if row.data_source_id is not None and row.data_source_id not in authorized_sources:
+            continue
+        if _schedule_text_score(row, text) > 0:
+            matched.append(row)
+    return matched[:limit]
+
+
 async def _extraction_context(
     db: AsyncSession,
     user: User,
@@ -869,6 +1079,257 @@ async def _extraction_context(
     return context, todos
 
 
+INTAKE_RESULT_KEY = "unified_intake_result"
+
+
+async def _intake_draft(
+    db: AsyncSession, user: User, local_run_id: str
+) -> MatterDraft | None:
+    return await db.scalar(
+        select(MatterDraft).where(
+            MatterDraft.user_id == user.user_id,
+            MatterDraft.ai_run_id == local_run_id,
+        )
+    )
+
+
+def _intake_resolution(run: NexusRun) -> dict:
+    return dict((run.context_json or {}).get(INTAKE_RESULT_KEY) or {})
+
+
+def _store_intake_resolution(
+    run: NexusRun,
+    *,
+    outcome: str,
+    intent: str = "matter",
+    answer: str | None = None,
+    clarify: str | None = None,
+    pending_context: dict | None = None,
+    matter_id: str | None = None,
+    draft_id: str | None = None,
+    parent_run_id: str | None = None,
+) -> None:
+    """Persist one server-owned unified result without duplicating chat rows."""
+
+    context = dict(run.context_json or {})
+    context[INTAKE_RESULT_KEY] = {
+        "outcome": outcome,
+        "intent": intent,
+        "answer": answer,
+        "clarify": clarify,
+        "pending_context": _jsonable(pending_context or {}),
+        "matter_id": matter_id,
+        "draft_id": draft_id,
+        "parent_run_id": parent_run_id or context.get("parent_run_id"),
+    }
+    run.context_json = context
+
+
+def _resolved_outcome(run: NexusRun, resolution: dict, draft: MatterDraft | None) -> str:
+    if run.status in ("pending", "running"):
+        return "processing"
+    if run.status == "unknown":
+        return "unknown"
+    if run.status == "failed":
+        return "failed"
+    if run.status == "cancelled":
+        return "cancelled"
+    saved = resolution.get("outcome")
+    if saved in {
+        "answer",
+        "draft",
+        "needs_clarification",
+        "unknown",
+        "failed",
+        "cancelled",
+    }:
+        return saved
+    if draft is not None:
+        return "draft"
+    return "unknown"
+
+
+async def get_intake_result(
+    db: AsyncSession, user: User, local_run_id: str
+) -> dict:
+    run = await db.scalar(
+        select(NexusRun).where(
+            NexusRun.local_run_id == local_run_id,
+            NexusRun.user_id == user.user_id,
+            NexusRun.purpose == matter_plan.PURPOSE,
+        )
+    )
+    if run is None:
+        raise NotFoundError("intake_result_not_found", "统一输入结果不存在。")
+    draft = await _intake_draft(db, user, run.local_run_id)
+    resolution = _intake_resolution(run)
+    outcome = _resolved_outcome(run, resolution, draft)
+    context = run.context_json or {}
+    return {
+        "local_run_id": run.local_run_id,
+        "parent_run_id": context.get("parent_run_id"),
+        "request_text": context.get("text") or "",
+        "intent": resolution.get("intent") or "matter",
+        "outcome": outcome,
+        "status": run.status,
+        "answer": resolution.get("answer") if outcome == "answer" else None,
+        "clarify": (
+            resolution.get("clarify") if outcome == "needs_clarification" else None
+        ),
+        "pending_context": resolution.get("pending_context") or {},
+        "matter_id": resolution.get("matter_id") or (draft.matter_id if draft else None),
+        "draft_id": draft.draft_id if draft else None,
+        "draft": _serialize_draft(draft) if draft else None,
+        "created_at": run.created_at,
+        "completed_at": run.completed_at,
+    }
+
+
+async def list_intake_results(
+    db: AsyncSession, user: User, *, limit: int = 20
+) -> list[dict]:
+    runs = (
+        await db.scalars(
+            select(NexusRun)
+            .where(
+                NexusRun.user_id == user.user_id,
+                NexusRun.purpose == matter_plan.PURPOSE,
+            )
+            .order_by(NexusRun.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    return [await get_intake_result(db, user, run.local_run_id) for run in runs]
+
+
+async def _continuation_context(
+    db: AsyncSession, user: User, local_run_id: str
+) -> dict:
+    """Return only the structured prior operation needed for one follow-up."""
+
+    parent = await db.scalar(
+        select(NexusRun).where(
+            NexusRun.local_run_id == local_run_id,
+            NexusRun.user_id == user.user_id,
+            NexusRun.purpose == matter_plan.PURPOSE,
+        )
+    )
+    if parent is None:
+        raise NotFoundError("intake_result_not_found", "原输入操作不存在。")
+    draft = await _intake_draft(db, user, parent.local_run_id)
+    resolution = _intake_resolution(parent)
+    outcome = _resolved_outcome(parent, resolution, draft)
+    if outcome in {"processing", "unknown", "failed", "cancelled"}:
+        raise ConflictError(
+            "continuation_not_ready",
+            "原输入操作尚未得到可用结果，不能接续补充。",
+        )
+    if outcome == "answer":
+        raise ConflictError(
+            "continuation_external_context_required",
+            "接续普通回答需要把上一轮问答发送给模型；当前仅完成本地保存，未获得这项外发授权。",
+        )
+    if draft is not None:
+        if draft.status != "preview":
+            raise ConflictError(
+                "continuation_parent_changed",
+                "原预览已确认或取消，请基于当前正式安排重新整理。",
+            )
+        if draft.matter_id:
+            matter = await db.scalar(
+                select(Matter).where(
+                    Matter.matter_id == draft.matter_id,
+                    Matter.user_id == user.user_id,
+                    Matter.deleted_at.is_(None),
+                )
+            )
+            if matter is None or matter.status == "archived":
+                raise ConflictError(
+                    "continuation_parent_changed",
+                    "原预览关联的事项已删除或归档，不能继续使用旧预览。",
+                )
+        if draft.base_schedule_id:
+            schedule = await db.scalar(
+                select(ScheduleEvent).where(
+                    ScheduleEvent.schedule_id == draft.base_schedule_id,
+                    ScheduleEvent.user_id == user.user_id,
+                    ScheduleEvent.deleted_at.is_(None),
+                )
+            )
+            if schedule is None:
+                raise ConflictError(
+                    "continuation_parent_changed",
+                    "原预览关联的日程已删除，不能再沿用旧预览。",
+                )
+            if schedule.data_source_id is not None:
+                authorized = await db.scalar(
+                    select(ContentSource.source_id).where(
+                        ContentSource.source_id == schedule.data_source_id,
+                        ContentSource.user_id == user.user_id,
+                        ContentSource.assistant_enabled.is_(True),
+                    )
+                )
+                if authorized is None:
+                    raise ConflictError(
+                        "continuation_parent_changed",
+                        "原预览关联的资料来源已撤权，不能再沿用旧预览。",
+                    )
+    draft_payload = {}
+    if draft is not None:
+        source = draft.payload_json or {}
+        draft_payload = {
+            key: source.get(key)
+            for key in (
+                "draft_id",
+                "kind",
+                "matter_id",
+                "requires_choice",
+                "title",
+                "goal",
+                "changes_note",
+                "next_step",
+                "schedule",
+                "todos",
+                "complete_todo_ids",
+                "candidates",
+            )
+            if source.get(key) is not None
+        }
+        draft_payload["draft_id"] = draft.draft_id
+        if draft.candidates_json:
+            draft_payload["candidates"] = draft.candidates_json
+    return {
+        "parent_run_id": parent.local_run_id,
+        "outcome": outcome,
+        "draft_version": draft.version if draft else None,
+        "base_schedule_id": draft.base_schedule_id if draft else None,
+        "matter_id": resolution.get("matter_id") or (draft.matter_id if draft else None),
+        "missing_information": (
+            resolution.get("pending_context") or {}
+        ).get("missing_information", []),
+        "pending_context": resolution.get("pending_context") or {},
+        "draft": draft_payload,
+    }
+
+
+def _model_continuation_context(continuation: dict | None) -> dict | None:
+    """Project only the current operation fields needed by the external model."""
+
+    if continuation is None:
+        return None
+    draft = continuation.get("draft") or {}
+    return {
+        "outcome": continuation.get("outcome"),
+        "missing_information": continuation.get("missing_information") or [],
+        "matter_id": continuation.get("matter_id"),
+        "draft": {
+            key: draft.get(key)
+            for key in ("kind", "title", "goal", "changes_note", "next_step")
+            if draft.get(key) is not None
+        },
+    }
+
+
 async def intake(
     db: AsyncSession,
     client: NexusPilotClient,
@@ -880,7 +1341,8 @@ async def intake(
     text: str,
     idempotency_key: str,
     matter_id: str | None = None,
-) -> tuple[dict | None, bool, str, str | None]:
+    continuation_run_id: str | None = None,
+) -> dict:
     pinned = await _get_matter(db, user, matter_id) if matter_id else None
     if pinned is not None and pinned.status in ("archived", "deleted"):
         raise ConflictError("matter_not_active", "该事项已归档，不能继续补充进展。")
@@ -899,24 +1361,36 @@ async def intake(
 
     context: dict | None = None
     run: NexusRun | None = None
+    continuation: dict | None = None
     replayed = False
     if existing_run is not None and existing_run.context_json:
         stored = dict(existing_run.context_json)
         if stored.get("text") != text or stored.get("pinned_matter_id") != (
             pinned.matter_id if pinned else None
-        ):
+        ) or stored.get("parent_run_id") != continuation_run_id:
             raise ConflictError(
                 "idempotency_key_reused", "该幂等键已用于另一句话或另一事项。"
             )
         context = stored
+        continuation = stored.get("continuation_context")
         run = existing_run
         replayed = True
 
     if run is None:
+        continuation = (
+            await _continuation_context(db, user, continuation_run_id)
+            if continuation_run_id
+            else None
+        )
         timezone = await user_timezone(db, user, settings.matter_default_timezone)
         context, _ = await _extraction_context(
             db, user, text=text, timezone=timezone, pinned=pinned
         )
+        if continuation is not None:
+            context["parent_run_id"] = continuation["parent_run_id"]
+            context["continuation_context"] = _model_continuation_context(
+                continuation
+            )
         run, replayed = await run_service.create_ai_task(
             db,
             user=user,
@@ -924,7 +1398,13 @@ async def intake(
             trigger="chat",
             idempotency_key=run_key,
             context=context,
-            business_ref=pinned.matter_id if pinned else None,
+            business_ref=(
+                pinned.matter_id
+                if pinned
+                else continuation.get("matter_id")
+                if continuation
+                else None
+            ),
         )
         if run.context_json is None:
             run.context_json = context
@@ -937,7 +1417,17 @@ async def intake(
         )
     )
     if existing is not None:
-        return _serialize_draft(existing), True, "matter", None
+        _store_intake_resolution(
+            run,
+            outcome="draft",
+            matter_id=existing.matter_id,
+            draft_id=existing.draft_id,
+            parent_run_id=continuation_run_id,
+        )
+        await db.commit()
+        result = await get_intake_result(db, user, run.local_run_id)
+        result["replayed"] = True
+        return result
 
     if run.status not in run_service.TERMINAL_STATUSES:
         if replayed:
@@ -957,15 +1447,19 @@ async def intake(
                 timeout_seconds=settings.matter_ai_timeout_seconds,
             )
             if timed_out and run.status not in run_service.TERMINAL_STATUSES:
-                raise AssistantError(
+                error = AssistantError(
                     "matter_ai_timeout",
                     "事项整理超时。可用同一 idempotency_key 重试，或用 GET /matters/drafts 找回已生成的预览。",
                     504,
                 )
+                error.retryable = True
+                raise error
     if run.status == "unknown":
-        raise AssistantError(
+        error = AssistantError(
             "matter_ai_unknown", "事项整理结果未知，请用同一幂等键重试。", 504
         )
+        error.retryable = True
+        raise error
     if run.status != "succeeded":
         raise AssistantError("matter_ai_failed", "事项整理失败，请稍后重试。", 502)
 
@@ -975,19 +1469,45 @@ async def intake(
             run_service.answer_text(run), context
         )
     except ai_tasks.AiTaskResultRejected as exc:
+        _store_intake_resolution(
+            run,
+            outcome="failed",
+            clarify=None,
+            pending_context={"error": f"整理结果未通过校验：{exc.reason}"},
+            parent_run_id=continuation_run_id,
+        )
+        await db.commit()
         raise InvalidRequestError(
             "matter_extraction_invalid", f"整理结果未通过校验：{exc.reason}"
         ) from None
 
     if parsed.get("intent") == "question":
         # One model run answers the question here; no draft and no second run.
-        return None, False, "question", parsed.get("answer")
-    if parsed.get("intent") == "unclear":
-        raise InvalidRequestError(
-            "matter_intent_unclear",
-            parsed.get("clarify")
-            or "这句话还不足以形成事项，请补充目标、时间或要办的事。",
+        _store_intake_resolution(
+            run,
+            outcome="answer",
+            intent="question",
+            answer=parsed.get("answer"),
+            parent_run_id=continuation_run_id,
         )
+        await db.commit()
+        result = await get_intake_result(db, user, run.local_run_id)
+        result["replayed"] = replayed
+        return result
+    if parsed.get("intent") == "unclear":
+        _store_intake_resolution(
+            run,
+            outcome="needs_clarification",
+            clarify=parsed.get("clarify")
+            or "这句话还不足以形成事项，请补充目标、时间或要办的事。",
+            pending_context=parsed.get("pending_context"),
+            matter_id=continuation.get("matter_id") if continuation else None,
+            parent_run_id=continuation_run_id,
+        )
+        await db.commit()
+        result = await get_intake_result(db, user, run.local_run_id)
+        result["replayed"] = replayed
+        return result
 
     timezone = context["timezone"]
     target: Matter | None = pinned
@@ -1012,6 +1532,31 @@ async def intake(
             candidates = await _serialize_matters(db, ambiguous)
             requires_choice = True
             parsed["kind"] = "update"
+    if target is None and continuation and continuation.get("matter_id"):
+        target = await _get_matter(db, user, continuation["matter_id"])
+        parsed["kind"] = "update"
+
+    if target is None and (
+        parsed.get("matter_action") == "archive" or parsed.get("cancel_reminders")
+    ):
+        clarify_text = "请先明确要暂停或停止提醒的事项。"
+        _store_intake_resolution(
+            run,
+            outcome="needs_clarification",
+            clarify=clarify_text,
+            pending_context={
+                "missing_information": [clarify_text],
+                "pending": {
+                    "title": parsed.get("title"),
+                    "goal": parsed.get("goal"),
+                },
+            },
+            parent_run_id=continuation_run_id,
+        )
+        await db.commit()
+        result = await get_intake_result(db, user, run.local_run_id)
+        result["replayed"] = replayed
+        return result
 
     allowed_todos: set[str] = set()
     if target is not None:
@@ -1025,6 +1570,73 @@ async def intake(
         todo_id for todo_id in parsed["complete_todo_ids"] if todo_id in allowed_todos
     ]
 
+    reminder_cancellations = []
+    if target is not None and parsed.get("cancel_reminders"):
+        pending_reminders = (
+            await db.scalars(
+                select(Reminder)
+                .where(
+                    Reminder.user_id == user.user_id,
+                    Reminder.matter_id == target.matter_id,
+                    Reminder.status == "pending",
+                )
+                .order_by(Reminder.trigger_at)
+            )
+        ).all()
+        reminder_cancellations = [
+            {
+                "reminder_id": reminder.reminder_id,
+                "title": reminder.title,
+                "trigger_at": reminder.trigger_at,
+                "base_updated_at": reminder.updated_at,
+            }
+            for reminder in pending_reminders
+        ]
+
+    related_schedules = list(parsed.get("related_schedules") or [])
+    existing_matches = await _matching_schedules(db, user, text=text)
+    proposed_schedule_id = (parsed.get("schedule") or {}).get("schedule_id")
+    related_ids = {
+        item.get("schedule_id")
+        for item in related_schedules
+        if item.get("schedule_id")
+    }
+    for schedule in existing_matches:
+        if schedule.schedule_id == proposed_schedule_id or schedule.schedule_id in related_ids:
+            continue
+        related_schedules = [
+            item
+            for item in related_schedules
+            if not (
+                item.get("kind") == "unverified"
+                and item.get("starts_at")
+                and _parse_dt(item["starts_at"]) == _as_utc(schedule.starts_at)
+                and _schedule_text_score(
+                    schedule,
+                    f"{item.get('title') or ''} {item.get('location') or ''}",
+                )
+                > 0
+            )
+        ]
+        related_schedules.append(
+            {
+                "kind": "existing",
+                "schedule_id": schedule.schedule_id,
+                "matter_id": schedule.matter_id,
+                "title": schedule.title,
+                "starts_at": _as_utc(schedule.starts_at),
+                "ends_at": _as_utc(schedule.ends_at),
+                "location": schedule.location,
+                "latitude": schedule.latitude,
+                "longitude": schedule.longitude,
+                "coordinate_system": schedule.coordinate_system,
+                "location_city": schedule.location_city,
+                "location_address": schedule.location_address,
+                "location_source": schedule.location_source,
+                "location_external_id": schedule.location_external_id,
+            }
+        )
+
     payload = {
         "kind": "update" if (target is not None or requires_choice) else "create",
         "matter_id": target.matter_id if target else None,
@@ -1034,8 +1646,15 @@ async def intake(
         "changes_note": parsed["changes_note"],
         "next_step": parsed["next_step"] or (target.next_step if target else None),
         "schedule": parsed["schedule"],
+        "related_schedules": related_schedules,
         "todos": parsed["todos"],
         "complete_todo_ids": parsed["complete_todo_ids"],
+        "matter_action": parsed.get("matter_action") or "none",
+        "proposed_status": (
+            "archived" if parsed.get("matter_action") == "archive" else None
+        ),
+        "cancel_reminders": bool(parsed.get("cancel_reminders")),
+        "reminder_cancellations": reminder_cancellations,
         "source_text": text,
         "analysis": {
             "ai_run_id": run.local_run_id,
@@ -1061,9 +1680,71 @@ async def intake(
             for row in schedules
             if ensure_aware(row.starts_at) >= datetime.now(UTC) - timedelta(hours=1)
         ]
-        if len(future) == 1:
+        if continuation and continuation.get("base_schedule_id"):
+            base_schedule = next(
+                (
+                    row
+                    for row in future
+                    if row.schedule_id == continuation["base_schedule_id"]
+                ),
+                None,
+            )
+            if base_schedule is None:
+                raise ConflictError(
+                    "continuation_parent_changed",
+                    "原预览关联的日程已变化，请重新整理。",
+                )
+        match_text = " ".join(
+            part
+            for part in (
+                text,
+                payload["schedule"].get("title"),
+                payload["schedule"].get("location"),
+            )
+            if part
+        )
+        scored = [
+            row for row in future if _schedule_text_score(row, match_text) > 0
+        ]
+        if base_schedule is not None:
+            pass
+        elif len(scored) == 1:
+            base_schedule = scored[0]
+        elif len(future) == 1:
             base_schedule = future[0]
+        elif payload["kind"] == "update" and len(future) > 1:
+            clarify_text = "目标事项有多条安排，请说明要修改哪一条。"
+            _store_intake_resolution(
+                run,
+                outcome="needs_clarification",
+                clarify=clarify_text,
+                pending_context={
+                    "missing_information": ["要修改的日程"],
+                    "schedule_candidates": [
+                        {
+                            "schedule_id": row.schedule_id,
+                            "title": row.title,
+                            "starts_at": _as_utc(row.starts_at),
+                            "ends_at": _as_utc(row.ends_at),
+                            "location": row.location,
+                        }
+                        for row in future[:8]
+                    ],
+                },
+                matter_id=target.matter_id,
+                parent_run_id=continuation_run_id,
+            )
+            await db.commit()
+            result = await get_intake_result(db, user, run.local_run_id)
+            result["replayed"] = replayed
+            return result
+        if base_schedule is not None:
             payload["schedule"]["schedule_id"] = base_schedule.schedule_id
+            payload["related_schedules"] = [
+                item
+                for item in payload["related_schedules"]
+                if item.get("schedule_id") != base_schedule.schedule_id
+            ]
 
     conflict = await _conflict_for_payload(
         db,
@@ -1075,6 +1756,7 @@ async def intake(
         exclude_schedule_id=(payload["schedule"] or {}).get("schedule_id"),
     )
     payload = _jsonable(payload)
+    payload["action_plan"] = _jsonable(_build_action_plan(payload))
     draft = MatterDraft(
         user_id=user.user_id,
         kind=payload["kind"],
@@ -1089,10 +1771,39 @@ async def intake(
         base_schedule_updated_at=base_schedule.updated_at if base_schedule else None,
         ai_run_id=run.local_run_id,
     )
+    if continuation and continuation.get("draft"):
+        parent_draft_id = (continuation.get("draft") or {}).get("draft_id")
+        if parent_draft_id:
+            cancelled_parent = await db.execute(
+                update(MatterDraft)
+                .where(
+                    MatterDraft.draft_id == parent_draft_id,
+                    MatterDraft.user_id == user.user_id,
+                    MatterDraft.status == "preview",
+                    MatterDraft.version == continuation.get("draft_version"),
+                )
+                .values(status="cancelled", cancelled_at=datetime.now(UTC))
+            )
+            if cancelled_parent.rowcount != 1:
+                await db.rollback()
+                raise ConflictError(
+                    "continuation_parent_changed",
+                    "原预览已被确认、取消或修改，请基于当前状态重新整理。",
+                )
     db.add(draft)
     await db.commit()
     await db.refresh(draft)
-    return _serialize_draft(draft), False, "matter", None
+    _store_intake_resolution(
+        run,
+        outcome="draft",
+        matter_id=draft.matter_id,
+        draft_id=draft.draft_id,
+        parent_run_id=continuation_run_id,
+    )
+    await db.commit()
+    result = await get_intake_result(db, user, run.local_run_id)
+    result["replayed"] = replayed
+    return result
 
 
 async def list_drafts(
@@ -1411,6 +2122,10 @@ async def apply_option(
         body["affected"] = []
 
     body["selected_option"] = payload.option_id
+    body["communication_draft"] = _communication_draft(
+        body, payload.option_id, timezone
+    )
+    body["action_plan"] = _jsonable(_build_action_plan(body))
     draft.payload_json = _jsonable(body)
     draft.version += 1
     conflict = await _conflict_for_payload(
@@ -1476,12 +2191,22 @@ async def patch_draft(
             schedule["ends_at"] = _parse_dt(schedule.get("ends_at"), timezone)
             old_location = old.get("location")
             new_location = schedule.get("location")
-            if new_location != old_location or None in (
+            if new_location != old_location and None in (
                 schedule.get("latitude"),
                 schedule.get("longitude"),
             ):
                 schedule["latitude"] = None
                 schedule["longitude"] = None
+                schedule["coordinate_system"] = "unknown"
+                schedule["location_city"] = None
+                schedule["location_address"] = None
+                schedule["location_source"] = None
+                schedule["location_external_id"] = None
+            elif None in (schedule.get("latitude"), schedule.get("longitude")):
+                schedule["coordinate_system"] = "unknown"
+                schedule["location_address"] = None
+                schedule["location_source"] = None
+                schedule["location_external_id"] = None
             merged["schedule"] = schedule
 
     if "todos" in changes and changes["todos"] is not None:
@@ -1531,6 +2256,7 @@ async def patch_draft(
     merged.pop("previous_adjustment", None)
     merged.pop("selected_option", None)
     merged.pop("affected", None)
+    merged.pop("communication_draft", None)
     # A manual edit invalidates both the option baseline and the selection.
     draft.option_base_json = None
     schedule = merged.get("schedule")
@@ -1544,11 +2270,64 @@ async def patch_draft(
         exclude_schedule_id=(schedule or {}).get("schedule_id"),
     )
     draft.payload_json = _jsonable(merged)
+    draft.payload_json["action_plan"] = _jsonable(_build_action_plan(merged))
     draft.version += 1
     draft.conflict_json = _jsonable(conflict) if conflict else None
     await db.commit()
     await db.refresh(draft)
     return _serialize_draft(draft)
+
+
+async def apply_place_selection(
+    db: AsyncSession,
+    runtime: CommuteRuntime,
+    settings: Settings,
+    user: User,
+    *,
+    draft_id: str,
+    selection_token: str,
+    secret: str,
+) -> dict:
+    """Apply one server-signed place candidate to a preview, never a formal row."""
+
+    from assistant_api.services.commute_places import verify_selection
+
+    draft = await _get_draft(db, user, draft_id)
+    source = (
+        draft.option_base_json
+        if draft.option_base_json is not None
+        else draft.payload_json or {}
+    )
+    current = (source or {}).get("schedule")
+    if not current:
+        raise InvalidRequestError(
+            "place_target_has_no_schedule", "该草稿没有可关联的日程。"
+        )
+    try:
+        candidate = verify_selection(selection_token, secret)
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise InvalidRequestError(
+            "place_selection_invalid", "地点候选已失效或不属于服务端返回结果。"
+        ) from exc
+    timezone = await user_timezone(db, user, settings.matter_default_timezone)
+    payload = schemas.DraftPatchRequest(
+        expected_version=draft.version,
+        schedule=schemas.SchedulePayload(
+            schedule_id=current.get("schedule_id"),
+            title=current["title"],
+            starts_at=_parse_dt(current["starts_at"], timezone),
+            ends_at=_parse_dt(current.get("ends_at"), timezone),
+            location=candidate["name"],
+            latitude=float(candidate["latitude"]),
+            longitude=float(candidate["longitude"]),
+            coordinate_system=candidate["coordinate_system"],
+            location_city=candidate.get("city"),
+            location_address=candidate.get("address"),
+            location_source=candidate.get("source"),
+            location_external_id=candidate.get("provider_place_id"),
+        ),
+    )
+    return await patch_draft(db, runtime, settings, user, draft_id, payload)
 
 
 async def cancel_draft(db: AsyncSession, user: User, draft_id: str) -> dict:
@@ -1704,6 +2483,27 @@ async def confirm_draft(
             if todo_id not in existing_todos:
                 raise InvalidRequestError("todo_not_in_matter", "待办不属于该事项。")
 
+        reminder_cancellations: dict[str, Reminder] = {}
+        for item in payload.get("reminder_cancellations") or []:
+            reminder = await db.scalar(
+                select(Reminder).where(
+                    Reminder.reminder_id == item.get("reminder_id"),
+                    Reminder.user_id == user.user_id,
+                    Reminder.matter_id == matter_id,
+                )
+            )
+            if reminder is None:
+                raise NotFoundError("reminder_not_found", "待取消的提醒不存在。")
+            if (
+                reminder.status != "pending"
+                or ensure_aware(reminder.updated_at)
+                != _parse_dt(item.get("base_updated_at"), timezone)
+            ):
+                raise ConflictError(
+                    "reminder_changed", "待取消的提醒已变化，请重新整理。"
+                )
+            reminder_cancellations[reminder.reminder_id] = reminder
+
         adjustment = payload.get("previous_adjustment")
         if adjustment and payload.get("selected_option") != "B":
             raise ConflictError(
@@ -1750,6 +2550,12 @@ async def confirm_draft(
                 raise ConflictError("schedule_changed", "相邻日程已变化，请重新选择方案。")
             await db.refresh(target)
             adjacent_after = _schedule_snapshot(target)
+            await db.execute(
+                delete(ScheduleRouteResult).where(
+                    ScheduleRouteResult.user_id == user.user_id,
+                    ScheduleRouteResult.schedule_id == target.schedule_id,
+                )
+            )
 
         now = datetime.now(UTC)
         before = {
@@ -1786,6 +2592,9 @@ async def confirm_draft(
                 values["goal"] = payload["goal"]
             if payload.get("next_step"):
                 values["next_step"] = payload["next_step"]
+            if payload.get("proposed_status") == "archived":
+                values["status"] = "archived"
+                values["archived_at"] = now
             result = await db.execute(
                 update(Matter)
                 .where(
@@ -1809,6 +2618,11 @@ async def confirm_draft(
                 "location": proposed.get("location"),
                 "latitude": proposed.get("latitude"),
                 "longitude": proposed.get("longitude"),
+                "coordinate_system": proposed.get("coordinate_system") or "unknown",
+                "location_city": proposed.get("location_city"),
+                "location_address": proposed.get("location_address"),
+                "location_source": proposed.get("location_source"),
+                "location_external_id": proposed.get("location_external_id"),
                 "sync_status": sync_status,
                 "source": "web_native",
                 "matter_id": matter.matter_id,
@@ -1834,6 +2648,12 @@ async def confirm_draft(
                 if result.rowcount == 0:
                     raise ConflictError("schedule_changed", "关联日程已变化，请重新整理。")
                 await db.refresh(schedule_row)
+            await db.execute(
+                delete(ScheduleRouteResult).where(
+                    ScheduleRouteResult.user_id == user.user_id,
+                    ScheduleRouteResult.schedule_id == schedule_row.schedule_id,
+                )
+            )
 
         position = len(existing_todos)
         for item in payload.get("todos") or []:
@@ -1893,6 +2713,13 @@ async def confirm_draft(
             else:
                 pending.trigger_at = todo.reminder_at
                 pending.title = f"提醒：{todo.title}"
+
+        for reminder in reminder_cancellations.values():
+            if reminder.reminder_id not in before_reminders:
+                before_reminders[reminder.reminder_id] = _reminder_snapshot(reminder)
+            affected_reminders[reminder.reminder_id] = reminder
+            reminder.status = "cancelled"
+            reminder.cancelled_at = now
 
         for todo_id in payload.get("complete_todo_ids") or []:
             todo = existing_todos.get(todo_id)
@@ -1996,6 +2823,7 @@ async def confirm_draft(
             if (body.create_schedule and schedule_row)
             else None,
             "reminder_ids": created_reminder_ids,
+            "cancelled_reminder_ids": list(reminder_cancellations),
             "change_id": change.change_id,
             "conflict": _jsonable(conflict) if conflict else None,
         }
@@ -2070,6 +2898,8 @@ async def _confirm_response(
         "change_id": result.get("change_id"),
         "replayed": replayed,
         "applied": True,
+        "cancelled_reminder_ids": result.get("cancelled_reminder_ids") or [],
+        "notifications_retracted": False,
         "conflict": result.get("conflict"),
         "change": (
             {
@@ -2189,6 +3019,11 @@ async def revert_change(
                 source_run_id=snapshot.get("source_run_id"),
                 latitude=snapshot.get("latitude"),
                 longitude=snapshot.get("longitude"),
+                coordinate_system=snapshot.get("coordinate_system"),
+                location_city=snapshot.get("location_city"),
+                location_address=snapshot.get("location_address"),
+                location_source=snapshot.get("location_source"),
+                location_external_id=snapshot.get("location_external_id"),
                 source=snapshot.get("source"),
                 sync_status=snapshot.get("sync_status") or "local_only",
                 source_external_id=snapshot.get("source_external_id"),
@@ -2201,6 +3036,12 @@ async def revert_change(
         )
         if result.rowcount == 0:
             raise ConflictError("schedule_changed", "关联日程已被修改，不能覆盖撤回。")
+        await db.execute(
+            delete(ScheduleRouteResult).where(
+                ScheduleRouteResult.user_id == user.user_id,
+                ScheduleRouteResult.schedule_id == current.schedule_id,
+            )
+        )
 
     after_schedule = after.get("schedule")
     before_schedule = before.get("schedule")
@@ -2615,6 +3456,11 @@ async def create_edit_draft(
             "location": schedule.location,
             "latitude": schedule.latitude,
             "longitude": schedule.longitude,
+            "coordinate_system": schedule.coordinate_system or "unknown",
+            "location_city": schedule.location_city,
+            "location_address": schedule.location_address,
+            "location_source": schedule.location_source,
+            "location_external_id": schedule.location_external_id,
         }
         body["changes_note"] = "修改日程"
     else:
@@ -2827,11 +3673,15 @@ async def today_view(
     ]
     matter_ids |= {row.matter_id for row in changes}
 
-    route = {
+    unverified_route = {
         "status": "unverified",
         "reason_code": "no_linked_route_result",
         "message": "尚无与该日程关联的路线结果；可打开事项后重新测算。",
         "advisory_id": None,
+        "duration_seconds": None,
+        "mode": None,
+        "fetched_at": None,
+        "origin_basis": None,
     }
     schedule_items = []
     for row in schedules:
@@ -2841,7 +3691,24 @@ async def today_view(
             if row.matter_id and row.matter_id in matters
             else None
         )
-        item["route"] = dict(route)
+        linked = await schedule_routes.valid_for_schedule(db, user, row)
+        item["route"] = (
+            {
+                "status": "available",
+                "reason_code": None,
+                "message": (
+                    f"{'公共交通' if linked.get('mode') == 'transit' else '驾车'}"
+                    f"约 {max(1, (linked.get('duration_seconds') or 0) // 60)} 分钟"
+                ),
+                "advisory_id": None,
+                "duration_seconds": linked.get("duration_seconds"),
+                "mode": linked.get("mode"),
+                "fetched_at": linked.get("fetched_at"),
+                "origin_basis": linked.get("origin_basis"),
+            }
+            if linked
+            else dict(unverified_route)
+        )
         schedule_items.append(item)
     reminder_items = []
     for row in reminders:

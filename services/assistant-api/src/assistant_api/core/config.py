@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     commute_maps_id: str | None = None
     commute_maps_private_key_path: Path | None = None
     commute_maps_base_url: str = "https://maps-api.apple.com"
+    commute_amap_api_key: SecretStr | None = None
+    commute_amap_base_url: str = "https://restapi.amap.com"
     commute_weather_base_url: str = "https://weatherkit.apple.com"
     open_meteo_base_url: str = "https://api.open-meteo.com/v1/forecast"
     commute_http_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
@@ -136,6 +138,7 @@ class Settings(BaseSettings):
     # Minimum slack between two appointments before a warning is raised.
     matter_conflict_min_gap_seconds: int = Field(default=900, ge=0, le=3600)
     matter_default_timezone: str = "Asia/Shanghai"
+    calendar_public_base_url: str | None = None
 
     @field_validator(
         "commute_weather_team_id",
@@ -146,6 +149,7 @@ class Settings(BaseSettings):
         "commute_maps_key_id",
         "commute_maps_id",
         "commute_maps_private_key_path",
+        "commute_amap_api_key",
         "commute_apns_team_id",
         "commute_apns_key_id",
         "commute_apns_private_key_path",

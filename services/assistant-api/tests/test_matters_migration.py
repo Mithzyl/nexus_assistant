@@ -57,11 +57,32 @@ async def test_upgrade_keeps_existing_schedules(tmp_path):
     connection = sqlite3.connect(path)
     try:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(schedules)")}
-        assert {"matter_id", "sync_status", "source", "deleted_at"} <= columns
+        assert {
+            "matter_id",
+            "sync_status",
+            "source",
+            "deleted_at",
+            "coordinate_system",
+            "location_city",
+            "location_address",
+            "location_source",
+            "location_external_id",
+        } <= columns
         draft_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(matter_drafts)")
         }
         assert {"option_base_json", "base_todo_id", "base_todo_updated_at"} <= draft_columns
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        assert {
+            "calendar_subscriptions",
+            "schedule_route_results",
+            "sync_upload_tokens",
+        } <= tables
         row = connection.execute(
             "SELECT title, matter_id, sync_status FROM schedules WHERE schedule_id='old-schedule'"
         ).fetchone()

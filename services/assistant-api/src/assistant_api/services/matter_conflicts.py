@@ -75,6 +75,8 @@ def _block(
     location: str | None,
     latitude: float | None,
     longitude: float | None,
+    coordinate_system: str | None,
+    location_city: str | None,
     source: str,
     matter_id: str | None = None,
     data_source_id: str | None = None,
@@ -92,6 +94,8 @@ def _block(
         "location": location,
         "latitude": latitude,
         "longitude": longitude,
+        "coordinate_system": coordinate_system,
+        "location_city": location_city,
         "source": source,
         "matter_id": matter_id,
         "data_source_id": data_source_id,
@@ -142,6 +146,8 @@ async def _collect_blocks(
                 location=event.location,
                 latitude=event.latitude,
                 longitude=event.longitude,
+                coordinate_system=event.coordinate_system,
+                location_city=event.location_city,
                 source=event.source or "web_native",
                 matter_id=event.matter_id,
                 data_source_id=event.data_source_id,
@@ -179,6 +185,8 @@ async def _collect_blocks(
                 location=item.location if "location" in allowed else None,
                 latitude=None,
                 longitude=None,
+                coordinate_system=None,
+                location_city=None,
                 source="ios_eventkit",
             )
         )
@@ -213,10 +221,13 @@ async def evaluate_conflict(
     ends_at: datetime | None,
     latitude: float | None = None,
     longitude: float | None = None,
+    coordinate_system: str | None = None,
+    location_city: str | None = None,
     exclude_schedule_id: str | None = None,
     window_hours: int = 3,
     min_gap_seconds: int = 900,
     adjusted: dict[str, tuple[datetime, datetime | None]] | None = None,
+    context_schedules: list[dict] | None = None,
 ) -> dict:
     """Return has_conflict, overlapping/neighbouring blocks and 2-3 options."""
 
@@ -233,6 +244,33 @@ async def evaluate_conflict(
         window_end=window_end,
         exclude_schedule_id=exclude_schedule_id,
     )
+    for item in context_schedules or []:
+        if item.get("kind") != "unverified":
+            continue
+        start_value = item.get("starts_at")
+        if not start_value:
+            continue
+        parsed_start = datetime.fromisoformat(str(start_value).replace("Z", "+00:00"))
+        parsed_end = (
+            datetime.fromisoformat(str(item["ends_at"]).replace("Z", "+00:00"))
+            if item.get("ends_at")
+            else None
+        )
+        blocks.append(
+            _block(
+                key=f"context:{item.get('title')}:{start_value}",
+                schedule_id=None,
+                title=item.get("title") or "上下文安排",
+                start=parsed_start,
+                end=parsed_end,
+                location=item.get("location"),
+                latitude=None,
+                longitude=None,
+                coordinate_system="unknown",
+                location_city=None,
+                source="context_only",
+            )
+        )
     if adjusted:
         for block in blocks:
             schedule_id = block["schedule_id"]
@@ -310,6 +348,18 @@ async def evaluate_conflict(
                 mode="driving",
                 depart_at=block["end"] if direction == "previous" else end,
                 arrive_by=start if direction == "previous" else block["start"],
+                origin_city=block["location_city"] if direction == "previous" else location_city,
+                destination_city=location_city if direction == "previous" else block["location_city"],
+                origin_coordinate_system=(
+                    block["coordinate_system"]
+                    if direction == "previous"
+                    else coordinate_system
+                ),
+                destination_coordinate_system=(
+                    coordinate_system
+                    if direction == "previous"
+                    else block["coordinate_system"]
+                ),
             )
             if measurement["status"] == "available":
                 eta = measurement["duration_seconds"]

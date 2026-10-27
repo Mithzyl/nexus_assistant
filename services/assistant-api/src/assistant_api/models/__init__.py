@@ -4,11 +4,13 @@ from assistant_api.models.base import Base
 from assistant_api.models.bark import BarkReminderSetting
 from assistant_api.models.bridge import NexusRun, ToolCallReceipt, UserAsk
 from assistant_api.models.business import BusinessRecord, Note, ScheduleEvent, TaskItem
+from assistant_api.models.calendar import CalendarSubscription
 from assistant_api.models.content import (
     ContentItem,
     ContentSource,
     ContentSourceScope,
     ContentSyncBatch,
+    SyncUploadToken,
 )
 from assistant_api.models.commute import (
     AdvisoryAction,
@@ -36,6 +38,7 @@ from assistant_api.models.matter import (
     MatterProgress,
     MatterTodo,
     Reminder,
+    ScheduleRouteResult,
 )
 
 __all__ = [
@@ -43,11 +46,13 @@ __all__ = [
     "Base",
     "BarkReminderSetting",
     "BusinessRecord",
+    "CalendarSubscription",
     "CommuteAdvisory",
     "ContentItem",
     "ContentSource",
     "ContentSourceScope",
     "ContentSyncBatch",
+    "SyncUploadToken",
     "CommuteCheck",
     "CommuteEtaSnapshot",
     "CommuteIdempotencyKey",
@@ -72,6 +77,7 @@ __all__ = [
     "PushAttempt",
     "PushDevice",
     "ScheduleEvent",
+    "ScheduleRouteResult",
     "TaskItem",
     "ToolCallReceipt",
     "User",

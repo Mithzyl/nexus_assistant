@@ -84,6 +84,11 @@ class ScheduleEvent(TimestampMixin, Base):
     data_source_id: Mapped[str | None] = mapped_column(String(36))
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
+    coordinate_system: Mapped[str | None] = mapped_column(String(16))
+    location_city: Mapped[str | None] = mapped_column(String(64))
+    location_address: Mapped[str | None] = mapped_column(String(255))
+    location_source: Mapped[str | None] = mapped_column(String(32))
+    location_external_id: Mapped[str | None] = mapped_column(String(128))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

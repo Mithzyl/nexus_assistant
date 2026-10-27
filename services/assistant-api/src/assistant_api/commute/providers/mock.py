@@ -16,6 +16,7 @@ from assistant_api.commute.providers.base import (
     EtaResult,
     ForecastPeriod,
     LocationForecast,
+    PlaceResult,
     ProviderUnavailable,
     PushMessage,
     PushResult,
@@ -113,6 +114,8 @@ class MockEtaProvider:
         mode: str,
         request_depart_at: datetime,
         target_arrival_at: datetime,
+        origin_city: str | None = None,
+        destination_city: str | None = None,
     ) -> EtaResult:
         self.calls.append(
             {
@@ -133,6 +136,47 @@ class MockEtaProvider:
             distance_meters=12_000,
             response_basis="departAt",
         )
+
+
+class MockPlaceProvider:
+    provider = "mock"
+    available = True
+
+    async def search(
+        self,
+        *,
+        query: str,
+        city: str | None,
+        limit: int,
+        search_type: str,
+    ) -> list[PlaceResult]:
+        """Return two visibly distinct candidates so ambiguity is exercised."""
+
+        places = [
+            PlaceResult(
+                provider=self.provider,
+                provider_place_id="mock-poi-1",
+                name=query,
+                address=f"{city or '上海'}示例路 1 号",
+                city=city,
+                latitude=31.2231,
+                longitude=121.4456,
+                coordinate_system="gcj02",
+                source=f"mock_{search_type}",
+            ),
+            PlaceResult(
+                provider=self.provider,
+                provider_place_id="mock-poi-2",
+                name=f"{query}（另一候选）",
+                address=f"{city or '上海'}示例路 2 号",
+                city=city,
+                latitude=31.2304,
+                longitude=121.4737,
+                coordinate_system="gcj02",
+                source=f"mock_{search_type}",
+            ),
+        ]
+        return places[:limit]
 
 
 class MockPushProvider:

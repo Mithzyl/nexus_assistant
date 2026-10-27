@@ -55,6 +55,11 @@ COLUMN_MIGRATIONS = (
     ("0010_option_state", "matter_drafts", "option_base_json", "JSON"),
     ("0010_option_state", "matter_drafts", "base_todo_id", "VARCHAR(36)"),
     ("0010_option_state", "matter_drafts", "base_todo_updated_at", "DATETIME"),
+    ("0011_location_route", "schedules", "coordinate_system", "VARCHAR(16)"),
+    ("0011_location_route", "schedules", "location_city", "VARCHAR(64)"),
+    ("0011_location_route", "schedules", "location_address", "VARCHAR(255)"),
+    ("0011_location_route", "schedules", "location_source", "VARCHAR(32)"),
+    ("0011_location_route", "schedules", "location_external_id", "VARCHAR(128)"),
 )
 
 # Indexes on pre-existing tables cannot be added by metadata.create_all, so they

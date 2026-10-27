@@ -886,6 +886,156 @@
         "title": "BarkTestRequest",
         "type": "object"
       },
+      "CalendarSubscriptionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "matter_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Matter Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "matter_ids"
+        ],
+        "title": "CalendarSubscriptionCreate",
+        "type": "object"
+      },
+      "CalendarSubscriptionRead": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "feed_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feed Url"
+          },
+          "last_read_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Read At"
+          },
+          "link_returned_once": {
+            "default": false,
+            "title": "Link Returned Once",
+            "type": "boolean"
+          },
+          "matter_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Matter Ids",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "subscription_id": {
+            "title": "Subscription Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription_id",
+          "enabled",
+          "matter_ids",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CalendarSubscriptionRead",
+        "type": "object"
+      },
+      "CalendarSubscriptionStatus": {
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "subscription": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalendarSubscriptionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "exists"
+        ],
+        "title": "CalendarSubscriptionStatus",
+        "type": "object"
+      },
+      "CalendarSubscriptionUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "matter_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "minItems": 0,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matter Ids"
+          }
+        },
+        "title": "CalendarSubscriptionUpdate",
+        "type": "object"
+      },
       "ChangeRead": {
         "properties": {
           "affected_matter_ids": {
@@ -1238,6 +1388,54 @@
         "title": "CheckRead",
         "type": "object"
       },
+      "CommunicationDraftRead": {
+        "properties": {
+          "external_change_required": {
+            "default": false,
+            "title": "External Change Required",
+            "type": "boolean"
+          },
+          "external_change_status": {
+            "enum": [
+              "not_sent",
+              "pending_external_confirmation"
+            ],
+            "title": "External Change Status",
+            "type": "string"
+          },
+          "option_id": {
+            "title": "Option Id",
+            "type": "string"
+          },
+          "reply_text": {
+            "title": "Reply Text",
+            "type": "string"
+          },
+          "target_starts_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Starts At"
+          },
+          "target_title": {
+            "title": "Target Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reply_text",
+          "option_id",
+          "target_title",
+          "external_change_status"
+        ],
+        "title": "CommunicationDraftRead",
+        "type": "object"
+      },
       "CommuteLocation": {
         "additionalProperties": false,
         "description": "A private place the user chose; labels are never used in lock-screen copy.",
@@ -1541,6 +1739,13 @@
             "title": "Applied",
             "type": "boolean"
           },
+          "cancelled_reminder_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cancelled Reminder Ids",
+            "type": "array"
+          },
           "change": {
             "anyOf": [
               {
@@ -1572,6 +1777,11 @@
           },
           "matter": {
             "$ref": "#/components/schemas/MatterRead"
+          },
+          "notifications_retracted": {
+            "default": false,
+            "title": "Notifications Retracted",
+            "type": "boolean"
           },
           "reminders": {
             "items": {
@@ -2026,6 +2236,28 @@
       "Coordinate": {
         "additionalProperties": false,
         "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "coordinate_system": {
+            "default": "unknown",
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
           "latitude": {
             "maximum": 90.0,
             "minimum": -90.0,
@@ -2274,6 +2506,151 @@
         "title": "DataSourceUpdate",
         "type": "object"
       },
+      "DraftActionRead": {
+        "properties": {
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reminder_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder At"
+          },
+          "reminder_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder Id"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "schedule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Id"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "todo_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todo Id"
+          },
+          "trigger_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger At"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "DraftActionRead",
+        "type": "object"
+      },
       "DraftOptionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2403,6 +2780,13 @@
       },
       "DraftRead": {
         "properties": {
+          "action_plan": {
+            "items": {
+              "$ref": "#/components/schemas/DraftActionRead"
+            },
+            "title": "Action Plan",
+            "type": "array"
+          },
           "ai_run_id": {
             "anyOf": [
               {
@@ -2428,6 +2812,16 @@
               }
             ],
             "title": "Candidates"
+          },
+          "communication_draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommunicationDraftRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "conflicts": {
             "anyOf": [
@@ -2597,17 +2991,59 @@
             "default": "driving",
             "enum": [
               "driving",
-              "walking"
+              "walking",
+              "transit"
             ],
             "title": "Mode",
             "type": "string"
           },
           "origin": {
-            "$ref": "#/components/schemas/Coordinate"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Coordinate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin_basis": {
+            "default": "user_confirmed",
+            "enum": [
+              "user_confirmed",
+              "previous_schedule"
+            ],
+            "title": "Origin Basis",
+            "type": "string"
+          },
+          "origin_schedule_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Schedule Id"
+          },
+          "schedule_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Id"
           }
         },
         "required": [
-          "origin",
           "destination"
         ],
         "title": "EstimateRequest",
@@ -2615,6 +3051,17 @@
       },
       "EstimateResponse": {
         "properties": {
+          "accuracy_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy Notice"
+          },
           "distance_meters": {
             "anyOf": [
               {
@@ -2637,6 +3084,39 @@
             ],
             "title": "Duration Seconds"
           },
+          "fare_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fare Cny"
+          },
+          "fare_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fare Kind"
+          },
+          "fare_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fare Notice"
+          },
           "fetched_at": {
             "anyOf": [
               {
@@ -2651,10 +3131,31 @@
           "mode": {
             "enum": [
               "driving",
-              "walking"
+              "walking",
+              "transit"
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "origin_basis": {
+            "default": "user_confirmed",
+            "enum": [
+              "user_confirmed",
+              "previous_schedule"
+            ],
+            "title": "Origin Basis",
+            "type": "string"
+          },
+          "origin_schedule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Schedule Id"
           },
           "provider": {
             "title": "Provider",
@@ -2682,6 +3183,17 @@
             ],
             "title": "Request Depart At"
           },
+          "schedule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Id"
+          },
           "source": {
             "const": "server_provider",
             "default": "server_provider",
@@ -2706,6 +3218,50 @@
               }
             ],
             "title": "Target Arrival At"
+          },
+          "timing_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timing Basis"
+          },
+          "transfer_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfer Count"
+          },
+          "transfers_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfers Summary"
+          },
+          "walking_distance_meters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Walking Distance Meters"
           }
         },
         "required": [
@@ -2719,6 +3275,19 @@
       "IntakeRequest": {
         "additionalProperties": false,
         "properties": {
+          "continuation_run_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation Run Id"
+          },
           "idempotency_key": {
             "maxLength": 128,
             "minLength": 8,
@@ -2752,6 +3321,17 @@
             ],
             "title": "Answer"
           },
+          "clarify": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clarify"
+          },
           "draft": {
             "anyOf": [
               {
@@ -2771,6 +3351,17 @@
             "title": "Intent",
             "type": "string"
           },
+          "local_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Run Id"
+          },
           "message": {
             "anyOf": [
               {
@@ -2782,6 +3373,34 @@
             ],
             "title": "Message"
           },
+          "outcome": {
+            "default": "draft",
+            "enum": [
+              "answer",
+              "draft",
+              "needs_clarification",
+              "processing",
+              "unknown"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
+          "pending_context": {
+            "additionalProperties": true,
+            "title": "Pending Context",
+            "type": "object"
+          },
           "replayed": {
             "default": false,
             "title": "Replayed",
@@ -2789,6 +3408,138 @@
           }
         },
         "title": "IntakeResponse",
+        "type": "object"
+      },
+      "IntakeResultRead": {
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "clarify": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clarify"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
+          "intent": {
+            "default": "matter",
+            "enum": [
+              "matter",
+              "question"
+            ],
+            "title": "Intent",
+            "type": "string"
+          },
+          "local_run_id": {
+            "title": "Local Run Id",
+            "type": "string"
+          },
+          "matter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matter Id"
+          },
+          "outcome": {
+            "enum": [
+              "answer",
+              "draft",
+              "needs_clarification",
+              "processing",
+              "unknown",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
+          "pending_context": {
+            "additionalProperties": true,
+            "title": "Pending Context",
+            "type": "object"
+          },
+          "request_text": {
+            "title": "Request Text",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "local_run_id",
+          "request_text",
+          "outcome",
+          "status",
+          "created_at"
+        ],
+        "title": "IntakeResultRead",
         "type": "object"
       },
       "IosRecord": {
@@ -3600,6 +4351,204 @@
           "items"
         ],
         "title": "PendingActionsResponse",
+        "type": "object"
+      },
+      "PlaceCandidateRead": {
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "coordinate_system": {
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_place_id": {
+            "title": "Provider Place Id",
+            "type": "string"
+          },
+          "selection_token": {
+            "title": "Selection Token",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "provider_place_id",
+          "name",
+          "latitude",
+          "longitude",
+          "coordinate_system",
+          "source",
+          "selection_token"
+        ],
+        "title": "PlaceCandidateRead",
+        "type": "object"
+      },
+      "PlaceSearchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "limit": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "search_type": {
+            "default": "place",
+            "enum": [
+              "place",
+              "address"
+            ],
+            "title": "Search Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "PlaceSearchRequest",
+        "type": "object"
+      },
+      "PlaceSearchResponse": {
+        "properties": {
+          "ambiguous": {
+            "title": "Ambiguous",
+            "type": "boolean"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/PlaceCandidateRead"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "search_type": {
+            "enum": [
+              "place",
+              "address"
+            ],
+            "title": "Search Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "search_type",
+          "ambiguous"
+        ],
+        "title": "PlaceSearchResponse",
+        "type": "object"
+      },
+      "PlaceSelectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "draft_id": {
+            "maxLength": 36,
+            "minLength": 8,
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "selection_token": {
+            "maxLength": 4096,
+            "minLength": 32,
+            "title": "Selection Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft_id",
+          "selection_token"
+        ],
+        "title": "PlaceSelectionRequest",
         "type": "object"
       },
       "PlanWeatherRead": {
@@ -4462,6 +5411,16 @@
         "additionalProperties": false,
         "description": "Formal appointment fields; `schedule_id` means \"update this one\".",
         "properties": {
+          "coordinate_system": {
+            "default": "unknown",
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
           "ends_at": {
             "anyOf": [
               {
@@ -4498,6 +5457,54 @@
               }
             ],
             "title": "Location"
+          },
+          "location_address": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Address"
+          },
+          "location_city": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location City"
+          },
+          "location_external_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location External Id"
+          },
+          "location_source": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Source"
           },
           "longitude": {
             "anyOf": [
@@ -4544,6 +5551,16 @@
       },
       "ScheduleRead": {
         "properties": {
+          "coordinate_system": {
+            "default": "unknown",
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
           "deleted_at": {
             "anyOf": [
               {
@@ -4587,6 +5604,50 @@
               }
             ],
             "title": "Location"
+          },
+          "location_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Address"
+          },
+          "location_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location City"
+          },
+          "location_external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location External Id"
+          },
+          "location_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Source"
           },
           "longitude": {
             "anyOf": [
@@ -4666,6 +5727,149 @@
           "status"
         ],
         "title": "ScheduleRead",
+        "type": "object"
+      },
+      "ShortcutTokenCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "default": "快捷指令上传",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "source_id": {
+            "maxLength": 36,
+            "minLength": 8,
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "ShortcutTokenCreate",
+        "type": "object"
+      },
+      "ShortcutTokenCreated": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "credential": {
+            "title": "Credential",
+            "type": "string"
+          },
+          "credential_returned_once": {
+            "default": true,
+            "title": "Credential Returned Once",
+            "type": "boolean"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "token_id": {
+            "title": "Token Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token_id",
+          "source_id",
+          "display_name",
+          "enabled",
+          "created_at",
+          "credential"
+        ],
+        "title": "ShortcutTokenCreated",
+        "type": "object"
+      },
+      "ShortcutTokenRead": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "token_id": {
+            "title": "Token Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token_id",
+          "source_id",
+          "display_name",
+          "enabled",
+          "created_at"
+        ],
+        "title": "ShortcutTokenRead",
         "type": "object"
       },
       "SourceAttribution": {
@@ -5278,6 +6482,28 @@
             ],
             "title": "Advisory Id"
           },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
           "message": {
             "anyOf": [
               {
@@ -5288,6 +6514,37 @@
               }
             ],
             "title": "Message"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "driving",
+                  "walking",
+                  "transit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "origin_basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user_confirmed",
+                  "previous_schedule"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Basis"
           },
           "reason_code": {
             "anyOf": [
@@ -5318,6 +6575,16 @@
       },
       "TodayScheduleRead": {
         "properties": {
+          "coordinate_system": {
+            "default": "unknown",
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
           "deleted_at": {
             "anyOf": [
               {
@@ -5361,6 +6628,50 @@
               }
             ],
             "title": "Location"
+          },
+          "location_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Address"
+          },
+          "location_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location City"
+          },
+          "location_external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location External Id"
+          },
+          "location_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Source"
           },
           "longitude": {
             "anyOf": [
@@ -7244,6 +8555,705 @@
         ]
       }
     },
+    "/api/v1/calendar-subscription": {
+      "delete": {
+        "operationId": "revoke_subscription_api_v1_calendar_subscription_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarSubscriptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Revoke Subscription",
+        "tags": [
+          "calendar-subscription"
+        ]
+      },
+      "get": {
+        "operationId": "get_subscription_api_v1_calendar_subscription_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarSubscriptionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Get Subscription",
+        "tags": [
+          "calendar-subscription"
+        ]
+      },
+      "patch": {
+        "operationId": "update_subscription_api_v1_calendar_subscription_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarSubscriptionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarSubscriptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Update Subscription",
+        "tags": [
+          "calendar-subscription"
+        ]
+      },
+      "post": {
+        "operationId": "create_subscription_api_v1_calendar_subscription_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarSubscriptionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarSubscriptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Create Subscription",
+        "tags": [
+          "calendar-subscription"
+        ]
+      }
+    },
+    "/api/v1/calendar-subscription/rotate": {
+      "post": {
+        "operationId": "rotate_subscription_api_v1_calendar_subscription_rotate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarSubscriptionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarSubscriptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Rotate Subscription",
+        "tags": [
+          "calendar-subscription"
+        ]
+      }
+    },
+    "/api/v1/calendar/{token}.ics": {
+      "get": {
+        "operationId": "calendar_feed_response_api_v1_calendar__token__ics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Calendar Feed Response",
+        "tags": [
+          "calendar-subscription"
+        ]
+      }
+    },
     "/api/v1/checks/{check_id}": {
       "get": {
         "operationId": "get_check_api_v1_checks__check_id__get",
@@ -9093,6 +11103,250 @@
           }
         },
         "summary": "Commute Estimate Endpoint",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
+    "/api/v1/commute/places/confirm": {
+      "post": {
+        "description": "Apply a signed candidate to a preview and recalculate conflicts.",
+        "operationId": "commute_place_confirm_api_v1_commute_places_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Commute Place Confirm",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
+    "/api/v1/commute/places/search": {
+      "post": {
+        "description": "Search places or addresses; multiple results remain explicit candidates.",
+        "operationId": "commute_place_search_api_v1_commute_places_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Commute Place Search",
         "tags": [
           "matters"
         ]
@@ -11584,6 +13838,134 @@
       }
     },
     "/api/v1/matters/intake": {
+      "get": {
+        "description": "List the caller's unified input operations, including unfinished runs.",
+        "operationId": "list_intake_results_api_v1_matters_intake_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IntakeResultRead"
+                  },
+                  "title": "Response List Intake Results Api V1 Matters Intake Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "List Intake Results",
+        "tags": [
+          "matters"
+        ]
+      },
       "post": {
         "operationId": "intake_api_v1_matters_intake_post",
         "requestBody": {
@@ -11699,6 +14081,129 @@
           }
         },
         "summary": "Intake",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
+    "/api/v1/matters/intake/{local_run_id}": {
+      "get": {
+        "description": "Reload one answer, clarification, draft or unresolved processing state.",
+        "operationId": "get_intake_result_api_v1_matters_intake__local_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "local_run_id",
+            "required": true,
+            "schema": {
+              "title": "Local Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeResultRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Get Intake Result",
         "tags": [
           "matters"
         ]
@@ -13793,9 +16298,386 @@
         ]
       }
     },
+    "/api/v1/sync/ios/shortcut-tokens": {
+      "get": {
+        "operationId": "list_shortcut_tokens_api_v1_sync_ios_shortcut_tokens_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ShortcutTokenRead"
+                  },
+                  "title": "Response List Shortcut Tokens Api V1 Sync Ios Shortcut Tokens Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "List Shortcut Tokens",
+        "tags": [
+          "sync-ios"
+        ]
+      },
+      "post": {
+        "operationId": "create_shortcut_token_api_v1_sync_ios_shortcut_tokens_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShortcutTokenCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortcutTokenCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Create Shortcut Token",
+        "tags": [
+          "sync-ios"
+        ]
+      }
+    },
+    "/api/v1/sync/ios/shortcut-tokens/{token_id}": {
+      "delete": {
+        "operationId": "revoke_shortcut_token_api_v1_sync_ios_shortcut_tokens__token_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "title": "Token Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortcutTokenRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Revoke Shortcut Token",
+        "tags": [
+          "sync-ios"
+        ]
+      }
+    },
     "/api/v1/sync/ios/snapshot": {
       "post": {
+        "description": "Accept either a normal user session or one source-scoped Shortcut token.",
         "operationId": "upload_snapshot_api_v1_sync_ios_snapshot_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Shortcut-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 20,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Shortcut-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

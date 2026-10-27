@@ -133,6 +133,10 @@ async def test_switching_or_repeating_options_rebuilds_from_one_baseline(harness
     assert b_body["payload"]["previous_adjustment"]["schedule_id"]
     assert len(b_body["payload"]["affected"]) == 1
     assert len([todo for todo in b_body["payload"]["todos"] if "联系" in todo["title"]]) == 1
+    assert b_body["communication_draft"]["target_title"] == "牙医"
+    assert b_body["communication_draft"]["external_change_status"] == (
+        "pending_external_confirmation"
+    )
 
     # B -> C must remove B's neighbour shift and contact todo.
     c_after_b = await apply_option(h, b_body, "C")
@@ -140,6 +144,7 @@ async def test_switching_or_repeating_options_rebuilds_from_one_baseline(harness
     c_body = c_after_b.json()
     assert "previous_adjustment" not in c_body["payload"]
     assert c_body["payload"]["affected"] == []
+    assert c_body["communication_draft"] is None
     assert not [todo for todo in c_body["payload"]["todos"] if "联系" in todo["title"]]
     assert c_body["payload"]["schedule"]["starts_at"].startswith(
         at(day, 14).strftime("%Y-%m-%dT%H:%M")
@@ -160,6 +165,7 @@ async def test_switching_or_repeating_options_rebuilds_from_one_baseline(harness
     assert "previous_adjustment" not in a_body["payload"]
     assert a_body["payload"]["affected"] == []
     assert not [todo for todo in a_body["payload"]["todos"] if "联系" in todo["title"]]
+    assert "14:10" in a_body["communication_draft"]["reply_text"]
     assert a_body["payload"]["schedule"]["starts_at"].startswith(
         at(day, 14, 10).strftime("%Y-%m-%dT%H:%M")
     )

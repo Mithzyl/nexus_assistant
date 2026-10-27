@@ -191,6 +191,24 @@ class Reminder(TimestampMixin, Base):
     result_json: Mapped[dict | None] = mapped_column(JSON)
 
 
+class ScheduleRouteResult(TimestampMixin, Base):
+    """Latest route measurement explicitly linked to one formal schedule."""
+
+    __tablename__ = "schedule_route_results"
+    __table_args__ = (UniqueConstraint("schedule_id", name="uq_schedule_route_result"),)
+
+    route_result_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.user_id", ondelete="CASCADE"), index=True
+    )
+    schedule_id: Mapped[str] = mapped_column(
+        ForeignKey("schedules.schedule_id", ondelete="CASCADE"), index=True
+    )
+    schedule_fingerprint: Mapped[str] = mapped_column(String(64))
+    result_json: Mapped[dict] = mapped_column(JSON)
+    calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 __all__ = [
     "Matter",
     "MatterChange",
@@ -199,6 +217,7 @@ __all__ = [
     "MatterTodo",
     "MATTER_STATUSES",
     "Reminder",
+    "ScheduleRouteResult",
     "SYNC_STATUSES",
     "TODO_STATUSES",
 ]

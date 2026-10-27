@@ -25,6 +25,8 @@ def test_committed_openapi_covers_the_new_surface():
     paths = spec["paths"]
     expected = {
         ("/api/v1/matters/intake", "post"),
+        ("/api/v1/matters/intake", "get"),
+        ("/api/v1/matters/intake/{local_run_id}", "get"),
         ("/api/v1/matters", "get"),
         ("/api/v1/matters/{matter_id}", "get"),
         ("/api/v1/matters/drafts", "get"),
@@ -36,6 +38,11 @@ def test_committed_openapi_covers_the_new_surface():
         ("/api/v1/today", "get"),
         ("/api/v1/reminders", "get"),
         ("/api/v1/commute/estimate", "post"),
+        ("/api/v1/commute/places/search", "post"),
+        ("/api/v1/commute/places/confirm", "post"),
+        ("/api/v1/calendar-subscription", "post"),
+        ("/api/v1/calendar-subscription/rotate", "post"),
+        ("/api/v1/sync/ios/shortcut-tokens", "post"),
         ("/api/v1/sync/ios/snapshot", "post"),
         ("/api/v1/sync/ios/pending-actions", "get"),
     }
@@ -45,12 +52,23 @@ def test_committed_openapi_covers_the_new_surface():
 
 
 def test_new_response_models_expose_required_fields():
-    schemas = _spec()["components"]["schemas"]
+    spec = _spec()
+    schemas = spec["components"]["schemas"]
     matter = schemas["MatterRead"]["properties"]
     for field in ("matter_id", "status", "version", "latest_progress", "next_step", "open_todos"):
         assert field in matter, field
     draft = schemas["DraftRead"]["properties"]
-    for field in ("draft_id", "kind", "status", "version", "payload", "conflicts", "candidates"):
+    for field in (
+        "draft_id",
+        "kind",
+        "status",
+        "version",
+        "payload",
+        "conflicts",
+        "action_plan",
+        "communication_draft",
+        "candidates",
+    ):
         assert field in draft, field
     conflict = schemas["ConflictRead"]["properties"]
     assert {"has_conflict", "severity", "conflicts", "options"} <= set(conflict)
@@ -64,7 +82,50 @@ def test_new_response_models_expose_required_fields():
         "affected",
     } <= set(option)
     schedule = schemas["ScheduleRead"]["properties"]
-    assert {"sync_status", "source", "matter_id"} <= set(schedule)
+    assert {
+        "sync_status",
+        "source",
+        "matter_id",
+        "coordinate_system",
+        "location_city",
+        "location_address",
+        "location_source",
+        "location_external_id",
+    } <= set(schedule)
+    estimate = schemas["EstimateResponse"]["properties"]
+    assert {
+        "walking_distance_meters",
+        "transfer_count",
+        "transfers_summary",
+        "fare_cny",
+        "fare_kind",
+        "fare_notice",
+        "timing_basis",
+        "accuracy_notice",
+    } <= set(estimate)
+    shortcut = schemas["ShortcutTokenCreated"]["properties"]
+    assert {"credential", "credential_returned_once", "source_id"} <= set(shortcut)
+    intake_result = schemas["IntakeResultRead"]["properties"]
+    assert {
+        "outcome",
+        "status",
+        "answer",
+        "clarify",
+        "matter_id",
+        "draft_id",
+        "parent_run_id",
+        "pending_context",
+    } <= set(intake_result)
+    place = schemas["PlaceCandidateRead"]["properties"]
+    assert "selection_token" in place
+    confirm = schemas["ConfirmResponse"]["properties"]
+    assert {"cancelled_reminder_ids", "notifications_retracted"} <= set(confirm)
+    snapshot_headers = {
+        item["name"]
+        for item in spec["paths"]["/api/v1/sync/ios/snapshot"]["post"]["parameters"]
+        if item["in"] == "header"
+    }
+    assert "X-Shortcut-Token" in snapshot_headers
     change = schemas["ChangeRead"]["properties"]
     assert {
         "source_matter_id",

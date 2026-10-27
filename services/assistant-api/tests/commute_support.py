@@ -109,7 +109,17 @@ class FakeEtaProvider:
         self.fail = fail
         self.calls: list[dict] = []
 
-    async def fetch(self, *, origin, destination, mode, request_depart_at, target_arrival_at):
+    async def fetch(
+        self,
+        *,
+        origin,
+        destination,
+        mode,
+        request_depart_at,
+        target_arrival_at,
+        origin_city=None,
+        destination_city=None,
+    ):
         self.calls.append(
             {
                 "mode": mode,

@@ -214,6 +214,18 @@ async def test_script_two_continues_the_matter_and_flags_the_conflict(harness):
     assert draft2["conflicts"]["has_conflict"] is True
     assert len(draft2["conflicts"]["options"]) >= 2
     assert draft2["payload"]["schedule"]["schedule_id"] == detail["schedules"][0]["schedule_id"]
+    assert {"update_schedule", "complete_todo"} <= {
+        item["kind"] for item in draft2["payload"]["action_plan"]
+    }
+    before_confirm = (
+        await h.client.get(
+            f"/api/v1/matters/{matter['matter_id']}", headers=auth(h.token_a)
+        )
+    ).json()
+    assert before_confirm["todos"][0]["status"] == "open"
+    assert before_confirm["schedules"][0]["starts_at"].startswith(
+        at(thursday, 15).astimezone(UTC).strftime("%Y-%m-%dT%H")
+    )
 
     # Unacknowledged conflict is refused by the server, not the page.
     blocked = await confirm(h, h.token_a, draft2, "confirm-key-1002", acknowledge_conflict=False)

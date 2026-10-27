@@ -105,3 +105,22 @@ class ContentSyncBatch(TimestampMixin, Base):
     # Hash of the submitted payload; lets a reused batch id with different
     # content be rejected instead of silently returning the first result.
     payload_sha256: Mapped[str | None] = mapped_column(String(64))
+
+
+class SyncUploadToken(TimestampMixin, Base):
+    """Revocable single-source credential for a user-created Shortcut."""
+
+    __tablename__ = "sync_upload_tokens"
+
+    token_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.user_id", ondelete="CASCADE"), index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        ForeignKey("content_sources.source_id", ondelete="CASCADE"), index=True
+    )
+    display_name: Mapped[str] = mapped_column(String(120))
+    token_digest: Mapped[str] = mapped_column(String(64), unique=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
