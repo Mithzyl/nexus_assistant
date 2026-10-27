@@ -7,7 +7,9 @@ import {
   type DraftConfirmResponse,
   type DraftPatchInput,
   type MatterDetail,
+  type MatterChange,
   type MatterDraft,
+  type MatterEditInput,
   type MatterGroup,
   type MatterIntakeResponse,
   type MatterListResponse,
@@ -35,6 +37,24 @@ export function listMatters(
 
 export function getMatter(matterId: string, signal?: AbortSignal): Promise<MatterDetail> {
   return apiRequest<MatterDetail>(pa(`/matters/${id(matterId)}`), { signal });
+}
+
+export function listMatterChanges(
+  matterId: string,
+  signal?: AbortSignal,
+): Promise<MatterChange[]> {
+  return apiRequest<MatterChange[]>(pa(`/matters/${id(matterId)}/changes`), { signal });
+}
+
+/** Open an existing schedule or todo as a structured server preview. */
+export function createMatterEditDraft(
+  matterId: string,
+  input: MatterEditInput,
+): Promise<MatterDraft> {
+  return apiRequest<MatterDraft>(pa(`/matters/${id(matterId)}/drafts`), {
+    method: "POST",
+    body: input,
+  });
 }
 
 export function updateMatter(matterId: string, input: MatterUpdateInput): Promise<MatterSummary> {
@@ -171,10 +191,19 @@ export function confirmSummary(response: DraftConfirmResponse): string {
   if (!response.applied) return "服务器没有确认这次写入，请重新检查草稿。";
   const parts: string[] = [];
   if (response.schedule) parts.push(`日程「${response.schedule.title}」已更新`);
-  if (response.reminders.length > 0) parts.push(`${response.reminders.length} 个提醒已保存（未确认送达）`);
+  if (response.reminders.length > 0) parts.push(`${response.reminders.length} 个提醒已保存`);
   if (response.conflict?.has_conflict) parts.push("仍有一处时间冲突需要留意");
-  if (response.change) parts.push(`变更记录 ${response.change.change_type}`);
+  if (response.change) parts.push("变更已写入历史");
   return parts.length > 0 ? parts.join("；") : "事项已更新";
+}
+
+export const TODAY_REFRESH_EVENT = "pa:today-refresh";
+
+/** Ask the mounted Today screen to reread server state after a confirmed edit. */
+export function requestTodayRefresh(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(TODAY_REFRESH_EVENT));
+  }
 }
 
 export function newOperationKey(prefix: string): string {

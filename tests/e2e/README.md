@@ -101,11 +101,40 @@ passed from a single green run; wait for the backend fix and rerun both model ou
 
 ## Real matters, drafts and today
 
-`work_plan_check.py` (38 checks) runs against the isolated API built from
-`E2E_BACKEND_SRC` (backend/dev `55cb0fa9` for this round). It verifies real
-`GET /matters`, grouped cards, detail fields, versioned title edits, todo
-completion, deleting and reopening, the server-restored draft, conflict
-options, apply-option, confirm, draft close-without-save warning, account
-switch isolation, real `/today` schedules/reminders, and the lab-only preview.
-The preview under `/me/lab/plan` is browser-local and never mixed into the
-formal matters list.
+`matters_enrichment_check.py` (27 checks) remains the broader browser check for
+the direct-edit/history/today round based on committed backend/dev `3e01ac1a`.
+It verifies:
+
+- today deadlines, pending drafts, unverified route copy and confirmed changes;
+- opening a today draft in the existing confirmation sheet and refreshing after confirm;
+- schedule-only and todo-only server previews without requiring or overwriting a matter title;
+- separate deadline/reminder controls, explicit reminder clearing, and refresh persistence;
+- server-backed change history, readable revert reasons and revert-to-prior-schedule behavior;
+- one displayed answer for `intent=question` without a second `/asks` request;
+- direct answers in matter progress, 360 px overflow, and action-bar/navigation spacing.
+
+Run it with an isolated checkout of `backend/dev 3e01ac1a`:
+
+```bash
+ASSISTANT_PYTHON=.tmp/backend-venv/bin/python \
+E2E_BACKEND_SRC=/path/to/backend-3e01ac1a/services/assistant-api/src \
+python3 tests/e2e/run_web_e2e.py \
+  --only matters_enrichment_check.py \
+  --web-port 3311 --api-port 8311
+```
+
+`matter_option_alignment_check.py` is the small current check for the latest
+uncommitted backend option/revert work. It uses a fresh independent SQLite
+database migrated through the existing `0010_option_state` path and verifies:
+
+- a read-only adjacent schedule exposes a disabled B option and server reason;
+- a cross-matter B option shows the affected matter and before/after times;
+- B→C replaces the complete server draft without retaining B's old impact;
+- the affected matter lists the source change without a direct revert action;
+- reverting from the source matter restores the affected schedule.
+
+Do not point `E2E_BACKEND_SRC` at an extracted commit when testing these fields.
+Use the backend worktree that contains the uncommitted fixes. `work_plan_check.py`
+remains a historical probe for the earlier draft shape and is not part of the
+default runner. The lab preview under `/me/lab/plan` remains browser-local and is
+never mixed into formal matters.

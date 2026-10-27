@@ -142,7 +142,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
               </div>
             )}
             <p className="micro" style={{ margin: "10px 0 0" }}>
-              修改只保存到本机预览；正式日程、提醒和 iOS 回写接口尚未接通。
+              修改只保存到本机预览；正式日程和提醒请在“事项”页用服务器草稿确认。
             </p>
           </div>
         </section>

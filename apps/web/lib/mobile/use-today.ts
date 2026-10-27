@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { TodayView } from "./api";
-import { getToday } from "./matters-api";
+import { getToday, TODAY_REFRESH_EVENT } from "./matters-api";
 
 export function useToday(enabled: boolean, date?: string) {
   const [data, setData] = useState<TodayView | null>(null);
@@ -12,6 +12,11 @@ export function useToday(enabled: boolean, date?: string) {
   const [token, setToken] = useState(0);
 
   const refresh = useCallback(() => setToken((value) => value + 1), []);
+
+  useEffect(() => {
+    window.addEventListener(TODAY_REFRESH_EVENT, refresh);
+    return () => window.removeEventListener(TODAY_REFRESH_EVENT, refresh);
+  }, [refresh]);
 
   useEffect(() => {
     if (!enabled) {

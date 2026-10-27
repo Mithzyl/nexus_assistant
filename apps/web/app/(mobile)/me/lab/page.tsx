@@ -41,7 +41,7 @@ export default function LabPage() {
           <div className="card">
             <p className="card-title" style={{ fontSize: 16 }}>事项、日程与冲突调整</p>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              用本机示例检查分组、详情、补充进展、停止、删除和冲突方案。真实事项接口尚未提供。
+              用本机示例检查分组、详情、补充进展、停止、删除和冲突方案；正式事项请回到“事项”页。
             </p>
             <div className="m-stack-8 mt-12">
               <button type="button" className="btn btn--primary" onClick={() => {

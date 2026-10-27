@@ -40,6 +40,7 @@ from assistant_api.models import (  # noqa: E402
     CommutePlan,
     CommuteWeatherSnapshot,
     Matter,
+    MatterChange,
     MatterDraft,
     MatterProgress,
     MatterTodo,
@@ -676,6 +677,33 @@ async def seed(database: str, fixture_path: Path) -> None:
             source="web_native",
         )
         session.add(reminder_legal)
+        matter_change = MatterChange(
+            change_id=str(uuid4()),
+            matter_id=matter_lin.matter_id,
+            user_id=user_a.user_id,
+            change_type="update",
+            before_json={
+                "matter": {
+                    "title": matter_lin.title,
+                    "goal": matter_lin.goal,
+                    "status": matter_lin.status,
+                    "next_step": matter_lin.next_step,
+                }
+            },
+            after_json={
+                "matter": {
+                    "title": matter_lin.title,
+                    "goal": matter_lin.goal,
+                    "status": matter_lin.status,
+                    "next_step": matter_lin.next_step,
+                },
+                "matter_version": matter_lin.version,
+                "schedule": None,
+                "reminder_ids": [],
+                "completed_todo_ids": [],
+            },
+        )
+        session.add(matter_change)
         draft = MatterDraft(
             draft_id=str(uuid4()),
             user_id=user_a.user_id,
@@ -886,6 +914,7 @@ async def seed(database: str, fixture_path: Path) -> None:
                 "archive": matter_archive.matter_id,
             },
             "draft": draft.draft_id,
+            "change": matter_change.change_id,
             "schedules": {
                 "meeting": schedule_meeting.schedule_id,
                 "dentist": schedule_dentist.schedule_id,

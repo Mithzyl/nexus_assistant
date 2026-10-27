@@ -107,12 +107,20 @@ export function ProgressSheet({
   onClose,
   onSubmit,
   note = "只更新本机预览，不会自动完成待办，也不会改动正式安排。",
+  stayOpenOnSubmit = false,
+  busy = false,
+  error = null,
+  submitLabel = "保存进展到预览",
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   onSubmit: (text: string) => void;
   note?: string;
+  stayOpenOnSubmit?: boolean;
+  busy?: boolean;
+  error?: string | null;
+  submitLabel?: string;
 }) {
   const [text, setText] = useState("");
   useEffect(() => {
@@ -134,19 +142,24 @@ export function ProgressSheet({
             placeholder="例如：法务说周四上午发修订版。"
           />
         </label>
+        {error ? (
+          <p className="danger-text" style={{ margin: 0 }} role="alert">
+            {error}
+          </p>
+        ) : null}
         <button
           type="button"
           className="btn btn--primary"
-          disabled={!text.trim()}
+          disabled={!text.trim() || busy}
           onClick={() => {
             if (!text.trim()) return;
             onSubmit(text);
-            onClose();
+            if (!stayOpenOnSubmit) onClose();
           }}
         >
-          保存进展到预览
+          {busy ? "正在交给服务器…" : submitLabel}
         </button>
-        <button type="button" className="btn btn--quiet" onClick={onClose}>
+        <button type="button" className="btn btn--quiet" onClick={onClose} disabled={busy}>
           取消
         </button>
       </div>

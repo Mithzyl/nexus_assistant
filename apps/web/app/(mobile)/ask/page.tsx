@@ -20,7 +20,14 @@ import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
 import type { MatterDraft } from "@/lib/mobile/api";
 import { confirmSummary, intakeMatter, listDrafts, newOperationKey } from "@/lib/mobile/matters-api";
 import { formatDateTime } from "@/lib/mobile/format";
-import { readSession, writeSession } from "@/lib/mobile/storage";
+import { accountKey, readSession, writeSession } from "@/lib/mobile/storage";
+
+interface IntakeAnswer {
+  id: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+}
 
 const SUGGESTIONS = [
   "咖啡机退款到哪一步了？",
@@ -224,13 +231,16 @@ export default function AskPage() {
   const [composerError, setComposerError] = useState<string | null>(null);
   const [intakeDraft, setIntakeDraft] = useState<MatterDraft | null>(null);
   const [pendingDrafts, setPendingDrafts] = useState<MatterDraft[]>([]);
+  const [intakeAnswers, setIntakeAnswers] = useState<IntakeAnswer[]>([]);
   const [organizing, setOrganizing] = useState(false);
   const intakeKey = useRef<{ text: string; key: string } | null>(null);
+  const hydratedAnswerKey = useRef<string | null>(null);
   const { toast } = useUI();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
+  const intakeAnswerStorageKey = accountKey("pa.web.intakeAnswers", user?.user_id ?? null);
 
   useEffect(() => {
     if (restored.current) return;
@@ -247,6 +257,17 @@ export default function AskPage() {
   useEffect(() => {
     writeSession("pa.web.ask.composer", draft);
   }, [draft]);
+
+  useEffect(() => {
+    const stored = readSession<IntakeAnswer[]>(intakeAnswerStorageKey, []);
+    setIntakeAnswers(stored);
+    hydratedAnswerKey.current = intakeAnswerStorageKey;
+  }, [intakeAnswerStorageKey]);
+
+  useEffect(() => {
+    if (hydratedAnswerKey.current !== intakeAnswerStorageKey) return;
+    writeSession(intakeAnswerStorageKey, intakeAnswers.slice(0, 20));
+  }, [intakeAnswerStorageKey, intakeAnswers]);
 
   useEffect(() => {
     if (state !== "signedIn") {
@@ -319,17 +340,30 @@ export default function AskPage() {
     }
     try {
       const result = await intakeMatter(value, intakeKey.current.key);
-      if (result.intent === "question" || !result.draft) {
+      if (result.intent === "question") {
+        if (!result.answer) {
+          setComposerError(result.message || "服务器没有返回可读的回答，输入已保留。");
+          return;
+        }
+        setIntakeAnswers((current) => [
+          ...current,
+          {
+            id: `${Date.now()}-${value.slice(0, 20)}`,
+            question: value,
+            answer: result.answer as string,
+            createdAt: new Date().toISOString(),
+          },
+        ].slice(-20));
         setDraft("");
         writeSession("pa.web.ask.composer", "");
-        const created = await ask.submit(value);
-        if (!created) {
-          setDraft(value);
-          writeSession("pa.web.ask.composer", value);
-        } else {
-          toast("这句话按普通问题处理，没有创建事项");
-          intakeKey.current = null;
-        }
+        toast("服务器已在整理入口直接回答，没有再次提交问答");
+        intakeKey.current = null;
+        return;
+      }
+      if (!result.draft) {
+        setComposerError(
+          result.message || "服务器没有生成事项草稿，当前输入已保留。",
+        );
         return;
       }
       setIntakeDraft(result.draft);
@@ -423,11 +457,34 @@ export default function AskPage() {
             <div className="m-stack-8 mt-10">
               {pendingDrafts.slice(0, 3).map((draftItem) => (
                 <button key={draftItem.draft_id} type="button" className="btn btn--secondary" onClick={() => setIntakeDraft(draftItem)}>
-                  {draftItem.payload.title || "未命名整理"}{draftItem.candidates?.length ? " · 需要选择事项" : ""}
+                  {draftItem.payload.title ||
+                    draftItem.payload.schedule?.title ||
+                    draftItem.payload.todos?.[0]?.title ||
+                    "待确认整理"}
+                  {draftItem.candidates?.length ? " · 需要选择事项" : ""}
                 </button>
               ))}
             </div>
           </div>
+        </section>
+      ) : null}
+
+      {intakeAnswers.length > 0 ? (
+        <section className="ask-stream" style={{ marginBottom: 16 }}>
+          {intakeAnswers.map((item) => (
+            <div key={item.id}>
+              <div className="bubble-user">{item.question}</div>
+              <div className="card mt-10">
+                <div className="flex items-center justify-between gap-10">
+                  <span className="micro">助手在事项整理中直接回答</span>
+                  <span className="micro">{formatDateTime(item.createdAt)}</span>
+                </div>
+                <div className="mt-8">
+                  <Markdown source={item.answer} />
+                </div>
+              </div>
+            </div>
+          ))}
         </section>
       ) : null}
 
@@ -603,6 +660,11 @@ export default function AskPage() {
           setDraft("");
           intakeKey.current = null;
           toast(confirmSummary(response));
+        }}
+        onDraftCancelled={(cancelled) => {
+          setPendingDrafts((rows) => rows.filter((row) => row.draft_id !== cancelled.draft_id));
+          setIntakeDraft(null);
+          toast("草稿已取消");
         }}
       />
     </div>

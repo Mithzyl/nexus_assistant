@@ -66,7 +66,16 @@ def main() -> int:
     parser.add_argument("--web-port", type=int, default=3300)
     parser.add_argument("--api-port", type=int, default=8300)
     parser.add_argument("--skip-build", action="store_true")
-    parser.add_argument("--only", choices=("web_flow_check.py", "runtime_state_check.py", "work_plan_check.py"))
+    parser.add_argument(
+        "--only",
+        choices=(
+            "web_flow_check.py",
+            "runtime_state_check.py",
+            "work_plan_check.py",
+            "matters_enrichment_check.py",
+            "matter_option_alignment_check.py",
+        ),
+    )
     args = parser.parse_args()
 
     assistant_python = os.environ.get("ASSISTANT_PYTHON")
@@ -204,7 +213,15 @@ def main() -> int:
             "E2E_SHOT_DIR": str(shots),
         }
         failed = 0
-        names = (args.only,) if args.only else ("web_flow_check.py", "runtime_state_check.py", "work_plan_check.py")
+        names = (
+            (args.only,)
+            if args.only
+            else (
+                "web_flow_check.py",
+                "runtime_state_check.py",
+                "matters_enrichment_check.py",
+            )
+        )
         for name in names:
             print(f"==> running Playwright flow {name}", flush=True)
             result = subprocess.run(

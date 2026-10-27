@@ -424,7 +424,7 @@ export function logoutSession() {
   return apiRequest<{ revoked: boolean }>("/api/auth/logout", { method: "POST" });
 }
 
-/* Matters, drafts, today and reminders (backend/dev 74927adb) ---------------- */
+/* Matters, drafts, today and reminders (backend/dev 3e01ac1a) ---------------- */
 
 export type MatterGroup = "active" | "waiting" | "archived" | "all";
 export type MatterStatus = "active" | "waiting" | "archived" | "deleted";
@@ -505,12 +505,62 @@ export interface MatterDetail extends MatterSummary {
   reminders: MatterReminder[];
 }
 
+export interface TodayRoute {
+  status: "available" | "unverified" | "unavailable";
+  reason_code: string | null;
+  message: string | null;
+  advisory_id: string | null;
+}
+
+export interface TodaySchedule extends MatterSchedule {
+  matter_title: string | null;
+  route: TodayRoute;
+}
+
+export interface TodayReminder extends MatterReminder {
+  matter_title: string | null;
+}
+
+export interface TodayDeadline {
+  todo_id: string;
+  matter_id: string;
+  matter_title: string;
+  title: string;
+  due_at: string;
+  status: MatterTodoStatus;
+  reminder_at: string | null;
+}
+
+export interface TodayDraft {
+  draft_id: string;
+  matter_id: string | null;
+  matter_title: string | null;
+  kind: "create" | "update";
+  version: number;
+  updated_at: string;
+  schedule: DraftSchedule | null;
+  conflict: MatterConflict | null;
+  impact: string;
+}
+
+export interface TodayChange {
+  change_id: string;
+  matter_id: string;
+  matter_title: string | null;
+  change_type: string;
+  created_at: string;
+  summary: string;
+}
+
 export interface TodayView {
   date: string;
   timezone: string;
-  schedules: MatterSchedule[];
-  reminders: MatterReminder[];
+  schedules: TodaySchedule[];
+  reminders: TodayReminder[];
   pending_drafts: number;
+  deadlines: TodayDeadline[];
+  drafts: TodayDraft[];
+  changes: TodayChange[];
 }
 
 export interface MatterUpdateInput {
@@ -556,8 +606,36 @@ export interface DraftPayload {
   todos?: DraftTodo[];
   complete_todo_ids?: string[];
   selected_option?: "A" | "B" | "C" | null;
+  previous_adjustment?: DraftPreviousAdjustment | null;
+  affected?: MatterAffectedSchedule[];
   source_text?: string | null;
   analysis?: Record<string, unknown> | null;
+}
+
+export interface MatterAffectedSchedule {
+  type: "schedule" | string;
+  matter_id: string | null;
+  matter_title: string | null;
+  schedule_id: string;
+  title: string;
+  source: MatterScheduleSource | null;
+  before_starts_at: string | null;
+  before_ends_at: string | null;
+  after_starts_at: string | null;
+  after_ends_at: string | null;
+}
+
+export interface DraftPreviousAdjustment {
+  schedule_id: string;
+  matter_id: string | null;
+  matter_title: string | null;
+  title: string;
+  before_starts_at: string | null;
+  before_ends_at: string | null;
+  after_starts_at: string | null;
+  after_ends_at: string | null;
+  shift_seconds: number;
+  base_updated_at: string;
 }
 
 export interface MatterConflictOption {
@@ -569,6 +647,9 @@ export interface MatterConflictOption {
   creates_todo: string | null;
   shift_seconds: number;
   target_schedule_id: string | null;
+  executable: boolean;
+  unavailable_reason: string | null;
+  affected: MatterAffectedSchedule[];
 }
 
 export interface MatterConflictItem {
@@ -611,6 +692,13 @@ export interface MatterIntakeResponse {
   replayed: boolean;
   intent: "matter" | "question";
   message: string | null;
+  answer: string | null;
+}
+
+export interface MatterEditInput {
+  idempotency_key: string;
+  schedule_id?: string;
+  todo_id?: string;
 }
 
 export interface DraftPatchInput {
@@ -638,6 +726,34 @@ export interface MatterChangeSummary {
   change_type: string;
   before: Record<string, unknown>;
   after: Record<string, unknown>;
+}
+
+export type MatterChangeReasonCode =
+  | "later_changes"
+  | "already_reverted"
+  | "matter_changed"
+  | "schedule_changed"
+  | "todo_changed"
+  | "reminder_changed"
+  | "creation_revert_unsupported"
+  | "incomplete_change_snapshot"
+  | "revert_from_source_matter"
+  | "not_revertable"
+  | string
+  | null;
+
+export interface MatterChange extends MatterChangeSummary {
+  matter_id: string;
+  source_matter_id: string;
+  source_matter_title: string | null;
+  relation: "primary" | "affected";
+  affected_matter_ids: string[];
+  draft_id: string | null;
+  created_at: string;
+  schedule_id: string | null;
+  revertable: boolean;
+  reason_code: MatterChangeReasonCode;
+  reason: string | null;
 }
 
 export interface DraftConfirmResponse {

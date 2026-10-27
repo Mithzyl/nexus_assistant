@@ -23,9 +23,9 @@ import {
 } from "lucide-react";
 
 import { useAuth, useDemo, useUI } from "@/components/mobile/providers";
-import { useWorkPlan } from "@/components/mobile/work-plan-store";
 import { ConfirmDialog, ScreenHeader, SwitchRow } from "@/components/mobile/ui";
 import { formatDateTime } from "@/lib/mobile/format";
+import { useMatters } from "@/lib/mobile/use-matters";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
 import type { DataSource } from "@/lib/mobile/api";
 
@@ -70,7 +70,7 @@ export default function MePage() {
   const { state, user, expiresAt, error, renewing, renewMessage, logout, renew } = useAuth();
   const signedIn = state === "signedIn";
   const demo = useDemo();
-  const plan = useWorkPlan();
+  const matters = useMatters(signedIn, user?.user_id ?? null);
   const sources = useApiResource<DataSource[]>(signedIn ? "/api/pa/data-sources" : null, { enabled: signedIn });
   const { openCapture, theme, setTheme, toast } = useUI();
   const [confirmLogout, setConfirmLogout] = useState(false);
@@ -83,6 +83,50 @@ export default function MePage() {
     .filter((value): value is string => Boolean(value))
     .sort()
     .at(-1) ?? null;
+  const iosSources = (sources.data ?? []).filter(
+    (source) => source.source_type === "calendar" || source.source_type === "reminders",
+  );
+  const appCalendarState = (() => {
+    if (!signedIn) return { detail: "登录后读取内置日程和提醒。", status: "需登录" };
+    if (matters.loading && matters.items.length === 0) {
+      return { detail: "正在向 PA 服务器读取应用内日程。", status: "读取中" };
+    }
+    if (matters.error) {
+      return {
+        detail: "这次读取失败；不代表应用内日程未接通，可稍后重试。",
+        status: "读取失败",
+      };
+    }
+    return {
+      detail:
+        matters.items.length > 0
+          ? `应用内日程与提醒可用，当前读取 ${matters.items.length} 个事项。`
+          : "应用内日程与提醒可用，当前没有正式事项。",
+      status: "可用",
+    };
+  })();
+  const iosConnectionState = (() => {
+    if (!signedIn) return { detail: "登录后读取苹果端来源连接状态。", status: "需登录" };
+    if (sources.loading && !sources.data) {
+      return { detail: "正在读取苹果端来源状态。", status: "读取中" };
+    }
+    if (sources.error) {
+      return {
+        detail: "这次来源状态读取失败；不代表苹果端尚未连接。",
+        status: "读取失败",
+      };
+    }
+    if (iosSources.length > 0) {
+      return {
+        detail: `${iosSources.length} 个来自苹果端的日历或提醒来源；上传副本不等于写回系统应用。`,
+        status: "已连接",
+      };
+    }
+    return {
+      detail: "服务器暂无苹果端日历或提醒来源。上传副本不等于写回系统应用。",
+      status: "尚未连接",
+    };
+  })();
 
   const accountTitle = (() => {
     if (state === "loading") return "正在验证会话…";
@@ -218,15 +262,15 @@ export default function MePage() {
             href="/matters"
             icon={<CalendarDays size={14} />}
             title="内置日程与提醒"
-            detail={demo.enabled ? "本机概念预览；未写入服务器" : "接口尚未接通；暂无正式日程"}
-            status={demo.enabled ? `${plan.matters.length} 条预览` : "未接通"}
+            detail={appCalendarState.detail}
+            status={appCalendarState.status}
           />
           <Row
             href="/me/sources"
             icon={<Smartphone size={14} />}
             title="iOS 客户端"
-            detail="未连接；上传授权与助手授权分别管理，上传副本不等于写回系统日历"
-            status="未连接"
+            detail={iosConnectionState.detail}
+            status={iosConnectionState.status}
           />
           <Row
             href="/me/sources"
@@ -237,7 +281,7 @@ export default function MePage() {
           />
         </div>
         <p className="micro" style={{ margin: "8px 0 0" }}>
-          “内容副本已上传”只说明资料进了服务器；“写入 iPhone 系统日历”需要 iOS 回写凭据，当前没有，因此不会显示已写入状态。
+          应用内日程与苹果端连接状态分别读取；提醒只表示服务器有记录，尚未确认送达。
         </p>
       </section>
 

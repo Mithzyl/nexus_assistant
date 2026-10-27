@@ -1,8 +1,10 @@
-"""Real matters/draft/today browser checks against backend/dev 02a79ed2.
+"""Historical broad matters/draft/today checks for backend/dev 02a79ed2.
 
 These run against the isolated database seeded by seed_web_fixture.py and the
 real API from E2E_BACKEND_SRC. The local preview stays in /me/lab/plan and is
 checked separately, never mixed into the formal list.
+
+Use matters_enrichment_check.py for backend/dev 3e01ac1a and later.
 """
 
 from __future__ import annotations

@@ -7,13 +7,13 @@ import { PageShell, Pill } from "@/components/mobile/ui";
 const ROWS: Array<{ area: string; real: string; local: string }> = [
   {
     area: "今天",
-    real: "日期、本机记录、服务器通勤建议",
-    local: "概念预览下的事项时间线与冲突调整；仅本机",
+    real: "日程、提醒、截止事项、待确认草稿、路线状态、已生效变更与通勤建议",
+    local: "本机“收下内容/记一句”记录；不进入正式时间线",
   },
   {
     area: "事项",
-    real: "暂无服务器接口（明确空状态）",
-    local: "工作安排分组、详情、补充进展、停止/删除与冲突方案；仅本机预览",
+    real: "事项分组与详情、结构化日程/待办草稿、变更历史、撤回与服务器确认",
+    local: "实验室中的工作安排概念预览；与正式事项隔离",
   },
   {
     area: "问助手",

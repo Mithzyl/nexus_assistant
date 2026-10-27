@@ -54,8 +54,8 @@ export default function MattersPage() {
       {!demo.enabled ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
-            title="事项服务尚未接通"
-            body="服务器还没有事项、日程和提醒的写入接口。正常模式不会把本地示例或演示事务冒充成已经保存的事项。"
+            title="实验室只展示本机概念"
+            body="正式事项、日程和提醒已在“事项”页通过服务器草稿确认；实验室不会把本地示例混入正式数据。"
           >
             <div className="m-stack-8">
               <Link href="/me/lab" className="btn btn--secondary">
@@ -77,7 +77,7 @@ export default function MattersPage() {
             </div>
           </EmptyState>
           <p className="micro text-center mt-16">
-            计划接续的真实接口尚未提供，因此这里保持真实空状态，而不是铺一张假列表。
+            需要真实写入时请回到事项页；这里的本机预览与服务器数据保持隔离。
           </p>
         </div>
       ) : !plan.ready ? (

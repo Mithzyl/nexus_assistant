@@ -6,6 +6,7 @@ import { Check, Circle, Pencil, RefreshCw, Trash2, Undo2 } from "lucide-react";
 
 import type {
   DraftConfirmResponse,
+  MatterChange,
   MatterDetail,
   MatterReminder,
   MatterSchedule,
@@ -15,21 +16,39 @@ import { ApiError } from "@/lib/mobile/api";
 import {
   archiveMatter,
   completeMatterTodo,
+  createMatterEditDraft,
   deleteMatter,
   getMatter,
   intakeMatterProgress,
+  listMatterChanges,
   newOperationKey,
   reopenMatter,
   reopenMatterTodo,
   confirmSummary,
+  requestTodayRefresh,
   revertMatterChange,
   updateMatter,
 } from "@/lib/mobile/matters-api";
+import {
+  changeReasonText,
+  describeRevert,
+  isEditableSchedule,
+  isRecordChangedError,
+  summarizeMatterChange,
+} from "@/lib/mobile/matter-draft.mjs";
 import { dateTimeLabel } from "@/lib/mobile/work-plan";
 import { useAuth, useUI } from "./providers";
 import { MatterDraftSheet } from "./matter-draft-sheet";
-import { ConfirmSheet, ProgressSheet, ScheduleEditSheet } from "./work-plan-ui";
-import { EmptyState, ErrorCard, LoadingCard, PageShell, Pill, Sheet } from "./ui";
+import { ConfirmSheet, ProgressSheet } from "./work-plan-ui";
+import {
+  ConfirmDialog,
+  EmptyState,
+  ErrorCard,
+  LoadingCard,
+  PageShell,
+  Pill,
+  Sheet,
+} from "./ui";
 
 function syncLabel(record: MatterSchedule | MatterReminder): string {
   const reminder = "trigger_at" in record;
@@ -42,7 +61,7 @@ function syncLabel(record: MatterSchedule | MatterReminder): string {
     return reminder ? "应用内提醒（待 iOS 客户端同步）" : "已记入应用内日程（待 iOS 客户端同步）";
   }
   if (status === "ios_synced") return "已同步（有苹果端凭据）";
-  return reminder ? "应用内提醒 · 未确认送达" : "已记入应用内日程";
+  return reminder ? "应用内提醒" : "已记入应用内日程";
 }
 
 function TodoRow({
@@ -72,7 +91,7 @@ function TodoRow({
         <span style={{ display: "block" }}>{todo.title}</span>
         <span className="micro">
           {todo.due_at ? `截止 ${dateTimeLabel(todo.due_at)}` : "未设截止"}
-          {todo.reminder_at ? ` · 提醒 ${dateTimeLabel(todo.reminder_at)}` : ""}
+          {todo.reminder_at ? ` · 提醒 ${dateTimeLabel(todo.reminder_at)}` : " · 未设提醒"}
           {todo.status === "done" ? " · 已完成" : ""}
         </span>
       </span>
@@ -81,13 +100,6 @@ function TodoRow({
       </button>
     </div>
   );
-}
-
-function toLocalInput(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function MatterRealDetail({ id }: { id: string }) {
@@ -104,27 +116,46 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [nextStep, setNextStep] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
-  const [progressDraft, setProgressDraft] = useState<Awaited<ReturnType<typeof intakeMatterProgress>>["draft"] | null>(null);
-  const [editSchedule, setEditSchedule] = useState<MatterSchedule | null>(null);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [todoEdit, setTodoEdit] = useState<MatterTodo | null>(null);
-  const [todoDue, setTodoDue] = useState("");
-  const [todoReminder, setTodoReminder] = useState("");
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const [progressAnswer, setProgressAnswer] = useState<{ question: string; answer: string } | null>(null);
+  const [editingDraft, setEditingDraft] = useState<Awaited<ReturnType<typeof intakeMatterProgress>>["draft"] | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
-  const [lastChangeId, setLastChangeId] = useState<string | null>(null);
+  const [changes, setChanges] = useState<MatterChange[]>([]);
+  const [changesLoading, setChangesLoading] = useState(true);
+  const [changesError, setChangesError] = useState<string | null>(null);
+  const [revertTarget, setRevertTarget] = useState<MatterChange | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      setMatter(await getMatter(id));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught : new Error("读取事项失败"));
-    } finally {
-      setLoading(false);
+    setChangesLoading(true);
+    setChangesError(null);
+    const [matterResult, changesResult] = await Promise.allSettled([
+      getMatter(id),
+      listMatterChanges(id),
+    ]);
+    if (matterResult.status === "fulfilled") {
+      setMatter(matterResult.value);
+    } else {
+      setError(
+        matterResult.reason instanceof Error
+          ? matterResult.reason
+          : new Error("读取事项失败"),
+      );
     }
+    if (changesResult.status === "fulfilled") {
+      setChanges(changesResult.value);
+    } else {
+      setChangesError(
+        changesResult.reason instanceof Error
+          ? changesResult.reason.message
+          : "读取变更历史失败",
+      );
+    }
+    setLoading(false);
+    setChangesLoading(false);
   }, [id]);
 
   useEffect(() => {
@@ -136,8 +167,19 @@ export function MatterRealDetail({ id }: { id: string }) {
     try {
       await action();
     } catch (caught) {
-      if (caught instanceof ApiError && (caught.code === "preview_stale" || caught.code === "matter_changed")) {
-        toast("服务器上的事项已变化，已重新读取，请重新检查");
+      if (caught instanceof ApiError && isRecordChangedError(caught.code)) {
+        toast("记录已发生变化，请刷新后检查");
+        await load();
+      } else if (caught instanceof ApiError && caught.code === "revert_from_source_matter") {
+        toast(caught.message);
+        await load();
+      } else if (caught instanceof ApiError && caught.code === "option_not_executable") {
+        toast(caught.message);
+      } else if (caught instanceof ApiError && caught.code === "creation_revert_unsupported") {
+        toast("暂不支持撤回新建事项");
+        await load();
+      } else if (caught instanceof ApiError && caught.code === "incomplete_change_snapshot") {
+        toast("这条旧变更缺少完整记录，不能安全撤回");
         await load();
       } else {
         toast(caught instanceof Error ? caught.message : "操作失败");
@@ -179,15 +221,28 @@ export function MatterRealDetail({ id }: { id: string }) {
 
   const startProgress = async (text: string) => {
     if (!matter) return;
-    setProgressOpen(false);
-    await run("progress", async () => {
+    setBusy("progress");
+    setProgressError(null);
+    try {
       const result = await intakeMatterProgress(matter.matter_id, text, newOperationKey("web-progress"));
-      if (!result.draft) {
-        toast(result.message || "这句话更像问题，没有生成事项变更；请写清要调整的时间或进展。");
+      if (result.intent === "question" && result.answer) {
+        setProgressOpen(false);
+        setProgressAnswer({ question: text, answer: result.answer });
         return;
       }
-      setProgressDraft(result.draft);
-    });
+      if (result.draft) {
+        setProgressOpen(false);
+        setEditingDraft(result.draft);
+        return;
+      }
+      setProgressError(
+        result.message || "服务器还需要更具体的信息。请补充后再提交。",
+      );
+    } catch (caught) {
+      setProgressError(caught instanceof Error ? caught.message : "暂时无法提交补充进展。");
+    } finally {
+      setBusy(null);
+    }
   };
 
   const toggleTodo = async (todo: MatterTodo) => {
@@ -200,10 +255,43 @@ export function MatterRealDetail({ id }: { id: string }) {
   };
 
   const onConfirmed = async (response: DraftConfirmResponse) => {
-    setLastChangeId(response.change_id);
-    setProgressDraft(null);
+    setEditingDraft(null);
     toast(confirmSummary(response));
     await load();
+    requestTodayRefresh();
+  };
+
+  const openScheduleDraft = async (schedule: MatterSchedule) => {
+    if (!matter) return;
+    await run(`schedule-draft-${schedule.schedule_id}`, async () => {
+      const draft = await createMatterEditDraft(matter.matter_id, {
+        idempotency_key: newOperationKey("web-schedule"),
+        schedule_id: schedule.schedule_id,
+      });
+      setEditingDraft(draft);
+    });
+  };
+
+  const openTodoDraft = async (todo: MatterTodo) => {
+    if (!matter) return;
+    await run(`todo-draft-${todo.todo_id}`, async () => {
+      const draft = await createMatterEditDraft(matter.matter_id, {
+        idempotency_key: newOperationKey("web-todo"),
+        todo_id: todo.todo_id,
+      });
+      setEditingDraft(draft);
+    });
+  };
+
+  const revertChange = async (change: MatterChange) => {
+    if (!matter) return;
+    setRevertTarget(null);
+    await run("revert", async () => {
+      await revertMatterChange(matter.matter_id, change.change_id, matter.version);
+      toast("服务器已撤回这条变更");
+      await load();
+      requestTodayRefresh();
+    });
   };
 
   if (loading && !matter) {
@@ -283,7 +371,8 @@ export function MatterRealDetail({ id }: { id: string }) {
         <section>
           <h2 className="section-title" style={{ marginBottom: 8 }}>已确定安排</h2>
           <div className="card card--tight">
-            {matter.schedules.length === 0 && matter.reminders.length === 0 ? (
+            {matter.schedules.length === 0 &&
+            matter.reminders.filter((reminder) => reminder.status === "pending").length === 0 ? (
               <p className="caption" style={{ margin: 0 }}>还没有已确定的日程或提醒。</p>
             ) : (
               <div className="m-stack-10">
@@ -302,27 +391,29 @@ export function MatterRealDetail({ id }: { id: string }) {
                       <button
                         type="button"
                         className="link-button"
-                        onClick={() => { setEditSchedule(schedule); setScheduleOpen(true); }}
-                        disabled={Boolean(busy) || schedule.source === "ios_eventkit"}
-                        title={schedule.source === "ios_eventkit" ? "苹果导入日程需在苹果端修改" : "调整时间或地点"}
+                        onClick={() => void openScheduleDraft(schedule)}
+                        disabled={Boolean(busy) || !isEditableSchedule(schedule)}
+                        title={isEditableSchedule(schedule) ? "调整标题、时间或地点" : "苹果导入日程需在苹果端修改"}
                       >
                         <Pencil size={12} /> 调整
                       </button>
                     </div>
                   </div>
                 ))}
-                {matter.reminders.map((reminder) => (
+                {matter.reminders
+                  .filter((reminder) => reminder.status === "pending")
+                  .map((reminder) => (
                   <p key={reminder.reminder_id} className="caption" style={{ margin: "4px 0 0" }}>
-                    提醒：{reminder.title} · {dateTimeLabel(reminder.trigger_at)} · {syncLabel(reminder)} · 未确认已送达
+                    提醒：{reminder.title} · {dateTimeLabel(reminder.trigger_at)} · {syncLabel(reminder)}
                   </p>
-                ))}
+                  ))}
               </div>
             )}
             <p className="micro" style={{ margin: "10px 0 0" }}>
-              修改时间地点需要通过“补充进展/整理”生成草稿并确认；网页没有直接改写已确认日程的接口，也不会静默覆盖。
+              “调整”会读取服务器里的当前日程并生成结构化预览；只有再次确认后才会改写正式安排。
             </p>
             <button type="button" className="link-button mt-6" onClick={() => setProgressOpen(true)}>
-              说明时间或地点调整
+              用一句话补充安排变化
             </button>
           </div>
         </section>
@@ -340,11 +431,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                     todo={todo}
                     busy={busy === `todo-${todo.todo_id}`}
                     onToggle={() => void toggleTodo(todo)}
-                    onEditTime={() => {
-                      setTodoEdit(todo);
-                      setTodoDue(todo.due_at ? toLocalInput(todo.due_at) : "");
-                      setTodoReminder(todo.reminder_at ? toLocalInput(todo.reminder_at) : "");
-                    }}
+                    onEditTime={() => void openTodoDraft(todo)}
                   />
                 ))}
               </div>
@@ -371,25 +458,77 @@ export function MatterRealDetail({ id }: { id: string }) {
           </div>
         </section>
 
-        {lastChangeId ? (
-          <button
-            type="button"
-            className="btn btn--secondary"
-            disabled={busy === "revert"}
-            onClick={() => void run("revert", async () => {
-              await revertMatterChange(matter.matter_id, lastChangeId, matter.version);
-              setLastChangeId(null);
-              toast("已按服务器变更记录撤回");
-              await load();
-            })}
-          >
-            <Undo2 size={14} /> 撤回刚才这次确认
-          </button>
-        ) : (
-          <p className="micro" style={{ margin: 0 }}>
-            撤回需要使用本次确认返回的 change_id；刷新后没有可列出的变更历史，因此不显示“可撤回”入口。
+        <section id="changes">
+          <div className="flex items-center justify-between gap-12" style={{ marginBottom: 8 }}>
+            <h2 className="section-title">变更历史</h2>
+            <span className="micro">已生效</span>
+          </div>
+          {changesLoading ? (
+            <LoadingCard label="正在读取变更历史…" />
+          ) : changesError ? (
+            <ErrorCard message={changesError} onRetry={() => void load()} />
+          ) : changes.length === 0 ? (
+            <p className="caption">服务器还没有记录这条事项的变更。</p>
+          ) : (
+            <div className="card card--tight">
+              {changes.map((change, index) => {
+                const reason = change.revertable
+                  ? null
+                  : changeReasonText(change.reason_code, change.reason);
+                return (
+                  <div key={change.change_id}>
+                    {index > 0 ? <hr className="divider" /> : null}
+                    <div className="change-history-item">
+                      <div className="flex items-start justify-between gap-10">
+                        <div className="grow">
+                          <p className="micro" style={{ margin: 0 }}>
+                            {dateTimeLabel(change.created_at)} · 已生效
+                          </p>
+                          <p className="body-text" style={{ margin: "4px 0 0" }}>
+                            {summarizeMatterChange(change)}
+                          </p>
+                        </div>
+                        {change.revertable ? (
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => setRevertTarget(change)}
+                            disabled={Boolean(busy)}
+                          >
+                            <Undo2 size={13} /> 撤回
+                          </button>
+                        ) : null}
+                      </div>
+                      {reason ? (
+                        <p className="micro" style={{ margin: "6px 0 0" }}>
+                          {reason}
+                        </p>
+                      ) : null}
+                      {change.relation === "affected" ? (
+                        <button
+                          type="button"
+                          className="link-button mt-6"
+                          onClick={() =>
+                            router.push(`/matters/${change.source_matter_id}#changes`)
+                          }
+                        >
+                          到「{change.source_matter_title || "来源事项"}」查看并处理
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="micro" style={{ margin: "8px 0 0" }}>
+            只有服务器标记为可撤回的最近变更才显示撤回操作。
           </p>
-        )}
+        </section>
+
+        <p className="micro text-center" style={{ marginTop: 0 }}>
+          停止跟进默认不取消提醒；提醒只表示服务器已有记录，尚未确认送达。彻底删除是服务器软删。
+        </p>
 
         <div className="work-actions">
           <button type="button" className="btn btn--primary grow" onClick={() => setProgressOpen(true)} disabled={Boolean(busy)}>
@@ -408,16 +547,20 @@ export function MatterRealDetail({ id }: { id: string }) {
             <Trash2 size={14} /> 删除
           </button>
         </div>
-        <p className="micro text-center" style={{ marginTop: 8 }}>
-          停止跟进默认不取消提醒；彻底删除是服务器软删。服务器确认前不会显示已删除。
-        </p>
       </div>
 
       <ProgressSheet
         open={progressOpen}
         title={matter.title}
         note="提交后由服务器生成待确认草稿；确认前不会写正式进展或日程。"
-        onClose={() => setProgressOpen(false)}
+        stayOpenOnSubmit
+        busy={busy === "progress"}
+        error={progressError}
+        submitLabel="交给服务器整理"
+        onClose={() => {
+          setProgressOpen(false);
+          setProgressError(null);
+        }}
         onSubmit={(text) => void startProgress(text)}
       />
       <Sheet title="纠正事项内容" open={editOpen} onClose={() => setEditOpen(false)}>
@@ -442,77 +585,59 @@ export function MatterRealDetail({ id }: { id: string }) {
         </div>
       </Sheet>
 
-      <Sheet title="调整待办时间" open={Boolean(todoEdit)} onClose={() => setTodoEdit(null)}>
-        <div className="m-stack-12">
-          <p className="caption" style={{ margin: 0 }}>{todoEdit?.title}</p>
-          <label className="field">
-            <span className="field__label">截止时间</span>
-            <input className="input" type="datetime-local" value={todoDue} onChange={(event) => setTodoDue(event.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field__label">提醒触发时间</span>
-            <input className="input" type="datetime-local" value={todoReminder} onChange={(event) => setTodoReminder(event.target.value)} />
-          </label>
-          <p className="micro" style={{ margin: 0 }}>两者分别提交。保存只生成待确认草稿，确认前不改正式待办或提醒。</p>
-          <button
-            type="button"
-            className="btn btn--primary"
-            disabled={Boolean(busy) || !todoEdit}
-            onClick={() => {
-              if (!todoEdit) return;
-              const item = todoEdit;
-              const text = `把待办「${item.title}」的截止时间改为 ${todoDue ? new Date(todoDue).toISOString() : "不设"}，提醒时间改为 ${todoReminder ? new Date(todoReminder).toISOString() : "不设"}。`;
-              setTodoEdit(null);
-              void run("adjust-todo", async () => {
-                const result = await intakeMatterProgress(matter.matter_id, text, newOperationKey("web-todo-time"));
-                if (!result.draft) {
-                  toast(result.message || "服务器没有生成变更草稿，请补充时间后再试。");
-                  return;
-                }
-                setProgressDraft(result.draft);
-              });
-            }}
-          >
-            生成变更草稿
-          </button>
-          <button type="button" className="btn btn--quiet" onClick={() => setTodoEdit(null)}>取消</button>
-        </div>
-      </Sheet>
-      <ScheduleEditSheet
-        schedule={editSchedule ? {
-          id: editSchedule.schedule_id,
-          title: editSchedule.title,
-          startsAt: editSchedule.starts_at,
-          endsAt: editSchedule.ends_at ?? editSchedule.starts_at,
-          location: editSchedule.location ?? "",
-          source: "web_native",
-          syncStatus: editSchedule.sync_status ?? "local_only",
-        } : null}
-        open={scheduleOpen}
-        heading="调整这条安排"
-        submitLabel="生成变更草稿"
-        note="不会直接改写正式日程。保存后会调用服务器生成待确认草稿，再核对时间、地点与冲突并确认。"
-        onClose={() => { setScheduleOpen(false); setEditSchedule(null); }}
-        onSave={(patch) => {
-          if (!editSchedule) return;
-          const text = `把「${editSchedule.title}」调整到 ${new Date(patch.startsAt).toISOString()} 至 ${new Date(patch.endsAt).toISOString()}${patch.location ? `，地点改为「${patch.location}」` : ""}。`;
-          setScheduleOpen(false);
-          setEditSchedule(null);
-          void run("adjust", async () => {
-            const result = await intakeMatterProgress(matter.matter_id, text, newOperationKey("web-adjust"));
-            if (!result.draft) {
-              toast(result.message || "服务器没有生成变更草稿，请补充时间或地点后再试。");
-              return;
-            }
-            setProgressDraft(result.draft);
-          });
+      <MatterDraftSheet
+        draft={editingDraft}
+        open={Boolean(editingDraft)}
+        onClose={() => setEditingDraft(null)}
+        onConfirmed={(response) => void onConfirmed(response)}
+        onDraftCancelled={() => {
+          setEditingDraft(null);
+          toast("草稿已取消，没有写入正式安排");
+          void load();
+          requestTodayRefresh();
         }}
       />
-      <MatterDraftSheet
-        draft={progressDraft}
-        open={Boolean(progressDraft)}
-        onClose={() => setProgressDraft(null)}
-        onConfirmed={(response) => void onConfirmed(response)}
+      <Sheet
+        title="助手回答"
+        open={Boolean(progressAnswer)}
+        onClose={() => setProgressAnswer(null)}
+      >
+        {progressAnswer ? (
+          <div className="m-stack-12">
+            <p className="caption" style={{ margin: 0 }}>
+              你补充的是“{progressAnswer.question}”
+            </p>
+            <div className="card">
+              <p className="body-text" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                {progressAnswer.answer}
+              </p>
+            </div>
+            <p className="micro" style={{ margin: 0 }}>
+              服务器在事项整理中直接返回了这份回答；没有再次发起普通问答，也没有创建草稿。
+            </p>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => setProgressAnswer(null)}
+            >
+              知道了
+            </button>
+          </div>
+        ) : null}
+      </Sheet>
+      <ConfirmDialog
+        open={Boolean(revertTarget)}
+        title="撤回这条变更？"
+        body={
+          revertTarget
+            ? `服务器会${describeRevert(revertTarget)}。撤回后事项、历史和今天的安排会重新读取。`
+            : ""
+        }
+        confirmLabel="确认撤回"
+        onCancel={() => setRevertTarget(null)}
+        onConfirm={() => {
+          if (revertTarget) void revertChange(revertTarget);
+        }}
       />
       <ConfirmSheet
         open={archiveOpen}
