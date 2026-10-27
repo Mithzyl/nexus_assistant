@@ -55,9 +55,25 @@ def test_new_response_models_expose_required_fields():
     conflict = schemas["ConflictRead"]["properties"]
     assert {"has_conflict", "severity", "conflicts", "options"} <= set(conflict)
     option = schemas["ConflictOptionRead"]["properties"]
-    assert {"option_id", "shift_seconds", "target_schedule_id"} <= set(option)
+    assert {
+        "option_id",
+        "shift_seconds",
+        "target_schedule_id",
+        "executable",
+        "unavailable_reason",
+        "affected",
+    } <= set(option)
     schedule = schemas["ScheduleRead"]["properties"]
     assert {"sync_status", "source", "matter_id"} <= set(schedule)
+    change = schemas["ChangeRead"]["properties"]
+    assert {
+        "source_matter_id",
+        "source_matter_title",
+        "relation",
+        "affected_matter_ids",
+        "revertable",
+        "reason_code",
+    } <= set(change)
 
 
 def test_estimate_is_documented_as_post_and_committed_file_is_current():

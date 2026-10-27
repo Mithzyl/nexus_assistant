@@ -197,6 +197,9 @@ class ConflictOptionRead(BaseModel):
     creates_todo: str | None = None
     shift_seconds: int = 0
     target_schedule_id: str | None = None
+    executable: bool = True
+    unavailable_reason: str | None = None
+    affected: list[dict] = Field(default_factory=list)
 
 
 class ConflictItemRead(BaseModel):
@@ -268,6 +271,10 @@ class MatterEditRequest(BaseModel):
 class ChangeRead(BaseModel):
     change_id: str
     matter_id: str
+    source_matter_id: str
+    source_matter_title: str | None = None
+    relation: Literal["primary", "affected"] = "primary"
+    affected_matter_ids: list[str] = Field(default_factory=list)
     change_type: str
     draft_id: str | None = None
     created_at: UtcDateTime

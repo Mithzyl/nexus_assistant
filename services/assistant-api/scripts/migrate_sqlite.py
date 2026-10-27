@@ -52,6 +52,9 @@ COLUMN_MIGRATIONS = (
     ("0008_source_auth", "content_sync_batches", "payload_sha256", "VARCHAR(64)"),
     ("0008_source_auth", "nexus_runs", "context_json", "JSON"),
     ("0009_edit_drafts", "matter_drafts", "origin_key", "VARCHAR(128)"),
+    ("0010_option_state", "matter_drafts", "option_base_json", "JSON"),
+    ("0010_option_state", "matter_drafts", "base_todo_id", "VARCHAR(36)"),
+    ("0010_option_state", "matter_drafts", "base_todo_updated_at", "DATETIME"),
 )
 
 # Indexes on pre-existing tables cannot be added by metadata.create_all, so they

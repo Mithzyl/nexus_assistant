@@ -124,6 +124,11 @@ class MatterDraft(TimestampMixin, Base):
     base_matter_version: Mapped[int | None] = mapped_column(Integer)
     base_schedule_id: Mapped[str | None] = mapped_column(String(36))
     base_schedule_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    base_todo_id: Mapped[str | None] = mapped_column(String(36))
+    base_todo_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Immutable payload used by "apply-option" so switching A/B/C starts from
+    # the same preview instead of stacking the previous option's changes.
+    option_base_json: Mapped[dict | None] = mapped_column(JSON)
     ai_run_id: Mapped[str | None] = mapped_column(String(36))
     confirm_key: Mapped[str | None] = mapped_column(String(128))
     # Idempotency key for a directly created edit draft (no model run).

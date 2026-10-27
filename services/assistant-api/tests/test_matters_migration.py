@@ -31,6 +31,15 @@ def _old_schema(path) -> None:
             '2026-10-01 10:00:00.000000', '办公室', 'scheduled', NULL,
             '2026-09-30 00:00:00.000000', '2026-09-30 00:00:00.000000'
         );
+        CREATE TABLE matter_drafts (
+            draft_id VARCHAR(36) PRIMARY KEY,
+            user_id VARCHAR(36) NOT NULL,
+            kind VARCHAR(16) NOT NULL,
+            status VARCHAR(16),
+            version INTEGER,
+            payload_json JSON,
+            confirm_key VARCHAR(128)
+        );
         """
     )
     connection.commit()
@@ -49,6 +58,10 @@ async def test_upgrade_keeps_existing_schedules(tmp_path):
     try:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(schedules)")}
         assert {"matter_id", "sync_status", "source", "deleted_at"} <= columns
+        draft_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(matter_drafts)")
+        }
+        assert {"option_base_json", "base_todo_id", "base_todo_updated_at"} <= draft_columns
         row = connection.execute(
             "SELECT title, matter_id, sync_status FROM schedules WHERE schedule_id='old-schedule'"
         ).fetchone()

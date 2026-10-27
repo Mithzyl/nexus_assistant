@@ -8,6 +8,7 @@ proves the preview version and (when needed) acknowledges a conflict.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -41,7 +42,7 @@ from assistant_api.models.base import new_id
 from assistant_api.nexus_client import NexusPilotClient
 from assistant_api.schemas import matters as schemas
 from assistant_api.services import matter_plan, run_service
-from assistant_api.services.matter_conflicts import evaluate_conflict
+from assistant_api.services.matter_conflicts import can_edit_schedule, evaluate_conflict
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +97,19 @@ def _as_utc(value: datetime | None) -> datetime | None:
     return ensure_aware(value).astimezone(UTC)
 
 
+OPTION_TRANSIENT_KEYS = ("selected_option", "previous_adjustment", "affected")
+CHANGE_SNAPSHOT_VERSION = 2
+
+
+def _option_baseline(body: dict) -> dict:
+    """Return a copy without the effects of a previously selected option."""
+
+    baseline = deepcopy(body)
+    for key in OPTION_TRANSIENT_KEYS:
+        baseline.pop(key, None)
+    return baseline
+
+
 async def _get_matter(db: AsyncSession, user: User, matter_id: str) -> Matter:
     matter = await db.scalar(
         select(Matter).where(
@@ -135,14 +149,272 @@ def _schedule_snapshot(schedule: ScheduleEvent | None) -> dict | None:
         return None
     return {
         "schedule_id": schedule.schedule_id,
+        "matter_id": schedule.matter_id,
         "title": schedule.title,
         "starts_at": _as_utc(schedule.starts_at).isoformat() if schedule.starts_at else None,
         "ends_at": _as_utc(schedule.ends_at).isoformat() if schedule.ends_at else None,
         "location": schedule.location,
+        "status": schedule.status,
+        "source_run_id": schedule.source_run_id,
         "latitude": schedule.latitude,
         "longitude": schedule.longitude,
+        "source": schedule.source,
+        "sync_status": schedule.sync_status,
+        "source_external_id": schedule.source_external_id,
+        "source_scope_key": schedule.source_scope_key,
+        "source_updated_at": (
+            _as_utc(schedule.source_updated_at).isoformat()
+            if schedule.source_updated_at
+            else None
+        ),
+        "source_version": schedule.source_version,
+        "data_source_id": schedule.data_source_id,
         "deleted_at": _as_utc(schedule.deleted_at).isoformat() if schedule.deleted_at else None,
+        "updated_at": _as_utc(schedule.updated_at).isoformat() if schedule.updated_at else None,
     }
+
+
+def _todo_snapshot(todo: MatterTodo | None) -> dict | None:
+    if todo is None:
+        return None
+    return {
+        "todo_id": todo.todo_id,
+        "matter_id": todo.matter_id,
+        "title": todo.title,
+        "status": todo.status,
+        "position": todo.position,
+        "due_at": _as_utc(todo.due_at).isoformat() if todo.due_at else None,
+        "reminder_at": _as_utc(todo.reminder_at).isoformat() if todo.reminder_at else None,
+        "completed_at": _as_utc(todo.completed_at).isoformat() if todo.completed_at else None,
+        "updated_at": _as_utc(todo.updated_at).isoformat() if todo.updated_at else None,
+    }
+
+
+def _reminder_snapshot(reminder: Reminder | None) -> dict | None:
+    if reminder is None:
+        return None
+    return {
+        "reminder_id": reminder.reminder_id,
+        "matter_id": reminder.matter_id,
+        "todo_id": reminder.todo_id,
+        "title": reminder.title,
+        "note": reminder.note,
+        "trigger_at": _as_utc(reminder.trigger_at).isoformat() if reminder.trigger_at else None,
+        "status": reminder.status,
+        "sync_status": reminder.sync_status,
+        "source": reminder.source,
+        "source_external_id": reminder.source_external_id,
+        "source_scope_key": reminder.source_scope_key,
+        "data_source_id": reminder.data_source_id,
+        "source_updated_at": (
+            _as_utc(reminder.source_updated_at).isoformat()
+            if reminder.source_updated_at
+            else None
+        ),
+        "source_version": reminder.source_version,
+        "completed_at": _as_utc(reminder.completed_at).isoformat() if reminder.completed_at else None,
+        "cancelled_at": _as_utc(reminder.cancelled_at).isoformat() if reminder.cancelled_at else None,
+        "result_json": reminder.result_json,
+        "updated_at": _as_utc(reminder.updated_at).isoformat() if reminder.updated_at else None,
+    }
+
+
+def _snap_dt(value: str | None) -> datetime | None:
+    return _parse_dt(value) if value else None
+
+
+def _schedule_matches(schedule: ScheduleEvent | None, snapshot: dict) -> bool:
+    if schedule is None or snapshot is None:
+        return False
+    if snapshot.get("updated_at") and _as_utc(schedule.updated_at) != _snap_dt(
+        snapshot["updated_at"]
+    ):
+        return False
+    return (
+        schedule.title == snapshot.get("title")
+        and _as_utc(schedule.starts_at) == _snap_dt(snapshot.get("starts_at"))
+        and _as_utc(schedule.ends_at) == _snap_dt(snapshot.get("ends_at"))
+        and schedule.location == snapshot.get("location")
+        and schedule.deleted_at is None
+    )
+
+
+def _todo_matches(todo: MatterTodo | None, snapshot: dict) -> bool:
+    if todo is None or snapshot is None:
+        return False
+    if snapshot.get("updated_at") and _as_utc(todo.updated_at) != _snap_dt(
+        snapshot["updated_at"]
+    ):
+        return False
+    return (
+        todo.title == snapshot.get("title")
+        and todo.status == snapshot.get("status")
+        and _as_utc(todo.due_at) == _snap_dt(snapshot.get("due_at"))
+        and _as_utc(todo.reminder_at) == _snap_dt(snapshot.get("reminder_at"))
+        and _as_utc(todo.completed_at) == _snap_dt(snapshot.get("completed_at"))
+    )
+
+
+def _reminder_matches(reminder: Reminder | None, snapshot: dict) -> bool:
+    if reminder is None or snapshot is None:
+        return False
+    if snapshot.get("updated_at") and _as_utc(reminder.updated_at) != _snap_dt(
+        snapshot["updated_at"]
+    ):
+        return False
+    return (
+        reminder.title == snapshot.get("title")
+        and _as_utc(reminder.trigger_at) == _snap_dt(snapshot.get("trigger_at"))
+        and reminder.status == snapshot.get("status")
+        and _as_utc(reminder.completed_at) == _snap_dt(snapshot.get("completed_at"))
+        and _as_utc(reminder.cancelled_at) == _snap_dt(snapshot.get("cancelled_at"))
+    )
+
+
+MATTER_SNAPSHOT_KEYS = frozenset({"title", "goal", "status", "next_step"})
+SCHEDULE_SNAPSHOT_KEYS = frozenset(
+    {
+        "schedule_id",
+        "matter_id",
+        "title",
+        "starts_at",
+        "ends_at",
+        "location",
+        "status",
+        "source_run_id",
+        "source",
+        "sync_status",
+        "source_external_id",
+        "source_scope_key",
+        "source_updated_at",
+        "source_version",
+        "data_source_id",
+        "latitude",
+        "longitude",
+        "deleted_at",
+        "updated_at",
+    }
+)
+TODO_SNAPSHOT_KEYS = frozenset(
+    {
+        "todo_id",
+        "matter_id",
+        "title",
+        "status",
+        "position",
+        "due_at",
+        "reminder_at",
+        "completed_at",
+        "updated_at",
+    }
+)
+REMINDER_SNAPSHOT_KEYS = frozenset(
+    {
+        "reminder_id",
+        "matter_id",
+        "todo_id",
+        "title",
+        "note",
+        "trigger_at",
+        "status",
+        "sync_status",
+        "source",
+        "source_external_id",
+        "source_scope_key",
+        "data_source_id",
+        "source_updated_at",
+        "source_version",
+        "completed_at",
+        "cancelled_at",
+        "result_json",
+        "updated_at",
+    }
+)
+
+
+def _snapshot_complete(snapshot, keys: frozenset[str]) -> bool:
+    return isinstance(snapshot, dict) and keys.issubset(snapshot)
+
+
+def _change_snapshot_incomplete(before: dict, after: dict) -> bool:
+    """Reject legacy changes that cannot prove a complete before/after restore."""
+
+    if not _snapshot_complete(before.get("matter"), MATTER_SNAPSHOT_KEYS):
+        return True
+    if not _snapshot_complete(after.get("matter"), MATTER_SNAPSHOT_KEYS):
+        return True
+    if "matter_version" not in after:
+        return True
+
+    after_schedule = after.get("schedule")
+    if after_schedule is not None:
+        if "schedule" not in before or not _snapshot_complete(
+            after_schedule, SCHEDULE_SNAPSHOT_KEYS
+        ):
+            return True
+        before_schedule = before.get("schedule")
+        if before_schedule is not None and not _snapshot_complete(
+            before_schedule, SCHEDULE_SNAPSHOT_KEYS
+        ):
+            return True
+
+    collection_specs = (
+        (
+            "adjacent_schedules",
+            SCHEDULE_SNAPSHOT_KEYS,
+            "schedule_id",
+            None,
+        ),
+        ("todos", TODO_SNAPSHOT_KEYS, "todo_id", "completed_todo_ids"),
+        ("reminders", REMINDER_SNAPSHOT_KEYS, "reminder_id", "reminder_ids"),
+    )
+    for collection, keys, id_key, legacy_ids in collection_specs:
+        entries = after.get(collection)
+        if entries is None:
+            # Older rows may omit an unchanged collection. Callers reject the
+            # separate legacy id lists below when the change actually touched it.
+            continue
+        if not isinstance(entries, list):
+            return True
+        if collection not in before or not isinstance(before.get(collection), list):
+            return True
+        before_by_id = {
+            item.get(id_key): item
+            for item in before.get(collection) or []
+            if isinstance(item, dict) and item.get(id_key)
+        }
+        for item in entries:
+            if not _snapshot_complete(item, keys):
+                return True
+            prior = before_by_id.get(item.get(id_key))
+            if prior is not None and not _snapshot_complete(prior, keys):
+                return True
+        touched_ids = set(after.get(legacy_ids) or []) if legacy_ids else set()
+        if touched_ids - {
+            item.get(id_key)
+            for item in entries
+            if isinstance(item, dict)
+        }:
+            return True
+
+    # Old snapshots recorded only these id lists. A non-empty list without its
+    # matching after snapshot cannot prove what the complete previous state was.
+    if after.get("completed_todo_ids") and not after.get("todos"):
+        return True
+    if after.get("reminder_ids") and not after.get("reminders"):
+        return True
+    return False
+
+
+def _affected_matter_ids(after: dict) -> list[str]:
+    return sorted(
+        {
+            item["matter_id"]
+            for key in ("adjacent_schedules", "affected")
+            for item in after.get(key) or []
+            if isinstance(item, dict) and item.get("matter_id")
+        }
+    )
 
 
 def _serialize_schedule(schedule: ScheduleEvent) -> dict:
@@ -871,6 +1143,26 @@ async def get_draft(
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
     payload = draft.payload_json or {}
     if draft.status == "preview" and payload.get("schedule"):
+        adjusted = None
+        adjustment = payload.get("previous_adjustment")
+        if adjustment and payload.get("selected_option") == "B":
+            target = await db.scalar(
+                select(ScheduleEvent).where(
+                    ScheduleEvent.schedule_id == adjustment.get("schedule_id"),
+                    ScheduleEvent.user_id == user.user_id,
+                    ScheduleEvent.deleted_at.is_(None),
+                )
+            )
+            if target is not None:
+                delta = timedelta(seconds=int(adjustment.get("shift_seconds") or 0))
+                adjusted = {
+                    target.schedule_id: (
+                        ensure_aware(target.starts_at) + delta,
+                        (ensure_aware(target.ends_at) + delta)
+                        if target.ends_at
+                        else None,
+                    )
+                }
         conflict = await _conflict_for_payload(
             db,
             runtime,
@@ -879,6 +1171,7 @@ async def get_draft(
             settings=settings,
             timezone=timezone,
             exclude_schedule_id=payload["schedule"].get("schedule_id"),
+            adjusted=adjusted,
         )
         draft.conflict_json = _jsonable(conflict) if conflict else None
         await db.commit()
@@ -909,7 +1202,12 @@ async def select_matter(
     matter = await _get_matter(db, user, payload.matter_id)
     if matter.status not in ("active", "waiting"):
         raise ConflictError("matter_not_active", "该事项当前不可接续。")
-    body = dict(draft.payload_json or {})
+    source = (
+        draft.option_base_json
+        if draft.option_base_json is not None
+        else draft.payload_json or {}
+    )
+    body = deepcopy(source)
     body["matter_id"] = matter.matter_id
     body["requires_choice"] = False
     body["kind"] = "update"
@@ -917,6 +1215,8 @@ async def select_matter(
     # must not survive this re-binding.
     body.pop("selected_option", None)
     body.pop("previous_adjustment", None)
+    body.pop("affected", None)
+    draft.option_base_json = None
     draft.base_matter_version = matter.version
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
     schedule = body.get("schedule")
@@ -972,15 +1272,40 @@ async def apply_option(
     if draft.version != payload.expected_version:
         raise ConflictError("preview_stale", "预览已更新，请刷新后再选。")
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
-    body = dict(draft.payload_json or {})
+    if draft.base_schedule_id:
+        base_schedule = await db.scalar(
+            select(ScheduleEvent).where(
+                ScheduleEvent.schedule_id == draft.base_schedule_id,
+                ScheduleEvent.user_id == user.user_id,
+                ScheduleEvent.deleted_at.is_(None),
+            )
+        )
+        if base_schedule is None or (
+            draft.base_schedule_updated_at is not None
+            and ensure_aware(base_schedule.updated_at)
+            != ensure_aware(draft.base_schedule_updated_at)
+        ):
+            raise ConflictError(
+                "schedule_changed", "关联日程已变化，请重新读取预览后再选。"
+            )
+
+    # Every selection is rebuilt from the same preview baseline. This prevents
+    # B -> A from keeping B's neighbour shift, and makes A -> A idempotent.
+    if draft.option_base_json is not None:
+        base = _option_baseline(draft.option_base_json)
+    else:
+        base = _option_baseline(draft.payload_json or {})
+        draft.option_base_json = _jsonable(base)
+    body = deepcopy(base)
+
     conflict = await _conflict_for_payload(
         db,
         runtime,
         user,
-        body,
+        base,
         settings=settings,
         timezone=timezone,
-        exclude_schedule_id=(body.get("schedule") or {}).get("schedule_id"),
+        exclude_schedule_id=(base.get("schedule") or {}).get("schedule_id"),
     )
     options = {option["option_id"]: option for option in (conflict or {}).get("options", [])}
     option = options.get(payload.option_id)
@@ -988,6 +1313,12 @@ async def apply_option(
         raise InvalidRequestError(
             "option_not_available", "当前预览没有这个调整方案，请重新计算冲突。"
         )
+    if option.get("executable") is False:
+        raise InvalidRequestError(
+            "option_not_executable",
+            option.get("unavailable_reason") or "当前方案不能完整执行，请选择其他方案。",
+        )
+
     adjusted: dict[str, tuple[datetime, datetime | None]] = {}
     if payload.option_id == "A":
         schedule = body.get("schedule")
@@ -998,6 +1329,8 @@ async def apply_option(
         end = _parse_dt(schedule.get("ends_at"), timezone)
         schedule["starts_at"] = _jsonable(start + shift)
         schedule["ends_at"] = _jsonable(end + shift) if end else None
+        body.pop("previous_adjustment", None)
+        body["affected"] = []
     elif payload.option_id == "B":
         target_id = option.get("target_schedule_id")
         if not target_id:
@@ -1011,13 +1344,56 @@ async def apply_option(
         )
         if target is None:
             raise NotFoundError("schedule_not_found", "需要调整的日程不存在。")
+        if not can_edit_schedule(target.source, target.data_source_id):
+            raise InvalidRequestError(
+                "option_not_executable",
+                "需要调整的相邻日程来自只读副本，不能在应用内修改。",
+            )
         delta = timedelta(seconds=int(option.get("shift_seconds") or 0))
-        base_updated = target.updated_at
+        target_matter = (
+            await db.scalar(
+                select(Matter).where(
+                    Matter.matter_id == target.matter_id,
+                    Matter.user_id == user.user_id,
+                )
+            )
+            if target.matter_id
+            else None
+        )
         body["previous_adjustment"] = {
             "schedule_id": target.schedule_id,
+            "matter_id": target.matter_id,
+            "matter_title": target_matter.title if target_matter else None,
+            "title": target.title,
+            "before_starts_at": _jsonable(target.starts_at),
+            "before_ends_at": _jsonable(target.ends_at) if target.ends_at else None,
+            "after_starts_at": _jsonable(ensure_aware(target.starts_at) + delta),
+            "after_ends_at": (
+                _jsonable(ensure_aware(target.ends_at) + delta)
+                if target.ends_at
+                else None
+            ),
             "shift_seconds": int(option.get("shift_seconds") or 0),
-            "base_updated_at": _jsonable(base_updated),
+            "base_updated_at": _jsonable(target.updated_at),
         }
+        body["affected"] = [
+            {
+                "type": "schedule",
+                "matter_id": target.matter_id,
+                "matter_title": target_matter.title if target_matter else None,
+                "schedule_id": target.schedule_id,
+                "title": target.title,
+                "source": target.source,
+                "before_starts_at": _jsonable(target.starts_at),
+                "before_ends_at": _jsonable(target.ends_at) if target.ends_at else None,
+                "after_starts_at": _jsonable(ensure_aware(target.starts_at) + delta),
+                "after_ends_at": (
+                    _jsonable(ensure_aware(target.ends_at) + delta)
+                    if target.ends_at
+                    else None
+                ),
+            }
+        ]
         adjusted[target.schedule_id] = (
             ensure_aware(target.starts_at) + delta,
             (ensure_aware(target.ends_at) + delta) if target.ends_at else None,
@@ -1030,6 +1406,10 @@ async def apply_option(
                     {"todo_id": None, "title": todo_title, "due_at": None,
                      "reminder_at": None, "status": "open"}
                 )
+    else:
+        body.pop("previous_adjustment", None)
+        body["affected"] = []
+
     body["selected_option"] = payload.option_id
     draft.payload_json = _jsonable(body)
     draft.version += 1
@@ -1063,7 +1443,12 @@ async def patch_draft(
     if draft.version != payload.expected_version:
         raise ConflictError("preview_stale", "预览已更新，请刷新后再改。")
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
-    merged = dict(draft.payload_json or {})
+    source = (
+        draft.option_base_json
+        if draft.option_base_json is not None
+        else draft.payload_json or {}
+    )
+    merged = deepcopy(source)
     changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
 
     for key in ("title", "goal", "changes_note", "next_step"):
@@ -1145,6 +1530,9 @@ async def patch_draft(
 
     merged.pop("previous_adjustment", None)
     merged.pop("selected_option", None)
+    merged.pop("affected", None)
+    # A manual edit invalidates both the option baseline and the selection.
+    draft.option_base_json = None
     schedule = merged.get("schedule")
     conflict = await _conflict_for_payload(
         db,
@@ -1197,6 +1585,18 @@ async def confirm_draft(
         raise ConflictError("draft_cancelled", "该预览已取消，请重新整理。")
     if draft.version != body.expected_version:
         raise ConflictError("preview_stale", "预览已更新，请刷新后确认。")
+
+    other_key = await db.scalar(
+        select(MatterDraft).where(
+            MatterDraft.user_id == user.user_id,
+            MatterDraft.confirm_key == idempotency_key,
+            MatterDraft.draft_id != draft.draft_id,
+        )
+    )
+    if other_key is not None:
+        raise ConflictError(
+            "idempotency_key_reused", "该确认请求标识已用于另一次确认。"
+        )
 
     payload = dict(draft.payload_json or {})
     if body.option_id is not None and payload.get("selected_option") != body.option_id:
@@ -1259,6 +1659,17 @@ async def confirm_draft(
             ).all()
             existing_todos = {row.todo_id: row for row in rows}
 
+        if draft.base_todo_id:
+            base_todo = existing_todos.get(draft.base_todo_id)
+            if base_todo is None:
+                raise NotFoundError("todo_not_found", "预览对应的待办不存在。")
+            if draft.base_todo_updated_at is not None and ensure_aware(
+                base_todo.updated_at
+            ) != ensure_aware(draft.base_todo_updated_at):
+                raise ConflictError(
+                    "todo_changed", "该待办已被其他操作修改，请刷新后再确认。"
+                )
+
         proposed = payload.get("schedule")
         schedule_row: ScheduleEvent | None = None
         if proposed and proposed.get("schedule_id"):
@@ -1275,7 +1686,7 @@ async def confirm_draft(
                 raise ConflictError(
                     "schedule_not_in_matter", "该日程属于另一个事项，不能挂到当前事项。"
                 )
-            if schedule_row.source not in (None, "web_native"):
+            if not can_edit_schedule(schedule_row.source, schedule_row.data_source_id):
                 raise InvalidRequestError(
                     "schedule_not_editable", "设备导入的日程不能在应用内改写。"
                 )
@@ -1294,6 +1705,12 @@ async def confirm_draft(
                 raise InvalidRequestError("todo_not_in_matter", "待办不属于该事项。")
 
         adjustment = payload.get("previous_adjustment")
+        if adjustment and payload.get("selected_option") != "B":
+            raise ConflictError(
+                "option_not_selected", "相邻日程调整没有对应已选方案，请重新选择。"
+            )
+        adjacent_before = None
+        adjacent_after = None
         if adjustment:
             target = await db.scalar(
                 select(ScheduleEvent).where(
@@ -1304,9 +1721,15 @@ async def confirm_draft(
             )
             if target is None:
                 raise NotFoundError("schedule_not_found", "需要调整的相邻日程不存在。")
+            if not can_edit_schedule(target.source, target.data_source_id):
+                raise InvalidRequestError(
+                    "option_not_executable",
+                    "需要调整的相邻日程来自只读副本，不能在应用内修改。",
+                )
             base = _parse_dt(adjustment["base_updated_at"], timezone)
             if ensure_aware(target.updated_at) != base:
                 raise ConflictError("schedule_changed", "相邻日程已变化，请重新选择方案。")
+            adjacent_before = _schedule_snapshot(target)
             delta = timedelta(seconds=int(adjustment["shift_seconds"]))
             result = await db.execute(
                 update(ScheduleEvent)
@@ -1325,9 +1748,23 @@ async def confirm_draft(
             )
             if result.rowcount == 0:
                 raise ConflictError("schedule_changed", "相邻日程已变化，请重新选择方案。")
+            await db.refresh(target)
+            adjacent_after = _schedule_snapshot(target)
 
         now = datetime.now(UTC)
-        before = {"matter": None, "schedule": None}
+        before = {
+            "matter": None,
+            "schedule": None,
+            "todos": [],
+            "reminders": [],
+            "adjacent_schedules": [adjacent_before] if adjacent_before else [],
+        }
+        before_todos: dict[str, dict] = {}
+        before_reminders: dict[str, dict] = {}
+        affected_todos: dict[str, MatterTodo] = {}
+        affected_reminders: dict[str, Reminder] = {}
+        created_todo_ids: list[str] = []
+        created_reminder_ids: list[str] = []
         if payload["kind"] == "create":
             matter = Matter(
                 user_id=user.user_id,
@@ -1398,12 +1835,12 @@ async def confirm_draft(
                     raise ConflictError("schedule_changed", "关联日程已变化，请重新整理。")
                 await db.refresh(schedule_row)
 
-        reminders_created: list[Reminder] = []
         position = len(existing_todos)
         for item in payload.get("todos") or []:
             todo_id = item.get("todo_id")
             if todo_id and todo_id in existing_todos:
                 todo = existing_todos[todo_id]
+                before_todos.setdefault(todo.todo_id, _todo_snapshot(todo))
                 todo.title = item["title"]
                 todo.due_at = _parse_dt(item.get("due_at"), timezone)
                 todo.reminder_at = _parse_dt(item.get("reminder_at"), timezone)
@@ -1420,6 +1857,8 @@ async def confirm_draft(
                 db.add(todo)
                 await db.flush()
                 existing_todos[todo.todo_id] = todo
+                created_todo_ids.append(todo.todo_id)
+            affected_todos[todo.todo_id] = todo
             pending = await db.scalar(
                 select(Reminder).where(
                     Reminder.user_id == user.user_id,
@@ -1427,6 +1866,11 @@ async def confirm_draft(
                     Reminder.status == "pending",
                 )
             )
+            if pending is not None:
+                before_reminders.setdefault(
+                    pending.reminder_id, _reminder_snapshot(pending)
+                )
+                affected_reminders[pending.reminder_id] = pending
             if todo.reminder_at is None:
                 if pending is not None:
                     pending.status = "cancelled"
@@ -1444,7 +1888,8 @@ async def confirm_draft(
                 )
                 db.add(reminder)
                 await db.flush()
-                reminders_created.append(reminder)
+                affected_reminders[reminder.reminder_id] = reminder
+                created_reminder_ids.append(reminder.reminder_id)
             else:
                 pending.trigger_at = todo.reminder_at
                 pending.title = f"提醒：{todo.title}"
@@ -1452,8 +1897,42 @@ async def confirm_draft(
         for todo_id in payload.get("complete_todo_ids") or []:
             todo = existing_todos.get(todo_id)
             if todo is not None:
+                if todo.todo_id not in before_todos:
+                    before_todos[todo.todo_id] = _todo_snapshot(todo)
+                affected_todos[todo.todo_id] = todo
                 todo.status = "done"
                 todo.completed_at = now
+
+        await db.flush()
+        all_after_todos = {
+            todo_id: _todo_snapshot(todo)
+            for todo_id, todo in affected_todos.items()
+        }
+        all_after_reminders = {
+            reminder_id: _reminder_snapshot(reminder)
+            for reminder_id, reminder in affected_reminders.items()
+        }
+        after_todos = {
+            todo_id: snapshot
+            for todo_id, snapshot in all_after_todos.items()
+            if before_todos.get(todo_id) is None or snapshot != before_todos.get(todo_id)
+        }
+        after_reminders = {
+            reminder_id: snapshot
+            for reminder_id, snapshot in all_after_reminders.items()
+            if before_reminders.get(reminder_id) is None
+            or snapshot != before_reminders.get(reminder_id)
+        }
+        before["todos"] = [
+            before_todos[todo_id]
+            for todo_id in after_todos
+            if todo_id in before_todos
+        ]
+        before["reminders"] = [
+            before_reminders[reminder_id]
+            for reminder_id in after_reminders
+            if reminder_id in before_reminders
+        ]
 
         conflict = await _conflict_for_payload(
             db,
@@ -1493,8 +1972,17 @@ async def confirm_draft(
                 {
                     "matter": _matter_fields(matter),
                     "matter_version": matter.version,
-                    "schedule": _schedule_snapshot(schedule_row),
-                    "reminder_ids": [reminder.reminder_id for reminder in reminders_created],
+                    "schedule": (
+                        _schedule_snapshot(schedule_row)
+                        if body.create_schedule and proposed
+                        else None
+                    ),
+                    "todos": list(after_todos.values()),
+                    "reminders": list(after_reminders.values()),
+                    "adjacent_schedules": [adjacent_after] if adjacent_after else [],
+                    "created_todo_ids": created_todo_ids,
+                    "created_reminder_ids": created_reminder_ids,
+                    "reminder_ids": created_reminder_ids,
                     "completed_todo_ids": payload.get("complete_todo_ids") or [],
                 }
             ),
@@ -1504,12 +1992,28 @@ async def confirm_draft(
         draft.confirm_key = idempotency_key
         draft.result_json = {
             "matter_id": matter.matter_id,
-            "schedule_id": schedule_row.schedule_id if schedule_row else None,
-            "reminder_ids": [reminder.reminder_id for reminder in reminders_created],
+            "schedule_id": schedule_row.schedule_id
+            if (body.create_schedule and schedule_row)
+            else None,
+            "reminder_ids": created_reminder_ids,
             "change_id": change.change_id,
             "conflict": _jsonable(conflict) if conflict else None,
         }
         await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        other_key = await db.scalar(
+            select(MatterDraft).where(
+                MatterDraft.user_id == user.user_id,
+                MatterDraft.confirm_key == idempotency_key,
+                MatterDraft.draft_id != draft.draft_id,
+            )
+        )
+        if other_key is not None:
+            raise ConflictError(
+                "idempotency_key_reused", "该确认请求标识已用于另一次确认。"
+            ) from None
+        raise
     except AssistantError:
         await db.rollback()
         raise
@@ -1594,11 +2098,43 @@ async def revert_change(
     change = await db.scalar(
         select(MatterChange).where(
             MatterChange.change_id == change_id,
-            MatterChange.matter_id == matter.matter_id,
             MatterChange.user_id == user.user_id,
         )
     )
     if change is None:
+        raise NotFoundError("change_not_found", "变更记录不存在。")
+    if change.matter_id != matter.matter_id:
+        after = change.after_json or {}
+        current_schedule_ids = set(
+            (
+                await db.scalars(
+                    select(ScheduleEvent.schedule_id).where(
+                        ScheduleEvent.user_id == user.user_id,
+                        ScheduleEvent.matter_id == matter.matter_id,
+                    )
+                )
+            ).all()
+        )
+        linked_to_current = matter.matter_id in _affected_matter_ids(after) or any(
+            isinstance(item, dict)
+            and item.get("schedule_id") in current_schedule_ids
+            for key in ("adjacent_schedules", "affected")
+            for item in after.get(key) or []
+        )
+        if linked_to_current:
+            source_matter = await db.scalar(
+                select(Matter).where(
+                    Matter.matter_id == change.matter_id,
+                    Matter.user_id == user.user_id,
+                )
+            )
+            source_label = (
+                f"事项「{source_matter.title}」" if source_matter else "来源事项"
+            )
+            raise ConflictError(
+                "revert_from_source_matter",
+                f"该变更由{source_label}发起，请到来源事项处理撤回。",
+            )
         raise NotFoundError("change_not_found", "变更记录不存在。")
     if change.reverted_at is not None:
         raise ConflictError("already_reverted", "该变更已撤回。")
@@ -1624,81 +2160,142 @@ async def revert_change(
     after = change.after_json or {}
     now = datetime.now(UTC)
 
-    after_schedule = after.get("schedule")
-    before_schedule = before.get("schedule")
-    if after_schedule:
+    async def current_schedule(snapshot: dict) -> ScheduleEvent:
         current = await db.scalar(
             select(ScheduleEvent).where(
-                ScheduleEvent.schedule_id == after_schedule["schedule_id"],
+                ScheduleEvent.schedule_id == snapshot.get("schedule_id"),
                 ScheduleEvent.user_id == user.user_id,
             )
         )
-        if current is None:
-            raise ConflictError("schedule_changed", "关联日程已不存在。")
-        same = (
-            current.title == after_schedule["title"]
-            and _as_utc(current.starts_at)
-            == _parse_dt(after_schedule["starts_at"])
-            and _as_utc(current.ends_at)
-            == (
-                _parse_dt(after_schedule["ends_at"])
-                if after_schedule.get("ends_at")
-                else None
-            )
-            and current.location == after_schedule.get("location")
-        )
-        if not same:
+        if not _schedule_matches(current, snapshot):
             raise ConflictError("schedule_changed", "关联日程已被修改，不能覆盖撤回。")
+        return current
+
+    async def restore_schedule(current: ScheduleEvent, snapshot: dict) -> None:
+        result = await db.execute(
+            update(ScheduleEvent)
+            .where(
+                ScheduleEvent.schedule_id == current.schedule_id,
+                ScheduleEvent.user_id == user.user_id,
+                ScheduleEvent.updated_at == current.updated_at,
+            )
+            .values(
+                matter_id=snapshot.get("matter_id"),
+                title=snapshot["title"],
+                starts_at=_parse_dt(snapshot["starts_at"]),
+                ends_at=_parse_dt(snapshot.get("ends_at")),
+                location=snapshot.get("location"),
+                status=snapshot.get("status") or "scheduled",
+                source_run_id=snapshot.get("source_run_id"),
+                latitude=snapshot.get("latitude"),
+                longitude=snapshot.get("longitude"),
+                source=snapshot.get("source"),
+                sync_status=snapshot.get("sync_status") or "local_only",
+                source_external_id=snapshot.get("source_external_id"),
+                source_scope_key=snapshot.get("source_scope_key"),
+                source_updated_at=_parse_dt(snapshot.get("source_updated_at")),
+                source_version=snapshot.get("source_version"),
+                data_source_id=snapshot.get("data_source_id"),
+                deleted_at=None,
+            )
+        )
+        if result.rowcount == 0:
+            raise ConflictError("schedule_changed", "关联日程已被修改，不能覆盖撤回。")
+
+    after_schedule = after.get("schedule")
+    before_schedule = before.get("schedule")
+    if after_schedule:
+        current = await current_schedule(after_schedule)
         if before_schedule is None:
             result = await db.execute(
                 update(ScheduleEvent)
                 .where(
                     ScheduleEvent.schedule_id == current.schedule_id,
                     ScheduleEvent.user_id == user.user_id,
+                    ScheduleEvent.updated_at == current.updated_at,
                 )
                 .values(status="cancelled", deleted_at=now)
             )
+            if result.rowcount == 0:
+                raise ConflictError("schedule_changed", "关联日程已被修改，不能覆盖撤回。")
         else:
-            result = await db.execute(
-                update(ScheduleEvent)
-                .where(
-                    ScheduleEvent.schedule_id == current.schedule_id,
-                    ScheduleEvent.user_id == user.user_id,
-                )
-                .values(
-                    title=before_schedule["title"],
-                    starts_at=_parse_dt(before_schedule["starts_at"]),
-                    ends_at=_parse_dt(before_schedule.get("ends_at")),
-                    location=before_schedule.get("location"),
-                    latitude=before_schedule.get("latitude"),
-                    longitude=before_schedule.get("longitude"),
-                    sync_status="local_only",
-                    deleted_at=None,
+            await restore_schedule(current, before_schedule)
+
+    before_adjacent = {
+        item.get("schedule_id"): item
+        for item in before.get("adjacent_schedules") or []
+    }
+    for adjacent_after in after.get("adjacent_schedules") or []:
+        current = await current_schedule(adjacent_after)
+        adjacent_before = before_adjacent.get(adjacent_after.get("schedule_id"))
+        if adjacent_before is None:
+            raise ConflictError(
+                "schedule_changed", "缺少相邻日程的撤回依据，不能覆盖撤回。"
+            )
+        await restore_schedule(current, adjacent_before)
+
+    after_reminders = {
+        item.get("reminder_id"): item for item in after.get("reminders") or []
+    }
+    before_reminders = {
+        item.get("reminder_id"): item for item in before.get("reminders") or []
+    }
+    if after_reminders:
+        for reminder_id, reminder_after in after_reminders.items():
+            current = await db.scalar(
+                select(Reminder).where(
+                    Reminder.reminder_id == reminder_id,
+                    Reminder.user_id == user.user_id,
                 )
             )
-        if result.rowcount == 0:
-            raise ConflictError("schedule_changed", "关联日程已被修改，不能覆盖撤回。")
-
-    for reminder_id in after.get("reminder_ids") or []:
-        await db.execute(
-            update(Reminder)
-            .where(Reminder.reminder_id == reminder_id, Reminder.status == "pending")
-            .values(status="cancelled", cancelled_at=now)
-        )
-    for todo_id in after.get("completed_todo_ids") or []:
-        await db.execute(
-            update(MatterTodo)
-            .where(
-                MatterTodo.todo_id == todo_id,
-                MatterTodo.matter_id == matter.matter_id,
-                MatterTodo.user_id == user.user_id,
-                # Later manual completion must not be overwritten by this revert.
-                MatterTodo.completed_at.is_not(None),
-                MatterTodo.completed_at <= change.created_at,
+            if not _reminder_matches(current, reminder_after):
+                raise ConflictError(
+                    "reminder_changed", "提醒已被修改，不能覆盖撤回。"
+                )
+            reminder_before = before_reminders.get(reminder_id)
+            if reminder_before is None:
+                await db.delete(current)
+            else:
+                current.title = reminder_before["title"]
+                current.note = reminder_before.get("note")
+                current.trigger_at = _parse_dt(reminder_before["trigger_at"])
+                current.status = reminder_before["status"]
+                current.sync_status = reminder_before.get("sync_status")
+                current.source = reminder_before.get("source")
+                current.source_external_id = reminder_before.get("source_external_id")
+                current.source_scope_key = reminder_before.get("source_scope_key")
+                current.data_source_id = reminder_before.get("data_source_id")
+                current.source_updated_at = _parse_dt(
+                    reminder_before.get("source_updated_at")
+                )
+                current.source_version = reminder_before.get("source_version")
+                current.completed_at = _parse_dt(reminder_before.get("completed_at"))
+                current.cancelled_at = _parse_dt(reminder_before.get("cancelled_at"))
+                current.result_json = reminder_before.get("result_json")
+    after_todos = {item.get("todo_id"): item for item in after.get("todos") or []}
+    before_todos = {item.get("todo_id"): item for item in before.get("todos") or []}
+    if after_todos:
+        for todo_id, todo_after in after_todos.items():
+            current = await db.scalar(
+                select(MatterTodo).where(
+                    MatterTodo.todo_id == todo_id,
+                    MatterTodo.matter_id == matter.matter_id,
+                    MatterTodo.user_id == user.user_id,
+                )
             )
-            .values(status="open", completed_at=None)
-        )
-
+            if not _todo_matches(current, todo_after):
+                raise ConflictError("todo_changed", "待办已被修改，不能覆盖撤回。")
+            todo_before = before_todos.get(todo_id)
+            if todo_before is None:
+                await db.delete(current)
+            else:
+                current.title = todo_before["title"]
+                current.status = todo_before["status"]
+                current.due_at = _parse_dt(todo_before.get("due_at"))
+                current.reminder_at = _parse_dt(todo_before.get("reminder_at"))
+                current.completed_at = _parse_dt(todo_before.get("completed_at"))
+                if todo_before.get("position") is not None:
+                    current.position = todo_before["position"]
     values = {"version": matter.version + 1}
     if before.get("matter"):
         values.update(before["matter"])
@@ -1753,6 +2350,20 @@ async def _change_eligibility(
     after_version = after.get("matter_version")
     if after_version is not None and matter.version != after_version:
         return False, "matter_changed", "事项在此之后被直接修改过。"
+    if change.change_type == "create":
+        return (
+            False,
+            "creation_revert_unsupported",
+            "新建事项的完整撤回尚未定义（规划未决定是否删除新事项）；当前不能声称已撤销。",
+        )
+    before = change.before_json or {}
+    if _change_snapshot_incomplete(before, after):
+        return (
+            False,
+            "incomplete_change_snapshot",
+            "这条旧变更缺少完整的前后快照，服务端无法保证全部恢复，因此不能撤回。",
+        )
+
     schedule = after.get("schedule")
     if schedule:
         current = await db.scalar(
@@ -1761,16 +2372,40 @@ async def _change_eligibility(
                 ScheduleEvent.user_id == user.user_id,
             )
         )
-        if current is None or current.deleted_at is not None:
-            return False, "schedule_changed", "关联日程已被删除。"
-        same = (
-            current.title == schedule.get("title")
-            and _as_utc(current.starts_at) == _parse_dt(schedule.get("starts_at"))
-            and _as_utc(current.ends_at) == _parse_dt(schedule.get("ends_at"))
-            and current.location == schedule.get("location")
+        if not _schedule_matches(current, schedule):
+            return False, "schedule_changed", "关联日程在此之后被修改或删除了。"
+
+    for adjacent in after.get("adjacent_schedules") or []:
+        current = await db.scalar(
+            select(ScheduleEvent).where(
+                ScheduleEvent.schedule_id == adjacent.get("schedule_id"),
+                ScheduleEvent.user_id == user.user_id,
+            )
         )
-        if not same:
-            return False, "schedule_changed", "关联日程在此之后被修改过。"
+        if not _schedule_matches(current, adjacent):
+            return False, "schedule_changed", "相邻日程在此之后被修改或删除了。"
+
+    for todo_snapshot in after.get("todos") or []:
+        current = await db.scalar(
+            select(MatterTodo).where(
+                MatterTodo.todo_id == todo_snapshot.get("todo_id"),
+                MatterTodo.matter_id == matter.matter_id,
+                MatterTodo.user_id == user.user_id,
+            )
+        )
+        if not _todo_matches(current, todo_snapshot):
+            return False, "todo_changed", "待办在此之后被修改或删除了。"
+
+    for reminder_snapshot in after.get("reminders") or []:
+        current = await db.scalar(
+            select(Reminder).where(
+                Reminder.reminder_id == reminder_snapshot.get("reminder_id"),
+                Reminder.user_id == user.user_id,
+            )
+        )
+        if not _reminder_matches(current, reminder_snapshot):
+            return False, "reminder_changed", "提醒在此之后被修改或删除了。"
+
     return True, None, None
 
 
@@ -1778,31 +2413,113 @@ async def list_changes(
     db: AsyncSession, user: User, matter_id: str
 ) -> list[dict]:
     matter = await _get_matter(db, user, matter_id)
+    current_schedule_ids = set(
+        (
+            await db.scalars(
+                select(ScheduleEvent.schedule_id).where(
+                    ScheduleEvent.user_id == user.user_id,
+                    ScheduleEvent.matter_id == matter.matter_id,
+                )
+            )
+        ).all()
+    )
+
+    def related_exists(path: str, alias_name: str):
+        values = (
+            func.json_each(MatterChange.after_json, path)
+            .table_valued("value")
+            .alias(alias_name)
+        )
+        return (
+            select(1)
+            .select_from(values)
+            .where(
+                or_(
+                    func.json_extract(values.c.value, "$.matter_id")
+                    == matter.matter_id,
+                    func.json_extract(values.c.value, "$.schedule_id").in_(
+                        current_schedule_ids
+                    ),
+                )
+            )
+            .exists()
+        )
+
+    related_by_schedule = or_(
+        related_exists("$.adjacent_schedules", "affected_schedule"),
+        related_exists("$.affected", "affected_record"),
+    )
     rows = list(
         (
             await db.scalars(
                 select(MatterChange)
                 .where(
-                    MatterChange.matter_id == matter.matter_id,
                     MatterChange.user_id == user.user_id,
+                    or_(
+                        MatterChange.matter_id == matter.matter_id,
+                        related_by_schedule,
+                    ),
                 )
                 .order_by(MatterChange.created_at.desc())
                 .limit(50)
             )
         ).all()
     )
+    source_matter_ids = {row.matter_id for row in rows if row.matter_id}
+    source_titles = {
+        row.matter_id: row.title
+        for row in (
+            await db.scalars(
+                select(Matter).where(
+                    Matter.user_id == user.user_id,
+                    Matter.matter_id.in_(source_matter_ids),
+                )
+            )
+        ).all()
+    }
     items = []
     for change in rows:
         after = change.after_json or {}
-        eligible, code, reason = await _change_eligibility(db, user, matter, change)
+        affected_matter_ids = _affected_matter_ids(after)
+        is_primary = change.matter_id == matter.matter_id
+        if is_primary:
+            eligible, code, reason = await _change_eligibility(db, user, matter, change)
+            relation = "primary"
+            schedule_id = (after.get("schedule") or {}).get("schedule_id")
+        else:
+            eligible = False
+            code = "revert_from_source_matter"
+            reason = (
+                f"该变更由事项「{source_titles.get(change.matter_id) or '来源事项'}」"
+                "确认，请到来源事项处理撤回。"
+            )
+            relation = "affected"
+            linked = next(
+                (
+                    item
+                    for key in ("adjacent_schedules", "affected")
+                    for item in after.get(key) or []
+                    if isinstance(item, dict)
+                    and (
+                        item.get("matter_id") == matter.matter_id
+                        or item.get("schedule_id") in current_schedule_ids
+                    )
+                ),
+                None,
+            )
+            schedule_id = linked.get("schedule_id") if linked else None
         items.append(
             {
                 "change_id": change.change_id,
                 "matter_id": change.matter_id,
+                "source_matter_id": change.matter_id,
+                "source_matter_title": source_titles.get(change.matter_id),
+                "relation": relation,
+                "affected_matter_ids": affected_matter_ids,
                 "change_type": change.change_type,
                 "draft_id": change.draft_id,
                 "created_at": change.created_at,
-                "schedule_id": (after.get("schedule") or {}).get("schedule_id"),
+                "schedule_id": schedule_id,
                 "before": change.before_json or {},
                 "after": after,
                 "revertable": eligible,
@@ -1833,6 +2550,28 @@ async def create_edit_draft(
         )
     )
     if existing is not None:
+        if existing.matter_id != matter.matter_id:
+            raise ConflictError(
+                "idempotency_key_reused", "该编辑请求标识已用于另一个事项。"
+            )
+        existing_body = existing.payload_json or {}
+        existing_schedule_id = (
+            existing.base_schedule_id
+            or (existing_body.get("schedule") or {}).get("schedule_id")
+        )
+        existing_todos = existing_body.get("todos") or []
+        existing_todo_id = (
+            existing.base_todo_id
+            or (existing_todos[0].get("todo_id") if existing_todos else None)
+        )
+        if payload.schedule_id and existing_schedule_id != payload.schedule_id:
+            raise ConflictError(
+                "idempotency_key_reused", "该编辑请求标识已用于另一条日程。"
+            )
+        if payload.todo_id and existing_todo_id != payload.todo_id:
+            raise ConflictError(
+                "idempotency_key_reused", "该编辑请求标识已用于另一条待办。"
+            )
         return _serialize_draft(existing)
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
     body: dict = {
@@ -1850,6 +2589,7 @@ async def create_edit_draft(
         "analysis": {},
     }
     base_schedule = None
+    base_todo = None
     if payload.schedule_id:
         schedule = await db.scalar(
             select(ScheduleEvent).where(
@@ -1862,7 +2602,7 @@ async def create_edit_draft(
             raise NotFoundError("schedule_not_found", "日程不存在。")
         if schedule.matter_id != matter.matter_id:
             raise ConflictError("schedule_not_in_matter", "该日程不属于这个事项。")
-        if schedule.source not in (None, "web_native"):
+        if not can_edit_schedule(schedule.source, schedule.data_source_id):
             raise InvalidRequestError(
                 "schedule_not_editable", "设备导入的日程不能在应用内改写。"
             )
@@ -1887,6 +2627,7 @@ async def create_edit_draft(
         )
         if todo is None:
             raise NotFoundError("todo_not_found", "待办不存在。")
+        base_todo = todo
         body["todos"] = [
             {
                 "todo_id": todo.todo_id,
@@ -1917,6 +2658,8 @@ async def create_edit_draft(
         base_matter_version=matter.version,
         base_schedule_id=base_schedule.schedule_id if base_schedule else None,
         base_schedule_updated_at=base_schedule.updated_at if base_schedule else None,
+        base_todo_id=base_todo.todo_id if base_todo else None,
+        base_todo_updated_at=base_todo.updated_at if base_todo else None,
         origin_key=payload.idempotency_key,
     )
     db.add(draft)

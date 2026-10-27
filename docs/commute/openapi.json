@@ -888,6 +888,13 @@
       },
       "ChangeRead": {
         "properties": {
+          "affected_matter_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Affected Matter Ids",
+            "type": "array"
+          },
           "after": {
             "additionalProperties": true,
             "title": "After",
@@ -947,6 +954,15 @@
             ],
             "title": "Reason Code"
           },
+          "relation": {
+            "default": "primary",
+            "enum": [
+              "primary",
+              "affected"
+            ],
+            "title": "Relation",
+            "type": "string"
+          },
           "revertable": {
             "title": "Revertable",
             "type": "boolean"
@@ -961,11 +977,27 @@
               }
             ],
             "title": "Schedule Id"
+          },
+          "source_matter_id": {
+            "title": "Source Matter Id",
+            "type": "string"
+          },
+          "source_matter_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Matter Title"
           }
         },
         "required": [
           "change_id",
           "matter_id",
+          "source_matter_id",
           "change_type",
           "created_at",
           "before",
@@ -1655,6 +1687,14 @@
       },
       "ConflictOptionRead": {
         "properties": {
+          "affected": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Affected",
+            "type": "array"
+          },
           "creates_todo": {
             "anyOf": [
               {
@@ -1669,6 +1709,11 @@
           "detail": {
             "title": "Detail",
             "type": "string"
+          },
+          "executable": {
+            "default": true,
+            "title": "Executable",
+            "type": "boolean"
           },
           "label": {
             "title": "Label",
@@ -1714,6 +1759,17 @@
               }
             ],
             "title": "Target Schedule Id"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
           }
         },
         "required": [

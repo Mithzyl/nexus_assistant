@@ -19,7 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from assistant_api.commute.runtime import CommuteRuntime
 from assistant_api.commute.timeutil import ensure_aware
-from assistant_api.models import ContentItem, ContentSource, ScheduleEvent, User
+from assistant_api.models import (
+    ContentItem,
+    ContentSource,
+    Matter,
+    ScheduleEvent,
+    User,
+)
 from assistant_api.services.commute_estimate import estimate
 
 EXCLUDED_STATUSES = ("cancelled", "deleted")
@@ -49,6 +55,16 @@ async def _authorized_source_ids(db: AsyncSession, user_id: str) -> set[str]:
     return set(rows)
 
 
+def can_edit_schedule(source: str | None, data_source_id: str | None) -> bool:
+    """Only app-native schedules may be moved by an adjustment option.
+
+    A NULL source is retained for legacy app rows. Any imported record (including
+    an EventKit copy without a current data-source id) is read-only here.
+    """
+
+    return source in (None, "web_native") and data_source_id is None
+
+
 def _block(
     *,
     key: str,
@@ -60,6 +76,10 @@ def _block(
     latitude: float | None,
     longitude: float | None,
     source: str,
+    matter_id: str | None = None,
+    data_source_id: str | None = None,
+    matter_title: str | None = None,
+    editable: bool = False,
 ) -> dict:
     start = ensure_aware(start)
     finish = ensure_aware(end) if end is not None else start
@@ -73,6 +93,10 @@ def _block(
         "latitude": latitude,
         "longitude": longitude,
         "source": source,
+        "matter_id": matter_id,
+        "data_source_id": data_source_id,
+        "matter_title": matter_title,
+        "editable": editable,
     }
 
 
@@ -119,6 +143,9 @@ async def _collect_blocks(
                 latitude=event.latitude,
                 longitude=event.longitude,
                 source=event.source or "web_native",
+                matter_id=event.matter_id,
+                data_source_id=event.data_source_id,
+                editable=can_edit_schedule(event.source, event.data_source_id),
             )
         )
 
@@ -216,6 +243,21 @@ async def evaluate_conflict(
                     ensure_aware(new_end) if new_end is not None else block["start"]
                 )
     blocks = _dedupe(blocks)
+    matter_ids = {block["matter_id"] for block in blocks if block["matter_id"]}
+    matter_titles: dict[str, str] = {}
+    if matter_ids:
+        matter_rows = (
+            await db.scalars(
+                select(Matter).where(
+                    Matter.user_id == user.user_id,
+                    Matter.matter_id.in_(matter_ids),
+                )
+            )
+        ).all()
+        matter_titles = {row.matter_id: row.title for row in matter_rows}
+    for block in blocks:
+        if block["matter_id"]:
+            block["matter_title"] = matter_titles.get(block["matter_id"])
 
     overlaps = [b for b in blocks if b["start"] < end and b["end"] > start]
     previous = None
@@ -327,46 +369,113 @@ async def evaluate_conflict(
             target = following
             direction = -1
         else:
-            shift = max(0, int((worst["starts_at"] - start).total_seconds()))
+            # Move past every overlapping block and keep the same 15-minute
+            # buffer used for neighbouring appointments. Moving only to the
+            # block start (or its exact end) can still overlap or leave no gap.
+            overlap_end = max(block["end"] for block in overlaps)
+            target_start = overlap_end + timedelta(seconds=min_gap_seconds)
+            shift = max(0, int((target_start - start).total_seconds()))
             target = None
             direction = 1
         shift = int((shift + 299) // 300 * 300)
         shift = direction * shift
         proposed = _round_up_minutes(start + timedelta(seconds=shift))
+        route_unverified = any(
+            item["eta_status"] == "unverified" for item in conflicts
+        )
+        route_note = "路程仍未核实，应用后请重新核对。" if route_unverified else ""
+        if worst["relation"] == "overlap":
+            option_a_detail = (
+                f"把本次开始时间移动到 {proposed.astimezone(UTC).strftime('%H:%M')}（UTC），"
+                "避开当前重叠；应用后会重新计算剩余冲突。"
+            )
+        elif direction > 0:
+            option_a_detail = (
+                f"把本次安排整体推迟约 {max(1, abs(shift) // 60)} 分钟，"
+                f"开始时间约 {proposed.astimezone(UTC).strftime('%H:%M')}（UTC）；"
+                "应用后会重新计算剩余冲突。"
+            )
+        else:
+            option_a_detail = (
+                f"把本次安排整体提前约 {max(1, abs(shift) // 60)} 分钟，"
+                f"开始时间约 {proposed.astimezone(UTC).strftime('%H:%M')}（UTC）；"
+                "应用后会重新计算剩余冲突。"
+            )
+        if route_note:
+            option_a_detail += route_note
         options.append(
             {
                 "option_id": "A",
                 "label": "调整本次时间",
-                "detail": (
-                    f"把本次开始时间移动到 {proposed.astimezone(UTC).strftime('%H:%M')}（UTC），"
-                    "留出路程与 15 分钟余量。"
-                    if direction > 0
-                    else f"把本次结束时间提前约 {abs(shift) // 60} 分钟。"
-                ),
+                "detail": option_a_detail,
                 "recommended": True,
                 "proposed_start": proposed,
                 "creates_todo": None,
                 "shift_seconds": shift,
                 "target_schedule_id": None,
+                "executable": True,
+                "unavailable_reason": None,
+                "affected": [],
             }
         )
-        neighbour = target or previous or following
+        # B only moves a neighbouring appointment. It cannot resolve an
+        # overlap between this appointment and a long event.
+        neighbour = target if worst["relation"] != "overlap" else None
         if neighbour is not None and neighbour["schedule_id"]:
             needed = abs(shift) if shift else min_gap_seconds
+            neighbour_shift = -needed if direction > 0 else needed
+            affected_start = neighbour["start"] + timedelta(seconds=neighbour_shift)
+            affected_end = neighbour["end"] + timedelta(seconds=neighbour_shift)
+            affected = [
+                {
+                    "type": "schedule",
+                    "matter_id": neighbour.get("matter_id"),
+                    "matter_title": neighbour.get("matter_title"),
+                    "schedule_id": neighbour["schedule_id"],
+                    "title": neighbour["title"],
+                    "source": neighbour.get("source"),
+                    "before_starts_at": _iso(neighbour["start"]),
+                    "before_ends_at": _iso(neighbour["end"]),
+                    "after_starts_at": _iso(affected_start),
+                    "after_ends_at": _iso(affected_end),
+                }
+            ]
+            editable = bool(neighbour.get("editable"))
+            matter_label = (
+                f"事项「{neighbour.get('matter_title')}」中的"
+                if neighbour.get("matter_title")
+                else ""
+            )
             options.append(
                 {
                     "option_id": "B",
                     "label": "调整相邻安排",
                     "detail": (
-                        f"把「{neighbour['title']}」"
+                        f"把{matter_label}「{neighbour['title']}」"
                         + ("提前" if direction > 0 else "顺延")
                         + f"约 {max(5, needed // 60)} 分钟，并生成一条联系待办。"
+                        + (
+                            ""
+                            if editable
+                            else "该相邻日程来自只读副本，不能在应用内调整。"
+                        )
                     ),
                     "recommended": False,
                     "proposed_start": None,
-                    "creates_todo": f"联系相关方调整「{neighbour['title']}」时间",
-                    "shift_seconds": -needed if direction > 0 else needed,
+                    "creates_todo": (
+                        f"联系相关方调整「{neighbour['title']}」时间"
+                        if editable
+                        else None
+                    ),
+                    "shift_seconds": neighbour_shift,
                     "target_schedule_id": neighbour["schedule_id"],
+                    "executable": editable,
+                    "unavailable_reason": (
+                        None
+                        if editable
+                        else "相邻日程来自苹果端只读副本，不能在应用内调整。"
+                    ),
+                    "affected": affected,
                 }
             )
         options.append(
@@ -379,6 +488,9 @@ async def evaluate_conflict(
                 "creates_todo": None,
                 "shift_seconds": 0,
                 "target_schedule_id": None,
+                "executable": True,
+                "unavailable_reason": None,
+                "affected": [],
             }
         )
 
@@ -395,4 +507,4 @@ async def evaluate_conflict(
     }
 
 
-__all__ = ["evaluate_conflict"]
+__all__ = ["can_edit_schedule", "evaluate_conflict"]

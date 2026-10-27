@@ -205,7 +205,8 @@ async def test_revert_does_not_reopen_a_todo_completed_later(harness):
         json={"expected_version": matter["version"]},
         headers=auth(h.token_a),
     )
-    assert reverted.status_code == 200, reverted.text
+    assert reverted.status_code == 409
+    assert reverted.json()["error"]["code"] == "creation_revert_unsupported"
     detail_after = (await h.client.get(f"/api/v1/matters/{matter['matter_id']}", headers=auth(h.token_a))).json()
     assert detail_after["todos"][0]["status"] == "done"
 
