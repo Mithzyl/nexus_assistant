@@ -68,6 +68,13 @@ export function affectedScheduleSummary(item) {
 }
 
 /** Failures that mean a formal record changed after this preview was read. */
+/** Initial checkbox state for a stop-following preview; read-only copies never start selected. */
+export function selectedCancelScheduleIds(payload) {
+  return (payload?.schedule_cancellations ?? [])
+    .filter((item) => item && item.selected && item.cancellable)
+    .map((item) => item.schedule_id);
+}
+
 export function isRecordChangedError(code) {
   return [
     "preview_stale",
@@ -76,6 +83,11 @@ export function isRecordChangedError(code) {
     "todo_changed",
     "reminder_changed",
     "option_not_selected",
+    "schedule_started",
+    "progress_added",
+    "schedule_not_in_stop_preview",
+    "not_initial_create",
+    "initial_delete_unavailable",
   ].includes(String(code || ""));
 }
 
@@ -176,9 +188,11 @@ export function changeReasonText(code, fallback = null) {
   if (code === "schedule_changed") return "关联日程在此之后又改过，不能覆盖撤回。";
   if (code === "todo_changed") return "关联待办在此之后又改过，不能覆盖撤回。";
   if (code === "reminder_changed") return "关联提醒在此之后又改过，不能覆盖撤回。";
-  if (code === "creation_revert_unsupported") return "暂不支持撤回新建事项。";
+  if (code === "creation_revert_unsupported") {
+    return "这条新建事项暂不提供快捷撤回；请使用事项详情中的删除操作。";
+  }
   if (code === "incomplete_change_snapshot") {
-    return fallback || "这条旧变更缺少完整记录，服务端无法保证安全恢复。";
+    return "这条早期记录无法恢复修改前状态，请手动修改当前安排。";
   }
   if (code === "revert_from_source_matter") {
     return "这条变更来自其他事项，请到来源事项处理。";

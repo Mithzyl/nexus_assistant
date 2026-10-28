@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, MapPin } from "lucide-react";
 
 import type {
@@ -12,19 +12,41 @@ import { estimateRoute, searchPlaces } from "@/lib/mobile/matters-api";
 import { dateTimeLabel } from "@/lib/mobile/work-plan";
 import { Sheet } from "./ui";
 
+/** Translate server route reasons into user-facing recovery guidance. */
+function routeUnavailableMessage(reasonCode: string | null): string {
+  if (reasonCode === "coordinate_system_mismatch") {
+    return "起点和目的地的坐标来源不兼容，请重新确认地点。";
+  }
+  if (reasonCode === "transit_city_required") {
+    return "公交路线需要明确城市，请补充城市后再测算。";
+  }
+  if (reasonCode === "amap_timeout") {
+    return "路线服务响应超时，请稍后重试。";
+  }
+  if (reasonCode === "amap_rate_limited") {
+    return "路线查询次数暂时达到服务限制，请稍后再试。";
+  }
+  if (reasonCode === "route_provider_unavailable") {
+    return "路线服务当前不可用，请稍后重试。";
+  }
+  return "路线服务暂时无法返回结果，请稍后重试。";
+}
+
 /** Choose one origin explicitly, then request one server-side route estimate. */
 export function RoutePlannerSheet({
   open,
   schedule,
   previousSchedules,
+  getPlaceSearchDraft,
   onClose,
   onEstimated,
 }: {
   open: boolean;
   schedule: MatterSchedule | null;
   previousSchedules: MatterSchedule[];
+  getPlaceSearchDraft: () => Promise<string>;
   onClose: () => void;
-  onEstimated: (scheduleId: string, result: RouteEstimate) => void;
+  onEstimated: (scheduleId: string, result: RouteEstimate) => Promise<void>;
 }) {
   const [originMode, setOriginMode] = useState<"previous" | "place">("previous");
   const [originScheduleId, setOriginScheduleId] = useState("");
@@ -35,6 +57,7 @@ export function RoutePlannerSheet({
   const [mode, setMode] = useState<"driving" | "walking" | "transit">("driving");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const searchRequestId = useRef(0);
 
   const selectedCandidate =
     candidates.find((candidate) => candidate.selection_token === selectedToken) ?? null;
@@ -58,6 +81,7 @@ export function RoutePlannerSheet({
     setMode("driving");
     setBusy(null);
     setError(null);
+    searchRequestId.current += 1;
   }, [open, schedule?.schedule_id, schedule?.location_city]);
 
   const search = async () => {
@@ -68,17 +92,27 @@ export function RoutePlannerSheet({
     setBusy("search");
     setError(null);
     setSelectedToken(null);
+    const requestId = ++searchRequestId.current;
     try {
-      const result = await searchPlaces(query.trim(), city.trim() || null, "place");
+      const draftId = await getPlaceSearchDraft();
+      if (requestId !== searchRequestId.current) return;
+      const result = await searchPlaces(
+        query.trim(),
+        city.trim() || null,
+        "place",
+        draftId,
+      );
+      if (requestId !== searchRequestId.current) return;
       setCandidates(result.candidates);
       if (result.candidates.length === 0) {
         setError("没有找到候选，请补充城市或更详细的地址。");
       }
     } catch (caught) {
+      if (requestId !== searchRequestId.current) return;
       setCandidates([]);
       setError(caught instanceof Error ? caught.message : "起点查询失败。");
     } finally {
-      setBusy(null);
+      if (requestId === searchRequestId.current) setBusy(null);
     }
   };
 
@@ -124,14 +158,21 @@ export function RoutePlannerSheet({
         schedule_id: schedule.schedule_id,
       });
       if (result.status !== "available") {
-        setError(
-          result.reason_code === "coordinate_system_mismatch"
-            ? "起点和目的地的坐标来源不兼容，请重新确认地点。"
-            : "服务器暂时没有可用路线结果。",
-        );
+        setError(routeUnavailableMessage(result.reason_code));
         return;
       }
-      onEstimated(schedule.schedule_id, result);
+      const expectedOriginBasis =
+        originMode === "previous" ? "previous_schedule" : "user_confirmed";
+      if (
+        result.schedule_id !== schedule.schedule_id ||
+        result.origin_basis !== expectedOriginBasis ||
+        (originMode === "previous" &&
+          result.origin_schedule_id !== originScheduleId)
+      ) {
+        setError("服务器返回的路线关联与当前日程或起点不一致，请刷新后重试。");
+        return;
+      }
+      await onEstimated(schedule.schedule_id, result);
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "路线测算失败。");
@@ -211,7 +252,14 @@ export function RoutePlannerSheet({
                   <input
                     className="input"
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      searchRequestId.current += 1;
+                      setCandidates([]);
+                      setSelectedToken(null);
+                      setError(null);
+                      setBusy(null);
+                    }}
                     placeholder="从哪里出发"
                   />
                 </label>
@@ -220,7 +268,14 @@ export function RoutePlannerSheet({
                   <input
                     className="input"
                     value={city}
-                    onChange={(event) => setCity(event.target.value)}
+                    onChange={(event) => {
+                      setCity(event.target.value);
+                      searchRequestId.current += 1;
+                      setCandidates([]);
+                      setSelectedToken(null);
+                      setError(null);
+                      setBusy(null);
+                    }}
                     placeholder="例如：上海"
                   />
                 </label>

@@ -463,7 +463,8 @@ export type MatterStatus = "active" | "waiting" | "archived" | "deleted";
 export type MatterScheduleSource = "web_native" | "ios_eventkit" | "ios_reminders";
 export type MatterSyncStatus = "local_only" | "pending_ios" | "ios_synced";
 export type MatterTodoStatus = "open" | "done";
-export type MatterReminderStatus = "pending" | "completed" | "cancelled";
+/** Server reminder states; `due` means it fired but the user has not acknowledged it. */
+export type MatterReminderStatus = "scheduled" | "due" | "acknowledged" | "cancelled";
 
 export interface MatterSummary {
   matter_id: string;
@@ -525,6 +526,7 @@ export interface MatterReminder {
   reminder_id: string;
   matter_id: string | null;
   todo_id: string | null;
+  schedule_id: string | null;
   title: string;
   note: string | null;
   trigger_at: string;
@@ -532,7 +534,9 @@ export interface MatterReminder {
   sync_status: MatterSyncStatus | null;
   source: MatterScheduleSource | null;
   completed_at: string | null;
+  acknowledged_at: string | null;
   cancelled_at: string | null;
+  deleted_at?: string | null;
 }
 
 export interface MatterDetail extends MatterSummary {
@@ -640,6 +644,69 @@ export interface DraftTodo {
   status?: MatterTodoStatus;
 }
 
+export interface DraftRelatedSchedule {
+  kind: "existing" | "unverified" | string;
+  schedule_id?: string | null;
+  matter_id?: string | null;
+  title: string;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinate_system?: "gcj02" | "wgs84" | "unknown";
+  location_city?: string | null;
+  location_address?: string | null;
+  location_source?: string | null;
+  location_external_id?: string | null;
+}
+
+export interface DraftReminderCancellation {
+  reminder_id: string;
+  title: string;
+  trigger_at: string;
+  base_updated_at?: string | null;
+  reason?: string | null;
+}
+
+/** One future schedule the stop-following preview may cancel; read-only copies stay unselected. */
+export interface DraftScheduleCancellation {
+  schedule_id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  location: string | null;
+  selected: boolean;
+  cancellable: boolean;
+  reason: string | null;
+  base_updated_at: string;
+}
+
+export interface DraftAction {
+  kind: string;
+  role?: string | null;
+  schedule_id?: string | null;
+  todo_id?: string | null;
+  reminder_id?: string | null;
+  title?: string | null;
+  starts_at?: string | null;
+  due_at?: string | null;
+  reminder_at?: string | null;
+  trigger_at?: string | null;
+  location?: string | null;
+  status?: string | null;
+  reason?: string | null;
+}
+
+export interface DraftCommunication {
+  reply_text: string;
+  option_id: string;
+  target_title: string;
+  target_starts_at: string | null;
+  external_change_required: boolean;
+  external_change_status: "not_sent" | "pending_external_confirmation";
+}
+
 export interface DraftPayload {
   kind?: "create" | "update";
   matter_id?: string | null;
@@ -654,6 +721,14 @@ export interface DraftPayload {
   selected_option?: "A" | "B" | "C" | null;
   previous_adjustment?: DraftPreviousAdjustment | null;
   affected?: MatterAffectedSchedule[];
+  related_schedules?: DraftRelatedSchedule[];
+  matter_action?: "none" | "archive";
+  proposed_status?: "archived" | null;
+  cancel_reminders?: boolean;
+  reminder_cancellations?: DraftReminderCancellation[];
+  schedule_cancellations?: DraftScheduleCancellation[];
+  action_plan?: DraftAction[];
+  communication_draft?: DraftCommunication | null;
   source_text?: string | null;
   analysis?: Record<string, unknown> | null;
 }
@@ -727,10 +802,27 @@ export interface MatterDraft {
   matter_id: string | null;
   payload: DraftPayload;
   conflicts: MatterConflict | null;
-  candidates: Array<Record<string, unknown>> | null;
+  action_plan?: DraftAction[];
+  communication_draft?: DraftCommunication | null;
+  candidates: MatterSummary[] | null;
   ai_run_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface IntakeScheduleCandidate {
+  schedule_id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  location: string | null;
+}
+
+export interface IntakePendingContext {
+  missing_information?: string[];
+  schedule_candidates?: IntakeScheduleCandidate[];
+  pending?: Record<string, unknown>;
+  error?: string;
 }
 
 export interface MatterIntakeResponse {
@@ -741,6 +833,7 @@ export interface MatterIntakeResponse {
   message: string | null;
   answer: string | null;
   clarify: string | null;
+  pending_context: IntakePendingContext;
   local_run_id: string | null;
   parent_run_id: string | null;
 }
@@ -761,6 +854,7 @@ export interface MatterIntakeResult {
   status: string;
   answer: string | null;
   clarify: string | null;
+  pending_context: IntakePendingContext;
   matter_id: string | null;
   draft_id: string | null;
   draft: MatterDraft | null;
@@ -818,6 +912,81 @@ export interface RouteEstimate {
   origin_basis: "user_confirmed" | "previous_schedule";
   origin_schedule_id: string | null;
   schedule_id: string | null;
+  origin?: RouteEndpoint | null;
+  destination?: RouteEndpoint | null;
+  shape?: RouteShape;
+}
+
+export interface RoutePoint {
+  latitude: number;
+  longitude: number;
+}
+
+export interface RouteEndpoint extends RoutePoint {
+  coordinate_system: "gcj02" | "wgs84" | "unknown";
+  city: string | null;
+  basis: "user_confirmed" | "previous_schedule" | "destination_schedule";
+  schedule_id: string | null;
+}
+
+export interface RouteSegment {
+  kind: "driving" | "walking" | "transit";
+  label: string | null;
+  coordinate_system: "gcj02" | "wgs84" | "unknown";
+  points: RoutePoint[];
+}
+
+export interface RouteShape {
+  status: "available" | "partial" | "missing";
+  segments: RouteSegment[];
+}
+
+export interface ScheduledRoute {
+  status: "available" | "unverified";
+  reason_code: string | null;
+  message: string | null;
+  schedule_id: string;
+  provider: string | null;
+  mode: "driving" | "walking" | "transit" | null;
+  duration_seconds: number | null;
+  distance_meters: number | null;
+  walking_distance_meters: number | null;
+  transfer_count: number | null;
+  transfers_summary: string | null;
+  fare_cny: number | null;
+  fare_kind: string | null;
+  fare_notice: string | null;
+  origin_basis: "user_confirmed" | "previous_schedule" | null;
+  origin_schedule_id: string | null;
+  fetched_at: string | null;
+  requested_depart_at: string | null;
+  target_arrival_at: string | null;
+  calculated_at: string | null;
+  timing_basis: string | null;
+  accuracy_notice: string | null;
+  origin: RouteEndpoint | null;
+  destination: RouteEndpoint | null;
+  shape: RouteShape;
+}
+
+export interface MapPickLocation {
+  provider: string;
+  provider_place_id: string | null;
+  name: string;
+  address: string;
+  city: string | null;
+  latitude: number;
+  longitude: number;
+  coordinate_system: "gcj02" | "wgs84" | "unknown";
+  source: string;
+  selection_token: string;
+}
+
+export interface MapPickResponse {
+  status: "available" | "unavailable";
+  reason_code: string | null;
+  address_notice: string | null;
+  location: MapPickLocation | null;
 }
 
 export interface DraftPatchInput {
@@ -829,6 +998,8 @@ export interface DraftPatchInput {
   schedule?: DraftSchedule | null;
   todos?: DraftTodo[] | null;
   complete_todo_ids?: string[] | null;
+  /** Final future-schedule selection for a stop-following preview; [] clears every selection. */
+  cancel_schedule_ids?: string[] | null;
 }
 
 export interface DraftConfirmInput {
@@ -858,6 +1029,16 @@ export type MatterChangeReasonCode =
   | "incomplete_change_snapshot"
   | "revert_from_source_matter"
   | "not_revertable"
+  | "not_initial_create"
+  | "initial_delete_unavailable"
+  | "progress_added"
+  | "schedule_added"
+  | "todo_added"
+  | "schedule_started"
+  | "schedule_not_in_stop_preview"
+  | "schedule_conflict_in_stop_preview"
+  | "reminder_not_due"
+  | "reminder_cancelled"
   | string
   | null;
 
@@ -871,6 +1052,8 @@ export interface MatterChange extends MatterChangeSummary {
   created_at: string;
   schedule_id: string | null;
   revertable: boolean;
+  /** Server-side eligibility for deleting an untouched initial create as one unit. */
+  initial_delete_allowed: boolean;
   reason_code: MatterChangeReasonCode;
   reason: string | null;
 }
@@ -880,11 +1063,22 @@ export interface DraftConfirmResponse {
   matter: MatterSummary;
   schedule: MatterSchedule | null;
   reminders: MatterReminder[];
+  cancelled_reminder_ids: string[];
+  cancelled_schedule_ids: string[];
+  notifications_retracted: boolean;
   change_id: string;
   replayed: boolean;
   applied: boolean;
   conflict: MatterConflict | null;
   change: MatterChangeSummary | null;
+}
+
+export interface InitialDeleteResponse {
+  matter_id: string;
+  deleted_at: string;
+  schedule_ids: string[];
+  todo_ids: string[];
+  reminder_ids: string[];
 }
 
 export interface RevertResponse {

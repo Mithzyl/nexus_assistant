@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bell, CalendarClock, ChevronRight, FileText, MapPin, RefreshCw, Trash2 } from "lucide-react";
 
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
+import { RouteMapSheet } from "@/components/mobile/route-map-sheet";
 import { RouteTextCard } from "@/components/mobile/route-text-card";
 import { TodayCommuteCard } from "@/components/mobile/commute-card";
 import { useAuth, useLocalRecords, useUI, type LocalRecord } from "@/components/mobile/providers";
@@ -26,7 +27,7 @@ import type {
 } from "@/lib/mobile/api";
 import { relativeTime } from "@/lib/mobile/format";
 import { deadlineTiming, todayChangeSummary } from "@/lib/mobile/matter-draft.mjs";
-import { confirmSummary, getDraft } from "@/lib/mobile/matters-api";
+import { confirmSummary, acknowledgeReminder, getDraft } from "@/lib/mobile/matters-api";
 import { useToday } from "@/lib/mobile/use-today";
 
 function localDay(): string {
@@ -60,9 +61,12 @@ function reminderNote(item: MatterReminder): string {
   if (item.source === "ios_eventkit" || item.source === "ios_reminders") {
     return item.sync_status === "ios_synced" ? "来自苹果端副本" : "来自苹果端";
   }
+  if (item.status === "acknowledged") return "应用内提醒 · 已知晓";
+  if (item.status === "cancelled") return "应用内提醒 · 已取消";
+  if (item.status === "due") return "应用内提醒已到点 · 等待你确认知晓";
   if (item.sync_status === "pending_ios") return "应用内提醒 · 等待 iOS 同步";
   if (item.sync_status === "ios_synced") return "应用内提醒 · iOS 已有副本";
-  return "应用内提醒";
+  return "应用内提醒已保存 · 到点后可在网页确认，不能视为已经送达";
 }
 
 function routeState(schedule: TodaySchedule): {
@@ -72,12 +76,12 @@ function routeState(schedule: TodaySchedule): {
 } {
   const message = schedule.route.message || "相关路线尚未核实。";
   if (schedule.route.status === "available") {
-    return { label: "路线已核实", tone: "green", detail: null };
+    return { label: "路程已核实", tone: "green", detail: null };
   }
   if (schedule.route.status === "unavailable") {
-    return { label: "路线不可用", tone: "red", detail: message };
+    return { label: "路程不可用", tone: "red", detail: message };
   }
-  return { label: "路线未核实", tone: "amber", detail: message };
+  return { label: "路程未核实", tone: "amber", detail: message };
 }
 
 function draftQuestion(draft: TodayDraft): string {
@@ -112,6 +116,31 @@ export default function TodayPage() {
   const [selectedDraft, setSelectedDraft] = useState<MatterDraft | null>(null);
   const [openingDraftId, setOpeningDraftId] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [routeMapSchedule, setRouteMapSchedule] = useState<TodaySchedule | null>(
+    null,
+  );
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
+  const [acknowledgeError, setAcknowledgeError] = useState<string | null>(null);
+
+  const dueReminders = useMemo(
+    () => (todayData.data?.reminders ?? []).filter((item) => item.status === "due"),
+    [todayData.data],
+  );
+
+  const acknowledge = async (reminder: MatterReminder) => {
+    setAcknowledgingId(reminder.reminder_id);
+    setAcknowledgeError(null);
+    try {
+      await acknowledgeReminder(reminder.reminder_id);
+      todayData.refresh();
+    } catch (caught) {
+      setAcknowledgeError(
+        caught instanceof Error ? caught.message : "服务器没有确认这条提醒已知晓。",
+      );
+    } finally {
+      setAcknowledgingId(null);
+    }
+  };
 
   const rows = useMemo<TimelineRow[]>(() => {
     const data = todayData.data;
@@ -158,7 +187,8 @@ export default function TodayPage() {
     if (todayData.loading && !todayData.data) return "正在读取今天的安排…";
     if (todayData.error) return "暂时无法读取今天的安排；这不是空日程。";
     if (!todayData.data) return "登录后从服务器读取今天的安排。";
-    const items = deadlines.length + (todayData.data.drafts.length ?? 0);
+    const items =
+      deadlines.length + (todayData.data.drafts.length ?? 0) + dueReminders.length;
     if (items > 0) return `先处理 ${items} 项需要确认或跟进的内容。`;
     if (rows.length === 0) return "今天没有已确定的日程或待处理提醒。";
     return `今天有 ${todayData.data.schedules.length} 项日程${
@@ -247,6 +277,44 @@ export default function TodayPage() {
         </div>
       ) : todayData.data ? (
         <>
+          {dueReminders.length > 0 ? (
+            <section style={{ padding: "0 var(--m-gutter)" }}>
+              <SectionHeading title="已经到点" trailing="需要确认知晓" />
+              <div className="m-stack-10">
+                {dueReminders.map((reminder) => (
+                  <div key={reminder.reminder_id} className="deadline-card deadline-card--overdue">
+                    <span className="tile tile--sm">
+                      <Bell size={15} />
+                    </span>
+                    <span className="grow">
+                      <span className="deadline-card__title">{reminder.title}</span>
+                      <span className="deadline-card__meta">
+                        {reminder.matter_title || "所属事项"} ·{" "}
+                        {dateTime(reminder.trigger_at, todayData.data?.timezone)}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--small"
+                      onClick={() => void acknowledge(reminder)}
+                      disabled={acknowledgingId !== null}
+                    >
+                      {acknowledgingId === reminder.reminder_id ? "确认中…" : "知道了"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="micro" style={{ margin: "8px 0 0" }}>
+                “知道了”只表示你已在网页确认这条提醒，不代表服务器已送达推送。
+              </p>
+              {acknowledgeError ? (
+                <p className="danger-text" style={{ margin: "8px 0 0" }} role="alert">
+                  {acknowledgeError}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
           {deadlines.length > 0 ? (
             <section style={{ padding: "0 var(--m-gutter)" }}>
               <SectionHeading title="需要跟进" trailing="逾期与今天到期" />
@@ -363,6 +431,7 @@ export default function TodayPage() {
                           }
                           destinationLabel={row.schedule.location || row.schedule.title}
                           arrivalAt={row.schedule.starts_at}
+                          arrivalLabel="安排时间"
                           mode={row.schedule.route.mode}
                           durationSeconds={row.schedule.route.duration_seconds}
                           state={
@@ -378,6 +447,16 @@ export default function TodayPage() {
                                 ? `路线结果取得于 ${dateTime(row.schedule.route.fetched_at, todayData.data?.timezone)}`
                                 : "路线结果由服务器返回。"
                               : row.schedule.route.message || "尚无与该日程关联的路线结果。"
+                          }
+                          replanHref={
+                            row.matterId
+                              ? `/matters/${row.matterId}`
+                              : undefined
+                          }
+                          onViewRoute={
+                            row.schedule.route.status === "available"
+                              ? () => setRouteMapSchedule(row.schedule ?? null)
+                              : undefined
                           }
                           mapTarget={{
                             label: row.schedule.location_address || row.schedule.location,
@@ -529,6 +608,38 @@ export default function TodayPage() {
           toast("草稿已取消");
           todayData.refresh();
         }}
+      />
+      <RouteMapSheet
+        open={Boolean(routeMapSchedule)}
+        scheduleId={routeMapSchedule?.schedule_id ?? null}
+        title={routeMapSchedule ? `路线 · ${routeMapSchedule.title}` : "查看路线"}
+        fallbackDestination={
+          routeMapSchedule
+            ? {
+                id: routeMapSchedule.schedule_id,
+                label:
+                  routeMapSchedule.location_address ||
+                  routeMapSchedule.location ||
+                  routeMapSchedule.title,
+                latitude: routeMapSchedule.latitude as number,
+                longitude: routeMapSchedule.longitude as number,
+                coordinateSystem: routeMapSchedule.coordinate_system,
+              }
+            : null
+        }
+        fallbackMode={routeMapSchedule?.route.mode ?? null}
+        fallbackDurationSeconds={
+          routeMapSchedule?.route.duration_seconds ?? null
+        }
+        fallbackNotice={
+          routeMapSchedule?.route.fetched_at
+            ? `路线结果取得于 ${dateTime(
+                routeMapSchedule.route.fetched_at,
+                todayData.data?.timezone,
+              )}`
+            : null
+        }
+        onClose={() => setRouteMapSchedule(null)}
       />
     </div>
   );

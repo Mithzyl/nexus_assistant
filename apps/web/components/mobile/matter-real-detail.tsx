@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Circle, Pencil, RefreshCw, Trash2, Undo2 } from "lucide-react";
 
 import type {
   DraftConfirmResponse,
+  IntakePendingContext,
   MatterChange,
   MatterDetail,
   MatterReminder,
@@ -17,11 +18,13 @@ import type {
 import { ApiError } from "@/lib/mobile/api";
 import {
   archiveMatter,
+  cancelDraft,
   completeMatterTodo,
   createMatterEditDraft,
   deleteMatter,
   getMatter,
   getToday,
+  initialDeleteMatter,
   intakeMatterProgress,
   listMatterChanges,
   newOperationKey,
@@ -44,6 +47,7 @@ import { useAuth, useUI } from "./providers";
 import { MatterDraftSheet } from "./matter-draft-sheet";
 import { RouteTextCard } from "./route-text-card";
 import { RoutePlannerSheet } from "./route-planner-sheet";
+import { RouteMapSheet } from "./route-map-sheet";
 import { ConfirmSheet, ProgressSheet } from "./work-plan-ui";
 import {
   ConfirmDialog,
@@ -66,7 +70,38 @@ function syncLabel(record: MatterSchedule | MatterReminder): string {
     return reminder ? "应用内提醒（待 iOS 客户端同步）" : "已记入应用内日程（待 iOS 客户端同步）";
   }
   if (status === "ios_synced") return "已同步（有苹果端凭据）";
-  return reminder ? "应用内提醒" : "已记入应用内日程";
+  if (!reminder) return "已记入应用内日程";
+  const reminderStatus = (record as MatterReminder).status;
+  if (reminderStatus === "due") return "应用内提醒 · 已到点";
+  if (reminderStatus === "acknowledged") return "应用内提醒 · 已知晓";
+  if (reminderStatus === "cancelled") return "应用内提醒 · 已取消";
+  return "应用内提醒 · 已保存待触发";
+}
+
+/**
+ * Read server-owned route summaries for the supplied schedules.
+ *
+ * Today exposes only persisted summary fields, so detail cards must not infer
+ * that an estimate was linked merely because the estimate endpoint responded.
+ */
+async function fetchRouteSummaries(
+  schedules: MatterSchedule[],
+): Promise<Record<string, TodayRoute>> {
+  const dates = Array.from(
+    new Set(
+      schedules.map((schedule) =>
+        new Date(schedule.starts_at).toLocaleDateString("en-CA"),
+      ),
+    ),
+  );
+  const views = await Promise.all(dates.map((date) => getToday(date)));
+  const summaries: Record<string, TodayRoute> = {};
+  for (const view of views) {
+    for (const schedule of view.schedules) {
+      summaries[schedule.schedule_id] = schedule.route;
+    }
+  }
+  return summaries;
 }
 
 function TodoRow({
@@ -122,9 +157,14 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [editError, setEditError] = useState<string | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressError, setProgressError] = useState<string | null>(null);
+  const [progressPendingContext, setProgressPendingContext] =
+    useState<IntakePendingContext>({});
+  const [progressContinuationRunId, setProgressContinuationRunId] =
+    useState<string | null>(null);
   const [progressAnswer, setProgressAnswer] = useState<{ question: string; answer: string } | null>(null);
   const [editingDraft, setEditingDraft] = useState<Awaited<ReturnType<typeof intakeMatterProgress>>["draft"] | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveCancelReminders, setArchiveCancelReminders] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
   const [changes, setChanges] = useState<MatterChange[]>([]);
@@ -132,9 +172,20 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [changesError, setChangesError] = useState<string | null>(null);
   const [routeBySchedule, setRouteBySchedule] = useState<Record<string, TodayRoute>>({});
   const [routeDetails, setRouteDetails] = useState<Record<string, RouteEstimate>>({});
+  const [routeMapScheduleId, setRouteMapScheduleId] = useState<string | null>(null);
   const [routePlannerSchedule, setRoutePlannerSchedule] =
     useState<MatterSchedule | null>(null);
+  const routePlannerDraftId = useRef<string | null>(null);
+  const routePlannerDraftOperation = useRef(0);
   const [revertTarget, setRevertTarget] = useState<MatterChange | null>(null);
+  const [initialDeleteTarget, setInitialDeleteTarget] = useState<MatterChange | null>(
+    null,
+  );
+  const progressOperation = useRef<{
+    text: string;
+    key: string;
+    continuationRunId: string | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -171,31 +222,31 @@ export function MatterRealDetail({ id }: { id: string }) {
     void load();
   }, [load, user?.user_id]);
 
+  useEffect(
+    () => () => {
+      routePlannerDraftOperation.current += 1;
+      const draftId = routePlannerDraftId.current;
+      routePlannerDraftId.current = null;
+      if (draftId) void cancelDraft(draftId).catch(() => undefined);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!matter || matter.schedules.length === 0) {
       setRouteBySchedule({});
       setRouteDetails({});
+      setRouteMapScheduleId(null);
       return;
     }
     setRouteDetails({});
+    setRouteBySchedule({});
+    setRouteMapScheduleId(null);
     let alive = true;
-    const dates = Array.from(
-      new Set(
-        matter.schedules.map((schedule) =>
-          new Date(schedule.starts_at).toLocaleDateString("en-CA"),
-        ),
-      ),
-    );
-    void Promise.all(dates.map((date) => getToday(date)))
-      .then((views) => {
+    void fetchRouteSummaries(matter.schedules)
+      .then((summaries) => {
         if (!alive) return;
-        const next: Record<string, TodayRoute> = {};
-        for (const view of views) {
-          for (const schedule of view.schedules) {
-            next[schedule.schedule_id] = schedule.route;
-          }
-        }
-        setRouteBySchedule(next);
+        setRouteBySchedule(summaries);
       })
       .catch(() => {
         if (alive) setRouteBySchedule({});
@@ -223,6 +274,14 @@ export function MatterRealDetail({ id }: { id: string }) {
         await load();
       } else if (caught instanceof ApiError && caught.code === "incomplete_change_snapshot") {
         toast("这条旧变更缺少完整记录，不能安全撤回");
+        await load();
+      } else if (
+        caught instanceof ApiError &&
+        ["not_initial_create", "initial_delete_unavailable", "progress_added"].includes(
+          caught.code,
+        )
+      ) {
+        toast(caught.message);
         await load();
       } else {
         toast(caught instanceof Error ? caught.message : "操作失败");
@@ -262,27 +321,77 @@ export function MatterRealDetail({ id }: { id: string }) {
     });
   };
 
-  const startProgress = async (text: string) => {
+  const startProgress = async (
+    text: string,
+    continuationOverride?: string | null,
+  ) => {
     if (!matter) return;
+    const activeContinuation =
+      continuationOverride === undefined
+        ? progressContinuationRunId
+        : continuationOverride;
     setBusy("progress");
     setProgressError(null);
+    setProgressPendingContext({});
+    if (
+      !progressOperation.current ||
+      progressOperation.current.text !== text ||
+      progressOperation.current.continuationRunId !== activeContinuation
+    ) {
+      progressOperation.current = {
+        text,
+        key: newOperationKey("web-progress"),
+        continuationRunId: activeContinuation,
+      };
+    }
     try {
-      const result = await intakeMatterProgress(matter.matter_id, text, newOperationKey("web-progress"));
+      const result = await intakeMatterProgress(
+        matter.matter_id,
+        text,
+        progressOperation.current.key,
+        activeContinuation,
+      );
       if (result.intent === "question" && result.answer) {
         setProgressOpen(false);
+        setProgressContinuationRunId(null);
+        setProgressPendingContext({});
+        progressOperation.current = null;
         setProgressAnswer({ question: text, answer: result.answer });
         return;
       }
       if (result.draft) {
         setProgressOpen(false);
+        setProgressContinuationRunId(null);
+        setProgressPendingContext({});
+        progressOperation.current = null;
         setEditingDraft(result.draft);
         return;
       }
+      if (result.outcome === "needs_clarification") {
+        progressOperation.current = null;
+        setProgressPendingContext(result.pending_context ?? {});
+        setProgressContinuationRunId(result.local_run_id);
+      }
       setProgressError(
-        result.message || "服务器还需要更具体的信息。请补充后再提交。",
+        result.clarify ||
+          result.message ||
+          "服务器还需要更具体的信息。请补充后再提交。",
       );
     } catch (caught) {
-      setProgressError(caught instanceof Error ? caught.message : "暂时无法提交补充进展。");
+      if (
+        caught instanceof ApiError &&
+        (caught.status >= 500 ||
+          caught.code.includes("timeout") ||
+          caught.code.includes("unknown"))
+      ) {
+        setProgressError(
+          "处理结果暂时不确定。可以保留输入，并用同一操作继续查询或重试。",
+        );
+      } else {
+        setProgressError(
+          caught instanceof Error ? caught.message : "暂时无法提交补充进展。",
+        );
+      }
     } finally {
       setBusy(null);
     }
@@ -337,22 +446,57 @@ export function MatterRealDetail({ id }: { id: string }) {
     });
   };
 
-  const onRouteEstimated = (scheduleId: string, result: RouteEstimate) => {
+  /** Keep only a server-linked estimate and retain its known origin for the map. */
+  const onRouteEstimated = async (
+    scheduleId: string,
+    result: RouteEstimate,
+  ) => {
+    const schedule = matter?.schedules.find(
+      (item) => item.schedule_id === scheduleId,
+    );
+    if (!schedule) {
+      throw new Error("当前日程已变化，请刷新后重新测算。");
+    }
+    const summaries = await fetchRouteSummaries([schedule]);
+    if (summaries[scheduleId]?.status !== "available") {
+      setRouteBySchedule((current) => {
+        const next = { ...current };
+        delete next[scheduleId];
+        return next;
+      });
+      throw new Error("服务器尚未把路线结果关联到当前日程，请刷新后重试。");
+    }
     setRouteDetails((current) => ({ ...current, [scheduleId]: result }));
-    setRouteBySchedule((current) => ({
-      ...current,
-      [scheduleId]: {
-        status: "available",
-        reason_code: null,
-        message: "路线结果由服务器返回。",
-        advisory_id: null,
-        duration_seconds: result.duration_seconds,
-        mode: result.mode,
-        fetched_at: result.fetched_at,
-        origin_basis: result.origin_basis,
-      },
-    }));
+    setRouteBySchedule((current) => ({ ...current, ...summaries }));
     requestTodayRefresh();
+  };
+
+  /** Create one short-lived preview only when a route search needs a bound draft. */
+  const getRoutePlannerSearchDraft = async (): Promise<string> => {
+    if (routePlannerDraftId.current) return routePlannerDraftId.current;
+    if (!matter || !routePlannerSchedule) {
+      throw new Error("当前日程已变化，请重新打开路线面板。");
+    }
+    const operation = routePlannerDraftOperation.current;
+    const draft = await createMatterEditDraft(matter.matter_id, {
+      idempotency_key: newOperationKey("web-route-search"),
+      schedule_id: routePlannerSchedule.schedule_id,
+    });
+    if (operation !== routePlannerDraftOperation.current) {
+      void cancelDraft(draft.draft_id).catch(() => undefined);
+      throw new Error("路线面板已关闭，没有继续查询起点。");
+    }
+    routePlannerDraftId.current = draft.draft_id;
+    return draft.draft_id;
+  };
+
+  /** Close the route planner and cancel any preview created only for place search. */
+  const closeRoutePlanner = () => {
+    routePlannerDraftOperation.current += 1;
+    const draftId = routePlannerDraftId.current;
+    routePlannerDraftId.current = null;
+    setRoutePlannerSchedule(null);
+    if (draftId) void cancelDraft(draftId).catch(() => undefined);
   };
 
   if (loading && !matter) {
@@ -377,6 +521,27 @@ export function MatterRealDetail({ id }: { id: string }) {
     );
   }
 
+  const routeMapSchedule =
+    matter.schedules.find((schedule) => schedule.schedule_id === routeMapScheduleId) ??
+    null;
+  const routeMapDetails = routeMapSchedule
+    ? routeDetails[routeMapSchedule.schedule_id] ?? null
+    : null;
+  const routeMapSummary = routeMapSchedule
+    ? routeBySchedule[routeMapSchedule.schedule_id] ?? null
+    : null;
+  // Only reminders that can still be cancelled are "not yet triggered"; due ones stay due.
+  const pendingReminders = matter.reminders.filter(
+    (reminder) => reminder.status === "scheduled",
+  );
+  const openReminders = matter.reminders.filter(
+    (reminder) => reminder.status === "scheduled" || reminder.status === "due",
+  );
+  const futureSchedules = matter.schedules.filter(
+    (schedule) =>
+      !schedule.deleted_at &&
+      new Date(schedule.starts_at).getTime() > Date.now(),
+  );
   return (
     <PageShell
       title="事项详情"
@@ -433,7 +598,7 @@ export function MatterRealDetail({ id }: { id: string }) {
           <h2 className="section-title" style={{ marginBottom: 8 }}>已确定安排</h2>
           <div className="card card--tight">
             {matter.schedules.length === 0 &&
-            matter.reminders.filter((reminder) => reminder.status === "pending").length === 0 ? (
+            openReminders.length === 0 ? (
               <p className="caption" style={{ margin: 0 }}>还没有已确定的日程或提醒。</p>
             ) : (
               <div className="m-stack-10">
@@ -470,6 +635,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                       }
                       destinationLabel={schedule.location || schedule.title}
                       arrivalAt={schedule.starts_at}
+                      arrivalLabel="安排时间"
                       mode={
                         routeDetails[schedule.schedule_id]?.mode ??
                         routeBySchedule[schedule.schedule_id]?.mode ??
@@ -489,6 +655,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                         routeDetails[schedule.schedule_id]?.transfers_summary
                       }
                       fareCny={routeDetails[schedule.schedule_id]?.fare_cny}
+                      fareKind={routeDetails[schedule.schedule_id]?.fare_kind}
                       fareNotice={routeDetails[schedule.schedule_id]?.fare_notice}
                       timingBasis={routeDetails[schedule.schedule_id]?.timing_basis}
                       accuracyNotice={routeDetails[schedule.schedule_id]?.accuracy_notice}
@@ -515,23 +682,34 @@ export function MatterRealDetail({ id }: { id: string }) {
                         address: schedule.location_address,
                         city: schedule.location_city,
                       }}
+                      onViewRoute={
+                        routeDetails[schedule.schedule_id]?.status === "available" ||
+                        routeBySchedule[schedule.schedule_id]?.status === "available"
+                          ? () => setRouteMapScheduleId(schedule.schedule_id)
+                          : undefined
+                      }
                       onPlanRoute={() => setRoutePlannerSchedule(schedule)}
                     />
                   </div>
                 ))}
-                {matter.reminders
-                  .filter((reminder) => reminder.status === "pending")
-                  .map((reminder) => (
+                {openReminders.map((reminder) => (
                   <p key={reminder.reminder_id} className="caption" style={{ margin: "4px 0 0" }}>
                     提醒：{reminder.title} · {dateTimeLabel(reminder.trigger_at)} · {syncLabel(reminder)}
+                    {reminder.status === "due" ? " · 已到点，待确认知晓" : ""}
                   </p>
-                  ))}
+                ))}
               </div>
             )}
             <p className="micro" style={{ margin: "10px 0 0" }}>
               “调整”会读取服务器里的当前日程并生成结构化预览；只有再次确认后才会改写正式安排。
             </p>
-            <button type="button" className="link-button mt-6" onClick={() => setProgressOpen(true)}>
+            <button type="button" className="link-button mt-6" onClick={() => {
+              setProgressError(null);
+              setProgressPendingContext({});
+              setProgressContinuationRunId(null);
+              progressOperation.current = null;
+              setProgressOpen(true);
+            }}>
               用一句话补充安排变化
             </button>
           </div>
@@ -617,6 +795,16 @@ export function MatterRealDetail({ id }: { id: string }) {
                             <Undo2 size={13} /> 撤回
                           </button>
                         ) : null}
+                        {change.initial_delete_allowed ? (
+                          <button
+                            type="button"
+                            className="link-button danger-text"
+                            onClick={() => setInitialDeleteTarget(change)}
+                            disabled={Boolean(busy)}
+                          >
+                            <Trash2 size={13} /> 删除新事项
+                          </button>
+                        ) : null}
                       </div>
                       {reason ? (
                         <p className="micro" style={{ margin: "6px 0 0" }}>
@@ -641,20 +829,29 @@ export function MatterRealDetail({ id }: { id: string }) {
             </div>
           )}
           <p className="micro" style={{ margin: "8px 0 0" }}>
-            只有服务器标记为可撤回的最近变更才显示撤回操作。
+            只有服务器标记为可撤回的最近变更才显示撤回操作；初始新建事项的连带删除也以服务器返回的资格为准。
           </p>
         </section>
 
         <p className="micro text-center" style={{ marginTop: 0 }}>
-          停止跟进默认不取消提醒；提醒只表示服务器已有记录，尚未确认送达。彻底删除是服务器软删。
+          停止跟进的范围以确认面板中的服务器数据为准；提醒只表示服务器已有记录，不代表已经送达。
         </p>
 
         <div className="work-actions">
-          <button type="button" className="btn btn--primary grow" onClick={() => setProgressOpen(true)} disabled={Boolean(busy)}>
+          <button type="button" className="btn btn--primary grow" onClick={() => {
+            setProgressError(null);
+            setProgressPendingContext({});
+            setProgressContinuationRunId(null);
+            progressOperation.current = null;
+            setProgressOpen(true);
+          }} disabled={Boolean(busy)}>
             补充进展
           </button>
           {matter.status !== "archived" ? (
-            <button type="button" className="btn btn--secondary" onClick={() => setArchiveOpen(true)} disabled={Boolean(busy)}>
+            <button type="button" className="btn btn--secondary" onClick={() => {
+              setArchiveCancelReminders(true);
+              setArchiveOpen(true);
+            }} disabled={Boolean(busy)}>
               停止跟进
             </button>
           ) : (
@@ -675,10 +872,31 @@ export function MatterRealDetail({ id }: { id: string }) {
         stayOpenOnSubmit
         busy={busy === "progress"}
         error={progressError}
+        choices={(progressPendingContext.schedule_candidates ?? []).map((candidate) => ({
+          id: candidate.schedule_id,
+          title: candidate.title,
+          detail: `${dateTimeLabel(candidate.starts_at)}${
+            candidate.location ? ` · ${candidate.location}` : ""
+          } · 只用于继续整理，不会直接保存`,
+          onSelect: () => {
+            const runId = progressContinuationRunId;
+            setProgressError(null);
+            setProgressPendingContext({});
+            void startProgress(
+              `选择「${candidate.title}」（${dateTimeLabel(candidate.starts_at)}${
+                candidate.location ? `，地点：${candidate.location}` : ""
+              }）`,
+              runId,
+            );
+          },
+        }))}
         submitLabel="交给服务器整理"
         onClose={() => {
           setProgressOpen(false);
           setProgressError(null);
+          setProgressPendingContext({});
+          setProgressContinuationRunId(null);
+          progressOperation.current = null;
         }}
         onSubmit={(text) => void startProgress(text)}
       />
@@ -732,8 +950,58 @@ export function MatterRealDetail({ id }: { id: string }) {
               new Date(right.ends_at || right.starts_at).getTime() -
               new Date(left.ends_at || left.starts_at).getTime(),
           )}
-        onClose={() => setRoutePlannerSchedule(null)}
+        getPlaceSearchDraft={getRoutePlannerSearchDraft}
+        onClose={closeRoutePlanner}
         onEstimated={onRouteEstimated}
+      />
+      <RouteMapSheet
+        open={Boolean(routeMapSchedule)}
+        scheduleId={routeMapSchedule?.schedule_id ?? null}
+        title={routeMapSchedule ? `路线 · ${routeMapSchedule.title}` : "查看路线"}
+        fallbackOriginLabel={
+          routeMapDetails?.origin_basis === "previous_schedule" ||
+          routeMapSummary?.origin_basis === "previous_schedule"
+            ? "从上一项安排出发"
+            : routeMapDetails?.origin_basis === "user_confirmed" ||
+                routeMapSummary?.origin_basis === "user_confirmed"
+              ? "从已确认起点出发"
+              : null
+        }
+        fallbackDestination={
+          routeMapSchedule
+            ? {
+                id: routeMapSchedule.schedule_id,
+                label:
+                  routeMapSchedule.location_address ||
+                  routeMapSchedule.location ||
+                  routeMapSchedule.title,
+                latitude: routeMapSchedule.latitude as number,
+                longitude: routeMapSchedule.longitude as number,
+                coordinateSystem: routeMapSchedule.coordinate_system,
+              }
+            : null
+        }
+        fallbackMode={
+          routeMapDetails?.mode ?? routeMapSummary?.mode ?? null
+        }
+        fallbackDurationSeconds={
+          routeMapDetails?.duration_seconds ??
+          routeMapSummary?.duration_seconds ??
+          null
+        }
+        fallbackWalkingDistanceMeters={
+          routeMapDetails?.walking_distance_meters
+        }
+        fallbackTransferCount={routeMapDetails?.transfer_count}
+        fallbackTransfersSummary={routeMapDetails?.transfers_summary}
+        fallbackFareCny={routeMapDetails?.fare_cny}
+        fallbackFareKind={routeMapDetails?.fare_kind}
+        fallbackNotice={
+          routeMapSummary?.fetched_at
+            ? `路线结果取得于 ${dateTimeLabel(routeMapSummary.fetched_at)}`
+            : null
+        }
+        onClose={() => setRouteMapScheduleId(null)}
       />
       <Sheet
         title="助手回答"
@@ -777,21 +1045,113 @@ export function MatterRealDetail({ id }: { id: string }) {
           if (revertTarget) void revertChange(revertTarget);
         }}
       />
-      <ConfirmSheet
-        open={archiveOpen}
-        title="停止跟进这件事？"
-        body="服务器会把它归档，但默认不取消已有提醒。该行为按当前后端定义展示。"
-        confirmLabel="归档并停止跟进"
-        onClose={() => setArchiveOpen(false)}
+      <ConfirmDialog
+        open={Boolean(initialDeleteTarget)}
+        title="删除这个新事项？"
+        body="服务器会再次核对资格，并在同一事务中软删该事项及本次新建的日程、待办和提醒；其他事项、参考日程和苹果导入副本不受影响。"
+        confirmLabel="删除新事项"
+        danger
+        onCancel={() => setInitialDeleteTarget(null)}
         onConfirm={() => {
-          setArchiveOpen(false);
-          void run("archive", async () => {
-            await archiveMatter(matter.matter_id, { expected_version: matter.version, cancel_reminders: false });
-            toast("已归档");
+          const target = initialDeleteTarget;
+          setInitialDeleteTarget(null);
+          if (!target) return;
+          void run("initial-delete", async () => {
+            const result = await initialDeleteMatter(target.matter_id);
+            toast(
+              result.schedule_ids.length + result.todo_ids.length + result.reminder_ids.length > 0
+                ? "已删除这个新事项及其本次新建的安排"
+                : "已删除这个新事项",
+            );
+            requestTodayRefresh();
             router.push("/matters");
           });
         }}
       />
+      <Sheet title="停止跟进这件事？" open={archiveOpen} onClose={() => setArchiveOpen(false)}>
+        <div className="m-stack-12">
+          <div className="notice notice--amber">
+            <strong>事项将归档，不会删除</strong>
+            <p className="caption" style={{ margin: "4px 0 0" }}>
+              「{matter.title}」会从正在推进中移到归档；事项和已有日程记录仍会保留。
+            </p>
+          </div>
+          <div className="card card--tight">
+            <p className="micro" style={{ margin: 0 }}>未触发提醒</p>
+            {pendingReminders.length > 0 ? (
+              <div className="m-stack-8 mt-8">
+                {pendingReminders.map((reminder) => (
+                  <p key={reminder.reminder_id} className="caption" style={{ margin: 0 }}>
+                    {reminder.title} · {dateTimeLabel(reminder.trigger_at)}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="caption" style={{ margin: "4px 0 0" }}>
+                服务器没有未触发的提醒。
+              </p>
+            )}
+            {pendingReminders.length > 0 ? (
+              <label className="flex items-start gap-8 mt-10">
+                <input
+                  type="checkbox"
+                  checked={archiveCancelReminders}
+                  onChange={(event) => setArchiveCancelReminders(event.target.checked)}
+                  style={{ marginTop: 3 }}
+                />
+                <span className="caption" style={{ margin: 0 }}>
+                  同时取消以上 {pendingReminders.length} 条未触发提醒
+                </span>
+              </label>
+            ) : null}
+          </div>
+          <div className="card card--tight">
+            <p className="micro" style={{ margin: 0 }}>日程范围</p>
+            <p className="caption" style={{ margin: "4px 0 0" }}>
+              过去安排会保留。这里的归档只处理事项状态和未触发提醒，不会一并取消未来日程；
+              如需取消，请在助手中说明“停止跟进并取消未来日程”，由服务器生成可勾选的预览后再确认。
+            </p>
+            {futureSchedules.length > 0 ? (
+              <ul className="compact-list">
+                {futureSchedules.map((schedule) => (
+                  <li key={schedule.schedule_id}>
+                    {schedule.title} · {dateTimeLabel(schedule.starts_at)}
+                    {schedule.source === "ios_eventkit" ? " · 苹果端日程需在苹果设备处理" : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+          <p className="caption" style={{ margin: 0 }}>
+            确认后将不再发送服务器中的后续提醒；已经显示在手机上的通知需要在手机端手动清除。
+          </p>
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={Boolean(busy)}
+            onClick={() => {
+              setArchiveOpen(false);
+              void run("archive", async () => {
+                await archiveMatter(matter.matter_id, {
+                  expected_version: matter.version,
+                  cancel_reminders: archiveCancelReminders,
+                });
+                toast(
+                  archiveCancelReminders && pendingReminders.length > 0
+                    ? "已归档并取消后续提醒；手机已显示的通知需手动清除"
+                    : "已归档；未触发的服务器提醒未被取消",
+                );
+                router.push("/matters");
+              });
+            }}
+          >
+            {busy === "archive" ? "正在归档…" : "确认归档并停止跟进"}
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={() => setArchiveOpen(false)}>
+            取消
+          </button>
+        </div>
+      </Sheet>
       <ConfirmSheet
         open={reopenOpen}
         title="重新打开这件事？"
@@ -810,7 +1170,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ConfirmSheet
         open={deleteOpen}
         title="彻底删除这件事？"
-        body="服务器会软删事项和关联日程，并取消待发提醒。删除成功后列表和后续检索都不再引用它。"
+        body="删除后，该事项及关联安排将移除；后续助手不再把这些已删除内容作为有效资料使用。当前聊天界面已经显示的文字不会自动抹除。"
         confirmLabel="彻底删除"
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => {

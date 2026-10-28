@@ -111,6 +111,7 @@ export function ProgressSheet({
   busy = false,
   error = null,
   submitLabel = "保存进展到预览",
+  choices = [],
 }: {
   open: boolean;
   title: string;
@@ -121,6 +122,12 @@ export function ProgressSheet({
   busy?: boolean;
   error?: string | null;
   submitLabel?: string;
+  choices?: Array<{
+    id: string;
+    title: string;
+    detail: string;
+    onSelect: () => void;
+  }>;
 }) {
   const [text, setText] = useState("");
   useEffect(() => {
@@ -146,6 +153,25 @@ export function ProgressSheet({
           <p className="danger-text" style={{ margin: 0 }} role="alert">
             {error}
           </p>
+        ) : null}
+        {choices.length > 0 ? (
+          <div className="m-stack-8" aria-label="选择要继续处理的安排">
+            {choices.map((choice) => (
+              <button
+                key={choice.id}
+                type="button"
+                className="choice-card"
+                disabled={busy}
+                onClick={choice.onSelect}
+              >
+                <span className="choice-card__dot" aria-hidden="true" />
+                <span className="grow">
+                  <span className="choice-card__title">{choice.title}</span>
+                  <span className="choice-card__detail">{choice.detail}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         ) : null}
         <button
           type="button"
