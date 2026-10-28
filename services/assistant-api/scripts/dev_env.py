@@ -1,0 +1,1206 @@
+"""Repeatable local development environment for assistant-api.
+
+This is a *development* environment, not the shared deployment and not a
+recovery of the old database. It keeps one SQLite file under `services/assistant-api/data/`
+(ignored by Git), starts the real API, scheduler and worker plus the local Nexus
+stub, and never deletes rows or re-creates accounts on start.
+
+Commands (run from the service directory):
+
+    .venv/bin/python scripts/dev_env.py init [--seed-email you@example.com]
+    .venv/bin/python scripts/dev_env.py doctor
+    .venv/bin/python scripts/dev_env.py start
+    .venv/bin/python scripts/dev_env.py status
+    .venv/bin/python scripts/dev_env.py stop
+    .venv/bin/python scripts/dev_env.py backup
+    .venv/bin/python scripts/dev_env.py verify-backup data/backups/<file>.db
+    .venv/bin/python scripts/dev_env.py restore-check data/backups/<file>.db
+    .venv/bin/python scripts/dev_env.py restore data/backups/<file>.db --yes
+
+Design constraints:
+
+* initialisation, upgrade and start are separate steps; `start` only checks the
+  schema and refuses to run when the database is missing or old;
+* all three background/API processes inherit one explicit config file, so they
+  cannot silently use different databases;
+* stop only terminates the PIDs this script recorded (and only when the command
+  line still matches), never every Python process by name;
+* backups use SQLite's online backup API and are verified on a copy.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import socket
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+SERVICE_ROOT = Path(__file__).resolve().parents[1]
+DATA_DIR = SERVICE_ROOT / "data"
+CONFIG_PATH = DATA_DIR / "dev.env"
+DB_PATH = DATA_DIR / "local-development.db"
+LOG_DIR = DATA_DIR / "logs"
+RUN_DIR = DATA_DIR / "run"
+BACKUP_DIR = DATA_DIR / "backups"
+
+DEV_API_PORT = 8093
+DEV_STUB_PORT = 8191
+DEV_NEXUS_TOKEN = "dev-local-nexus-token-32-characters"
+
+COMPONENTS = ("stub", "api", "scheduler", "worker")
+STOP_MARKER = "last-stop.json"
+STOP_ORDER = ("worker", "scheduler", "api", "stub")
+
+REQUIRED_TABLES = (
+    "schema_migrations",
+    "users",
+    "user_sessions",
+    "user_profiles",
+    "nexus_runs",
+    "user_asks",
+    "commute_plans",
+    "commute_instances",
+    "commute_checks",
+    "commute_advisories",
+    "commute_weather_snapshots",
+    "commute_eta_snapshots",
+    "notification_outbox",
+    "service_heartbeats",
+    "matters",
+    "matter_todos",
+    "matter_progress",
+    "matter_drafts",
+    "matter_changes",
+    "reminders",
+)
+REQUIRED_COLUMNS = {
+    "nexus_runs": ("purpose", "business_ref", "input_version", "trigger"),
+    "commute_checks": (
+        "phase",
+        "phase_updated_at",
+        "analysis_mode",
+        "ai_run_id",
+        "route_snapshot_json",
+        "route_snapshot_hash",
+    ),
+    "commute_advisories": ("ai_analysis_json",),
+    "schedules": (
+        "source",
+        "sync_status",
+        "source_external_id",
+        "source_updated_at",
+        "source_version",
+        "matter_id",
+        "data_source_id",
+        "latitude",
+        "longitude",
+        "deleted_at",
+        "source_scope_key",
+    ),
+    "reminders": ("source_scope_key", "data_source_id"),
+    "matter_drafts": ("origin_key",),
+}
+REQUIRED_MIGRATIONS = ("0006_ai_task_purpose", "0007_matters", "0008_source_auth", "0009_edit_drafts")
+
+COMPONENT_MARKERS = {
+    "stub": ("uvicorn", "app:app"),
+    "api": ("uvicorn", "assistant_api.main:app"),
+    "scheduler": ("assistant_api.commute.scheduler",),
+    "worker": ("assistant_api.commute.worker",),
+}
+
+
+# ---------------------------------------------------------------------------
+# configuration
+# ---------------------------------------------------------------------------
+
+
+def config_values(
+    *,
+    db_path: Path = DB_PATH,
+    api_port: int = DEV_API_PORT,
+    stub_port: int = DEV_STUB_PORT,
+) -> dict[str, str]:
+    """Return the one configuration every process must share."""
+
+    db_abs = db_path.resolve()
+    api_port = int(api_port or DEV_API_PORT)
+    stub_port = int(stub_port or DEV_STUB_PORT)
+    return {
+        "ASSISTANT_ENVIRONMENT": "development",
+        "ASSISTANT_DATABASE_URL": f"sqlite+aiosqlite:///{db_abs}",
+        "ASSISTANT_ALLOW_SCHEMA_CREATE": "false",
+        "ASSISTANT_COMMUTE_PROVIDER_MODE": "mock",
+        "ASSISTANT_COMMUTE_AUTO_WEATHER_ENABLED": "true",
+        "ASSISTANT_COMMUTE_AUTO_AI_ENABLED": "false",
+        "ASSISTANT_COMMUTE_HEARTBEAT_STALE_SECONDS": "60",
+        "ASSISTANT_NEXUS_BASE_URL": f"http://127.0.0.1:{stub_port}",
+        "ASSISTANT_NEXUS_APPLICATION_ID": "personal_assistant",
+        "ASSISTANT_NEXUS_APPLICATION_TOKEN": DEV_NEXUS_TOKEN,
+        "PA_DEV_API_PORT": str(api_port),
+        "PA_DEV_STUB_PORT": str(stub_port),
+        "PA_DEV_STUB_TOKEN": DEV_NEXUS_TOKEN,
+    }
+
+
+def write_config(path: Path, values: dict[str, str]) -> None:
+    """Write key=value lines atomically; the file is ignored by Git."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Local development configuration generated by scripts/dev_env.py.",
+        "# Ignored by Git (.gitignore: data/). Do not copy real credentials here.",
+        f"# generated_at={datetime.now(UTC).isoformat()}",
+    ]
+    lines += [f"{key}={value}" for key, value in values.items()]
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    temporary.chmod(0o600)
+    temporary.replace(path)
+
+
+def read_config(path: Path = CONFIG_PATH) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        values[key.strip()] = value.strip()
+    return values
+
+
+def port_setting(values: dict[str, str], key: str, default: int) -> int:
+    """Read a port, falling back to the default for missing/invalid values."""
+
+    raw = values.get(key)
+    try:
+        value = int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        return default
+    return value if 0 < value < 65_536 else default
+
+
+def database_path_from_url(url: str) -> Path:
+    """Return the absolute file path encoded in a SQLite URL."""
+
+    prefix = "sqlite+aiosqlite:///"
+    if not url.startswith(prefix):
+        raise ValueError(f"unsupported database URL: {url}")
+    raw = url[len(prefix):]
+    path = Path(raw)
+    if not path.is_absolute():
+        raise ValueError(f"development database path must be absolute: {raw}")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# database inspection and backup
+# ---------------------------------------------------------------------------
+
+
+def _connect_readonly(path: Path) -> sqlite3.Connection:
+    uri = f"file:{path}?mode=ro"
+    return sqlite3.connect(uri, uri=True)
+
+
+def inspect_database(path: Path) -> dict:
+    """Return structure facts without modifying the file."""
+
+    report: dict = {
+        "path": str(path),
+        "exists": path.is_file(),
+        "integrity": None,
+        "tables": [],
+        "missing_tables": list(REQUIRED_TABLES),
+        "missing_columns": {},
+        "migrations": [],
+        "missing_migrations": list(REQUIRED_MIGRATIONS),
+    }
+    if not report["exists"]:
+        return report
+    connection = _connect_readonly(path)
+    try:
+        report["integrity"] = connection.execute("PRAGMA integrity_check;").fetchone()[0]
+        report["tables"] = [
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        ]
+        report["missing_tables"] = [
+            name for name in REQUIRED_TABLES if name not in report["tables"]
+        ]
+        for table, columns in REQUIRED_COLUMNS.items():
+            if table not in report["tables"]:
+                report["missing_columns"][table] = list(columns)
+                continue
+            present = {
+                row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+            }
+            missing = [column for column in columns if column not in present]
+            if missing:
+                report["missing_columns"][table] = missing
+        if "schema_migrations" in report["tables"]:
+            report["migrations"] = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT version FROM schema_migrations ORDER BY version"
+                )
+            ]
+        report["missing_migrations"] = [
+            version
+            for version in REQUIRED_MIGRATIONS
+            if version not in report["migrations"]
+        ]
+    finally:
+        connection.close()
+    return report
+
+
+def schema_errors(report: dict) -> list[str]:
+    errors: list[str] = []
+    if not report["exists"]:
+        errors.append(f"数据库不存在：{report['path']}")
+        return errors
+    if report["integrity"] != "ok":
+        errors.append(f"数据库完整性检查未通过：{report['integrity']}")
+    if report["missing_tables"]:
+        errors.append("缺少数据表：" + ", ".join(report["missing_tables"]))
+    for table, columns in report["missing_columns"].items():
+        errors.append(f"{table} 缺少列：" + ", ".join(columns))
+    if report["missing_migrations"]:
+        errors.append(
+            "缺少迁移记录：" + ", ".join(report["missing_migrations"])
+            + "（若旧库由 create_all 建立，属正常；以列检查为准）"
+        )
+    return errors
+
+
+def blocking_schema_errors(report: dict) -> list[str]:
+    """Errors that must stop a start; migration bookkeeping alone is advisory."""
+
+    return [error for error in schema_errors(report) if not error.startswith("缺少迁移记录")]
+
+
+def table_counts(path: Path) -> dict[str, int]:
+    connection = _connect_readonly(path)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+        counts = {}
+        for table in (
+            "users",
+            "user_sessions",
+            "nexus_runs",
+            "user_asks",
+            "commute_plans",
+            "commute_instances",
+            "commute_checks",
+            "commute_advisories",
+            "commute_weather_snapshots",
+            "notification_outbox",
+        ):
+            if table in tables:
+                counts[table] = connection.execute(
+                    f"SELECT COUNT(*) FROM {table}"
+                ).fetchone()[0]
+        return counts
+    finally:
+        connection.close()
+
+
+def pending_work(database: Path) -> dict[str, int]:
+    """Count work a starting worker would pick up; the caller decides what to do."""
+
+    empty = {"queued_checks": 0, "running_checks": 0, "pending_notifications": 0}
+    if not database.is_file():
+        return empty
+    connection = _connect_readonly(database)
+    try:
+        queued = connection.execute(
+            "SELECT COUNT(*) FROM commute_checks WHERE status='queued'"
+        ).fetchone()[0]
+        running = connection.execute(
+            "SELECT COUNT(*) FROM commute_checks WHERE status='running'"
+        ).fetchone()[0]
+        notifications = connection.execute(
+            "SELECT COUNT(*) FROM notification_outbox WHERE status IN ('pending','sending')"
+        ).fetchone()[0]
+    except sqlite3.Error:
+        return empty
+    finally:
+        connection.close()
+    return {
+        "queued_checks": queued,
+        "running_checks": running,
+        "pending_notifications": notifications,
+    }
+
+
+def sample_ids(path: Path) -> dict[str, list[str]]:
+    """Return stable identifiers so a restore can prove it is the same data."""
+
+    connection = _connect_readonly(path)
+    result: dict[str, list[str]] = {}
+    try:
+        queries = {
+            "checks": "SELECT check_id FROM commute_checks ORDER BY created_at DESC LIMIT 5",
+            "advisories": "SELECT advisory_id FROM commute_advisories ORDER BY generated_at DESC LIMIT 5",
+            "asks": "SELECT local_run_id FROM user_asks ORDER BY created_at DESC LIMIT 5",
+        }
+        for name, sql in queries.items():
+            try:
+                result[name] = [row[0] for row in connection.execute(sql)]
+            except sqlite3.Error:
+                result[name] = []
+    finally:
+        connection.close()
+    return result
+
+
+def backup_database(source: Path, destination: Path) -> None:
+    """Create a consistent snapshot using SQLite's online backup API."""
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source_connection = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    destination_connection = sqlite3.connect(destination)
+    try:
+        source_connection.backup(destination_connection)
+    finally:
+        destination_connection.close()
+        source_connection.close()
+
+
+def verify_backup(path: Path) -> dict:
+    """Check one backup without touching the source."""
+
+    report = inspect_database(path)
+    report["counts"] = table_counts(path) if report["exists"] else {}
+    return report
+
+
+def restore_check(backup: Path, live: Path) -> dict:
+    """Restore a backup into a temporary directory and compare it with live."""
+
+    if not backup.is_file():
+        raise SystemExit(f"备份文件不存在：{backup}")
+    with tempfile.TemporaryDirectory(prefix="pa-restore-check-") as directory:
+        copy = Path(directory) / "restored.db"
+        shutil.copy2(backup, copy)
+        restored = verify_backup(copy)
+        restored["sample_ids"] = sample_ids(copy)
+    restored["live_counts"] = table_counts(live) if live.is_file() else {}
+    restored["live_sample_ids"] = sample_ids(live) if live.is_file() else {}
+    restored["counts_match"] = restored["counts"] == restored["live_counts"]
+    restored["ids_match"] = restored["sample_ids"] == restored["live_sample_ids"]
+    return restored
+
+
+# ---------------------------------------------------------------------------
+# process management
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Started:
+    name: str
+    pid: int
+    port: int | None
+    log: Path
+    command: list[str]
+
+
+def venv_python() -> Path:
+    candidate = SERVICE_ROOT / ".venv" / "bin" / "python"
+    return candidate if candidate.exists() else Path(sys.executable)
+
+
+def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.5)
+        return probe.connect_ex((host, port)) == 0
+
+
+def pid_file(name: str) -> Path:
+    return RUN_DIR / f"{name}.json"
+
+
+def read_pid(name: str) -> dict | None:
+    path = pid_file(name)
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+
+
+def pid_alive(pid: int) -> bool:
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def process_command(pid: int) -> str | None:
+    try:
+        output = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    command = output.stdout.strip()
+    return command or None
+
+
+def command_matches(name: str, command: str) -> bool:
+    markers = COMPONENT_MARKERS.get(name, ())
+    return all(marker in command for marker in markers)
+
+
+def running_processes() -> dict[str, dict]:
+    found = {}
+    for name in COMPONENTS:
+        record = read_pid(name)
+        if record and pid_alive(int(record.get("pid", 0))):
+            found[name] = record
+    return found
+
+
+def component_command(
+    name: str, config: dict[str, str], python: Path
+) -> tuple[list[str], Path, int | None]:
+    api_port = port_setting(config, "PA_DEV_API_PORT", DEV_API_PORT)
+    stub_port = port_setting(config, "PA_DEV_STUB_PORT", DEV_STUB_PORT)
+    if name == "stub":
+        return (
+            [
+                str(python), "-m", "uvicorn", "app:app",
+                "--host", "127.0.0.1", "--port", str(stub_port),
+                "--log-level", "warning",
+            ],
+            SERVICE_ROOT.parent / "nexus-stub",
+            stub_port,
+        )
+    if name == "api":
+        return (
+            [
+                str(python), "-m", "uvicorn", "assistant_api.main:app",
+                "--host", "127.0.0.1", "--port", str(api_port),
+                "--log-level", "info",
+            ],
+            SERVICE_ROOT,
+            api_port,
+        )
+    if name == "scheduler":
+        return (
+            [str(python), "-m", "assistant_api.commute.scheduler"],
+            SERVICE_ROOT,
+            None,
+        )
+    if name == "worker":
+        return (
+            [str(python), "-m", "assistant_api.commute.worker"],
+            SERVICE_ROOT,
+            None,
+        )
+    raise ValueError(f"unknown component: {name}")
+
+
+def child_environment(config: dict[str, str], name: str) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment.update(
+        {key: value for key, value in config.items() if key.startswith("ASSISTANT_")}
+    )
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    if name == "stub":
+        environment["STUB_APP_TOKEN"] = config.get("PA_DEV_STUB_TOKEN", DEV_NEXUS_TOKEN)
+    return environment
+
+
+def tail(path: Path, lines: int = 12) -> str:
+    if not path.is_file():
+        return "(no log)"
+    content = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(content[-lines:])
+
+
+def wait_http(url: str, timeout: float) -> bool:
+    import urllib.error
+    import urllib.request
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as response:
+                if response.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError, ValueError):
+            time.sleep(0.2)
+    return False
+
+
+def wait_heartbeats(db_path: Path, timeout: float) -> dict[str, str]:
+    """Wait until scheduler and worker have written a heartbeat."""
+
+    deadline = time.time() + timeout
+    latest: dict[str, str] = {}
+    while time.time() < deadline:
+        if db_path.is_file():
+            connection = _connect_readonly(db_path)
+            try:
+                latest = {
+                    row[0]: row[1]
+                    for row in connection.execute(
+                        "SELECT component, last_seen_at FROM service_heartbeats"
+                    )
+                }
+            except sqlite3.Error:
+                latest = {}
+            finally:
+                connection.close()
+            if {"scheduler", "worker"} <= set(latest):
+                return latest
+        time.sleep(0.3)
+    return latest
+
+# ---------------------------------------------------------------------------
+# commands
+# ---------------------------------------------------------------------------
+
+
+def load_config_or_exit() -> dict[str, str]:
+    if not CONFIG_PATH.is_file():
+        raise SystemExit(
+            f"缺少开发配置：{CONFIG_PATH}\n先运行：.venv/bin/python scripts/dev_env.py init"
+        )
+    return read_config(CONFIG_PATH)
+
+
+def config_database(config: dict[str, str]) -> Path:
+    return database_path_from_url(config["ASSISTANT_DATABASE_URL"])
+
+
+def preflight(
+    config: dict[str, str],
+    components: tuple[str, ...],
+    *,
+    db_path: Path | None = None,
+) -> list[str]:
+    """Return every reason not to start; never stops or changes anything."""
+
+    errors: list[str] = []
+    database = db_path or config_database(config)
+    errors.extend(blocking_schema_errors(inspect_database(database)))
+    running = running_processes()
+    for name in components:
+        if name in running:
+            errors.append(
+                f"{name} 已在运行（pid {running[name]['pid']}），先执行 stop，避免第二套进程"
+            )
+    ports = {
+        "api": port_setting(config, "PA_DEV_API_PORT", DEV_API_PORT),
+        "stub": port_setting(config, "PA_DEV_STUB_PORT", DEV_STUB_PORT),
+    }
+    for name, port in ports.items():
+        if name in components and port_in_use(port):
+            errors.append(
+                f"端口 {port}（{name}）已被占用；本脚本不会停止其他程序，"
+                "请先确认占用者，或用 init --api-port/--stub-port 换端口"
+            )
+    if {"scheduler", "worker"} & set(components):
+        errors.extend(untracked_warnings(config, database, running))
+    if "worker" in components:
+        work = pending_work(database)
+        if work["running_checks"]:
+            errors.append(
+                f"有 {work['running_checks']} 条检查仍标记为 running；先确认没有其他执行者，"
+                "或等待租约过期后再启动 worker"
+            )
+    return errors
+
+
+def write_pid(name: str, record: dict) -> None:
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    pid_file(name).write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def terminate(pid: int, *, timeout: float = 10.0) -> str:
+    """Terminate exactly one recorded PID, escalating only if it ignores TERM."""
+
+    os.kill(pid, 15)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not pid_alive(pid):
+            return "terminated"
+        time.sleep(0.2)
+    if pid_alive(pid):
+        os.kill(pid, 9)
+        return "killed"
+    return "terminated"
+
+
+def stop_components(records: list[Started]) -> list[str]:
+    stopped = []
+    for record in reversed(records):
+        if pid_alive(record.pid):
+            terminate(record.pid)
+            stopped.append(record.name)
+        else:
+            stopped.append(f"{record.name}(already exited)")
+        pid_file(record.name).unlink(missing_ok=True)
+    return stopped
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    for directory in (LOG_DIR, RUN_DIR, BACKUP_DIR):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    api_port = args.api_port
+    stub_port = args.stub_port
+    if CONFIG_PATH.is_file():
+        existing = read_config(CONFIG_PATH)
+        api_port = api_port or port_setting(existing, "PA_DEV_API_PORT", DEV_API_PORT)
+        stub_port = stub_port or port_setting(existing, "PA_DEV_STUB_PORT", DEV_STUB_PORT)
+        print(f"keeping existing config: {CONFIG_PATH}")
+    values = config_values(api_port=api_port, stub_port=stub_port)
+    write_config(CONFIG_PATH, values)
+
+    database = config_database(values)
+    url = values["ASSISTANT_DATABASE_URL"]
+    python = venv_python()
+    if database.is_file():
+        print(f"database exists: {database} (upgrade only, no reset)")
+        command = [str(python), "-m", "scripts.migrate_sqlite", "upgrade", "--database", url]
+    else:
+        print(f"creating database: {database}")
+        command = [str(python), "-m", "scripts.migrate_sqlite", "init", "--database", url]
+    result = subprocess.run(command, cwd=SERVICE_ROOT)
+    if result.returncode != 0:
+        print("database initialisation/upgrade failed; nothing else was changed")
+        return result.returncode
+
+    report = inspect_database(database)
+    for error in schema_errors(report):
+        print(f"  note: {error}")
+
+    if args.seed_email:
+        password = os.environ.get("ASSISTANT_PROVISION_PASSWORD")
+        if not password:
+            print(
+                "拒绝创建账号：请把一次性密码放进环境变量 ASSISTANT_PROVISION_PASSWORD，"
+                "不要写在命令行或文档里"
+            )
+            return 2
+        environment = os.environ.copy()
+        environment.update(
+            {key: value for key, value in values.items() if key.startswith("ASSISTANT_")}
+        )
+        environment["ASSISTANT_PROVISION_PASSWORD"] = password
+        display = args.seed_name or "本地开发账号"
+        seed_command = [
+            str(python), "-m", "assistant_api.commands.seed_dev_user",
+            "--email", args.seed_email, "--display-name", display,
+            "--with-sample-data",
+        ]
+        seeded = subprocess.run(seed_command, cwd=SERVICE_ROOT, env=environment)
+        if seeded.returncode != 0:
+            print("账号创建失败（数据库结构已就绪）")
+            return seeded.returncode
+        print(f"seeded synthetic account: {args.seed_email}")
+
+    print()
+    print("initialised. next steps:")
+    print("  .venv/bin/python scripts/dev_env.py doctor")
+    print("  .venv/bin/python scripts/dev_env.py start")
+    print("  .venv/bin/python scripts/dev_env.py status")
+    return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    if args.database:
+        values = config_values()
+        database = Path(args.database).resolve()
+    else:
+        values = load_config_or_exit()
+        database = config_database(values)
+    report = inspect_database(database)
+    print(f"database: {database}")
+    print(f"exists: {report['exists']}")
+    if report["exists"]:
+        print(f"integrity: {report['integrity']}")
+        print(f"tables: {len(report['tables'])}")
+        print(f"migrations: {', '.join(report['migrations']) or '(none)'}")
+    errors = schema_errors(report)
+    blocking = blocking_schema_errors(report)
+    for error in errors:
+        print(f"  issue: {error}")
+    if not args.no_ports:
+        for name, port in (
+            ("api", port_setting(values, "PA_DEV_API_PORT", DEV_API_PORT)),
+            ("stub", port_setting(values, "PA_DEV_STUB_PORT", DEV_STUB_PORT)),
+        ):
+            state = "in use" if port_in_use(port) else "free"
+            print(f"port {port} ({name}): {state}")
+    running = running_processes()
+    print(f"running components: {', '.join(sorted(running)) or '(none)'}")
+    work = pending_work(database)
+    print(
+        "pending work: "
+        f"queued_checks={work['queued_checks']}, "
+        f"running_checks={work['running_checks']}, "
+        f"pending_notifications={work['pending_notifications']}"
+    )
+    for warning in untracked_warnings(values, database, running):
+        print(f"  warning: {warning}")
+    if blocking:
+        print("database is not ready; run: .venv/bin/python scripts/dev_env.py init")
+        return 1
+    print("doctor: ok")
+    return 0
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    config = load_config_or_exit()
+    components = tuple(name.strip() for name in args.components.split(",") if name.strip())
+    unknown = [name for name in components if name not in COMPONENTS]
+    if unknown:
+        raise SystemExit(f"unknown components: {', '.join(unknown)}")
+    database = config_database(config)
+    errors = preflight(config, components, db_path=database)
+    if errors:
+        print("refusing to start:")
+        for error in errors:
+            print(f"  - {error}")
+        return 1
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    python = venv_python()
+    started: list[Started] = []
+    failures: list[str] = []
+
+    for name in components:
+        command, cwd, port = component_command(name, config, python)
+        log = LOG_DIR / f"{name}.log"
+        stamp = datetime.now(UTC).isoformat()
+        with log.open("ab") as handle:
+            handle.write(f"\n===== start {stamp} =====\n".encode())
+            process = subprocess.Popen(
+                command,
+                cwd=cwd,
+                env=child_environment(config, name),
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        write_pid(
+            name,
+            {
+                "name": name,
+                "pid": process.pid,
+                "port": port,
+                "log": str(log),
+                "command": command,
+                "started_at": stamp,
+            },
+        )
+        started.append(Started(name=name, pid=process.pid, port=port, log=log, command=command))
+
+        if name == "stub":
+            ready = wait_http(f"http://127.0.0.1:{port}/health", 20)
+        elif name == "api":
+            ready = wait_http(f"http://127.0.0.1:{port}/health", 30)
+        else:
+            time.sleep(1.5)
+            ready = process.poll() is None
+        if not ready:
+            failures.append(name)
+            break
+
+    work = pending_work(database)
+    if "worker" in components and (
+        work["queued_checks"] or work["pending_notifications"]
+    ):
+        print(
+            "note: worker will pick up "
+            f"{work['queued_checks']} queued check(s) and "
+            f"{work['pending_notifications']} pending notification(s); "
+            "automatic model analysis is off, but an existing manual check may still call "
+            "the configured Nexus (here: simulated stub)"
+        )
+
+    heartbeats: dict[str, str] = {}
+    if not failures and {"scheduler", "worker"} <= set(components):
+        heartbeats = wait_heartbeats(database, 20)
+        missing = sorted({"scheduler", "worker"} - set(heartbeats))
+        if missing:
+            failures.append("heartbeat(" + ",".join(missing) + ")")
+
+    if failures:
+        print("start failed: " + ", ".join(failures))
+        for record in started:
+            print(f"--- {record.name} log ({record.log})")
+            print(tail(record.log))
+        stopped = stop_components(started)
+        print("stopped partially started components: " + (", ".join(stopped) or "(none)"))
+        return 1
+
+    print("started (development environment, synthetic data only):")
+    for record in started:
+        port = f" port {record.port}" if record.port else ""
+        print(f"  {record.name:<9} pid {record.pid}{port}  log {record.log}")
+    if heartbeats:
+        print("background heartbeats: " + ", ".join(f"{k}={v}" for k, v in sorted(heartbeats.items())))
+    print()
+    print(f"API: http://127.0.0.1:{port_setting(config, 'PA_DEV_API_PORT', DEV_API_PORT)}")
+    print(
+        "Nexus stub: "
+        f"http://127.0.0.1:{port_setting(config, 'PA_DEV_STUB_PORT', DEV_STUB_PORT)} (simulated)"
+    )
+    print("stop with: .venv/bin/python scripts/dev_env.py stop")
+    return 0
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    stopped: list[str] = []
+    mismatched: list[str] = []
+    for name in STOP_ORDER:
+        record = read_pid(name)
+        if record is None:
+            continue
+        pid = int(record.get("pid", 0))
+        if not pid_alive(pid):
+            pid_file(name).unlink(missing_ok=True)
+            print(f"{name}: stale pid file removed (process already gone)")
+            continue
+        command = process_command(pid)
+        if command is not None and not command_matches(name, command):
+            mismatched.append(f"{name} pid {pid} command does not match: {command}")
+            continue
+        outcome = terminate(pid)
+        pid_file(name).unlink(missing_ok=True)
+        stopped.append(f"{name}({outcome})")
+    if stopped:
+        record_stop_time()
+        print("stopped: " + ", ".join(stopped))
+    if mismatched:
+        print("refused to stop (pid reused by another program):")
+        for item in mismatched:
+            print(f"  - {item}")
+        return 1
+    if not stopped:
+        print("nothing to stop (no pid files)")
+    return 0
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+
+
+def latest_heartbeats(database: Path) -> dict[str, datetime]:
+    if not database.is_file():
+        return {}
+    connection = _connect_readonly(database)
+    try:
+        rows = connection.execute(
+            "SELECT component, last_seen_at FROM service_heartbeats"
+        ).fetchall()
+    except sqlite3.Error:
+        rows = []
+    finally:
+        connection.close()
+    parsed = {}
+    for component, seen in rows:
+        value = _parse_timestamp(seen)
+        if value is not None:
+            parsed[component] = value
+    return parsed
+
+
+def last_stop_time() -> datetime | None:
+    path = RUN_DIR / STOP_MARKER
+    if not path.is_file():
+        return None
+    try:
+        return _parse_timestamp(json.loads(path.read_text(encoding="utf-8")).get("stopped_at"))
+    except (ValueError, OSError):
+        return None
+
+
+def record_stop_time() -> None:
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    (RUN_DIR / STOP_MARKER).write_text(
+        json.dumps({"stopped_at": datetime.now(UTC).isoformat()}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def untracked_warnings(
+    config: dict[str, str], database: Path, running: dict[str, dict]
+) -> list[str]:
+    """Warn about processes or heartbeats this script does not track (never kills)."""
+
+    warnings: list[str] = []
+    ports = {
+        "api": port_setting(config, "PA_DEV_API_PORT", DEV_API_PORT),
+        "stub": port_setting(config, "PA_DEV_STUB_PORT", DEV_STUB_PORT),
+    }
+    for name, port in ports.items():
+        if port_in_use(port) and name not in running:
+            warnings.append(
+                f"端口 {port}（{name}）被占用，但没有本脚本的 PID 记录；"
+                "可能是别的程序或上次异常退出，请先人工确认（脚本不会停止它）"
+            )
+    stale_seconds = int(config.get("ASSISTANT_COMMUTE_HEARTBEAT_STALE_SECONDS", "60"))
+    stopped_at = last_stop_time()
+    now = datetime.now(UTC)
+    heartbeats = latest_heartbeats(database)
+    for component in ("scheduler", "worker"):
+        if component in running:
+            continue
+        seen = heartbeats.get(component)
+        if seen is None:
+            continue
+        fresh = (now - seen).total_seconds() <= stale_seconds
+        after_stop = stopped_at is None or seen > stopped_at
+        if fresh and after_stop:
+            warnings.append(
+                f"{component} 心跳仍新鲜（{seen.isoformat()}）但没有本脚本的 PID 记录；"
+                "可能有未跟踪进程，请先人工确认，避免重复领取任务"
+            )
+    return warnings
+
+
+def heartbeat_state(value: str | None, stale_seconds: int) -> str:
+    if not value:
+        return "not_seen"
+    try:
+        seen = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return "unknown"
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=UTC)
+    age = (datetime.now(UTC) - seen).total_seconds()
+    return "online" if age <= stale_seconds else "stale"
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    config = load_config_or_exit()
+    database = config_database(config)
+    stale_seconds = int(config.get("ASSISTANT_COMMUTE_HEARTBEAT_STALE_SECONDS", "60"))
+    print(f"database: {database} (persistent, Git-ignored)")
+    running = running_processes()
+    for name in COMPONENTS:
+        record = running.get(name)
+        if record:
+            command = process_command(int(record["pid"])) or "(command unavailable)"
+            print(f"{name}: pid {record['pid']}  {command[:120]}")
+        else:
+            print(f"{name}: stopped")
+    for name, port in (
+        ("api", port_setting(config, "PA_DEV_API_PORT", DEV_API_PORT)),
+        ("stub", port_setting(config, "PA_DEV_STUB_PORT", DEV_STUB_PORT)),
+    ):
+        print(f"port {port} ({name}): {'in use' if port_in_use(port) else 'free'}")
+
+    report = inspect_database(database)
+    if not report["exists"]:
+        print("database not initialised; run init")
+        return 1
+    print(f"integrity: {report['integrity']}")
+    counts = table_counts(database)
+    print("counts: " + ", ".join(f"{key}={value}" for key, value in counts.items()))
+    work = pending_work(database)
+    print(
+        "pending work: "
+        f"queued_checks={work['queued_checks']}, "
+        f"running_checks={work['running_checks']}, "
+        f"pending_notifications={work['pending_notifications']}"
+    )
+    connection = _connect_readonly(database)
+    try:
+        rows = connection.execute(
+            "SELECT component, last_seen_at FROM service_heartbeats"
+        ).fetchall()
+    except sqlite3.Error:
+        rows = []
+    finally:
+        connection.close()
+    for component, seen in rows:
+        print(f"heartbeat {component}: {seen} ({heartbeat_state(seen, stale_seconds)})")
+    if not rows:
+        print("heartbeat: none (background processes have not run yet)")
+    for warning in untracked_warnings(config, database, running):
+        print(f"warning: {warning}")
+    return 0
+
+
+def cmd_backup(args: argparse.Namespace) -> int:
+    config = load_config_or_exit()
+    database = config_database(config)
+    if not database.is_file():
+        print(f"database not found: {database}")
+        return 1
+    running = running_processes()
+    if running:
+        print("note: services are running; SQLite backup is consistent, but counts may advance afterwards")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    destination = BACKUP_DIR / f"local-development-{stamp}.db"
+    backup_database(database, destination)
+    report = verify_backup(destination)
+    errors = schema_errors(report)
+    if errors:
+        print(f"backup verification failed: {destination}")
+        for error in errors:
+            print(f"  - {error}")
+        return 1
+    print(f"backup: {destination}")
+    print(f"integrity: {report['integrity']}")
+    print("counts: " + ", ".join(f"{key}={value}" for key, value in report["counts"].items()))
+    return 0
+
+
+def cmd_verify_backup(args: argparse.Namespace) -> int:
+    path = Path(args.file).resolve()
+    report = verify_backup(path)
+    if not report["exists"]:
+        print(f"backup not found: {path}")
+        return 1
+    errors = schema_errors(report)
+    print(f"backup: {path}")
+    print(f"integrity: {report['integrity']}")
+    print(f"migrations: {', '.join(report['migrations']) or '(none)'}")
+    print("counts: " + ", ".join(f"{key}={value}" for key, value in report["counts"].items()))
+    for error in errors:
+        print(f"  - {error}")
+    return 1 if errors else 0
+
+
+def cmd_restore_check(args: argparse.Namespace) -> int:
+    config = load_config_or_exit()
+    database = config_database(config)
+    report = restore_check(Path(args.file).resolve(), database)
+    print(f"backup: {args.file}")
+    print(f"integrity: {report['integrity']}")
+    print("backup counts: " + ", ".join(f"{k}={v}" for k, v in report["counts"].items()))
+    print("live counts:   " + ", ".join(f"{k}={v}" for k, v in report["live_counts"].items()))
+    print(f"counts match: {report['counts_match']}")
+    print(f"sample ids match: {report['ids_match']}")
+    return 0 if report["counts_match"] and report["ids_match"] else 1
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    if not args.yes:
+        print("refusing to restore without --yes")
+        return 2
+    source = Path(args.file).resolve()
+    if not source.is_file():
+        print(f"backup not found: {source}")
+        return 1
+    running = running_processes()
+    if running:
+        print("refusing to restore while services run: " + ", ".join(sorted(running)))
+        return 1
+    config = load_config_or_exit()
+    database = config_database(config)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    safety = BACKUP_DIR / f"pre-restore-{stamp}.db"
+    if database.is_file():
+        backup_database(database, safety)
+        print(f"safety backup: {safety}")
+    backup_database(source, database)
+    report = inspect_database(database)
+    errors = blocking_schema_errors(report)
+    if errors:
+        print("restored database failed verification:")
+        for error in errors:
+            print(f"  - {error}")
+        return 1
+    print(f"restored {source} -> {database}")
+    print("counts: " + ", ".join(f"{k}={v}" for k, v in table_counts(database).items()))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init = subparsers.add_parser("init", help="create/upgrade the dev database and config")
+    init.add_argument("--api-port", type=int, default=None)
+    init.add_argument("--stub-port", type=int, default=None)
+    init.add_argument("--seed-email", default=None)
+    init.add_argument("--seed-name", default=None)
+    init.set_defaults(func=cmd_init)
+
+    doctor = subparsers.add_parser("doctor", help="check database, ports and running processes")
+    doctor.add_argument("--database", default=None)
+    doctor.add_argument("--no-ports", action="store_true")
+    doctor.set_defaults(func=cmd_doctor)
+
+    start = subparsers.add_parser("start", help="start the development processes")
+    start.add_argument("--components", default="stub,api,scheduler,worker")
+    start.set_defaults(func=cmd_start)
+
+    stop = subparsers.add_parser("stop", help="stop only the processes this script started")
+    stop.set_defaults(func=cmd_stop)
+
+    status = subparsers.add_parser("status", help="show processes, database and heartbeats")
+    status.set_defaults(func=cmd_status)
+
+    backup = subparsers.add_parser("backup", help="take a verified SQLite backup")
+    backup.set_defaults(func=cmd_backup)
+
+    verify = subparsers.add_parser("verify-backup", help="verify one backup file")
+    verify.add_argument("file")
+    verify.set_defaults(func=cmd_verify_backup)
+
+    restore_check = subparsers.add_parser(
+        "restore-check", help="restore a backup into a temp copy and compare it with live"
+    )
+    restore_check.add_argument("file")
+    restore_check.set_defaults(func=cmd_restore_check)
+
+    restore = subparsers.add_parser("restore", help="replace the dev database from a backup")
+    restore.add_argument("file")
+    restore.add_argument("--yes", action="store_true")
+    restore.set_defaults(func=cmd_restore)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

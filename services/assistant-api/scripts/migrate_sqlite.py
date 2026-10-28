@@ -35,6 +35,31 @@ COLUMN_MIGRATIONS = (
     ("0006_ai_task_purpose", "nexus_runs", "business_ref", "VARCHAR(36)"),
     ("0006_ai_task_purpose", "nexus_runs", "input_version", "INTEGER"),
     ("0006_ai_task_purpose", "nexus_runs", "trigger", "VARCHAR(16)"),
+    # Matters reuse `schedules`; every added column is nullable for old rows.
+    ("0007_matters", "schedules", "source", "VARCHAR(24)"),
+    ("0007_matters", "schedules", "sync_status", "VARCHAR(24)"),
+    ("0007_matters", "schedules", "source_external_id", "VARCHAR(255)"),
+    ("0007_matters", "schedules", "source_updated_at", "DATETIME"),
+    ("0007_matters", "schedules", "source_version", "INTEGER"),
+    ("0007_matters", "schedules", "matter_id", "VARCHAR(36)"),
+    ("0007_matters", "schedules", "data_source_id", "VARCHAR(36)"),
+    ("0007_matters", "schedules", "latitude", "FLOAT"),
+    ("0007_matters", "schedules", "longitude", "FLOAT"),
+    ("0007_matters", "schedules", "deleted_at", "DATETIME"),
+    ("0008_source_auth", "schedules", "source_scope_key", "VARCHAR(255)"),
+    ("0008_source_auth", "reminders", "source_scope_key", "VARCHAR(255)"),
+    ("0008_source_auth", "reminders", "data_source_id", "VARCHAR(36)"),
+    ("0008_source_auth", "content_sync_batches", "payload_sha256", "VARCHAR(64)"),
+    ("0008_source_auth", "nexus_runs", "context_json", "JSON"),
+    ("0009_edit_drafts", "matter_drafts", "origin_key", "VARCHAR(128)"),
+    ("0010_option_state", "matter_drafts", "option_base_json", "JSON"),
+    ("0010_option_state", "matter_drafts", "base_todo_id", "VARCHAR(36)"),
+    ("0010_option_state", "matter_drafts", "base_todo_updated_at", "DATETIME"),
+    ("0011_location_route", "schedules", "coordinate_system", "VARCHAR(16)"),
+    ("0011_location_route", "schedules", "location_city", "VARCHAR(64)"),
+    ("0011_location_route", "schedules", "location_address", "VARCHAR(255)"),
+    ("0011_location_route", "schedules", "location_source", "VARCHAR(32)"),
+    ("0011_location_route", "schedules", "location_external_id", "VARCHAR(128)"),
 )
 
 # Indexes on pre-existing tables cannot be added by metadata.create_all, so they
@@ -52,6 +77,45 @@ INDEX_MIGRATIONS = (
         "ix_nexus_runs_user_purpose_created",
         "CREATE INDEX IF NOT EXISTS ix_nexus_runs_user_purpose_created "
         "ON nexus_runs (user_id, purpose, created_at)",
+    ),
+    (
+        "0007_matters",
+        "ix_schedules_matter",
+        "CREATE INDEX IF NOT EXISTS ix_schedules_matter ON schedules (matter_id)",
+    ),
+    (
+        "0007_matters",
+        "uq_schedules_user_source_external",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_schedules_user_source_external "
+        "ON schedules (user_id, source, source_external_id)",
+    ),
+    (
+        "0008_source_auth",
+        "drop_old_schedule_index",
+        "DROP INDEX IF EXISTS uq_schedules_user_source_external",
+    ),
+    (
+        "0008_source_auth",
+        "drop_old_reminder_index",
+        "DROP INDEX IF EXISTS uq_reminders_user_source_external",
+    ),
+    (
+        "0008_source_auth",
+        "uq_schedules_user_source_device_external",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_schedules_user_source_device_external "
+        "ON schedules (user_id, source, data_source_id, source_external_id)",
+    ),
+    (
+        "0008_source_auth",
+        "uq_reminders_user_source_device_external",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_reminders_user_source_device_external "
+        "ON reminders (user_id, source, data_source_id, source_external_id)",
+    ),
+    (
+        "0009_edit_drafts",
+        "uq_matter_drafts_user_origin",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_matter_drafts_user_origin "
+        "ON matter_drafts (user_id, origin_key)",
     ),
 )
 

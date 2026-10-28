@@ -211,6 +211,8 @@ class MapsEtaProvider:
         mode: str,
         request_depart_at: datetime,
         target_arrival_at: datetime,
+        origin_city: str | None = None,
+        destination_city: str | None = None,
     ) -> EtaResult:
         return await self._request_eta(
             origin=origin,

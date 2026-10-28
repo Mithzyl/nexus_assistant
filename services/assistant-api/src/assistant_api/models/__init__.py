@@ -4,11 +4,13 @@ from assistant_api.models.base import Base
 from assistant_api.models.bark import BarkReminderSetting
 from assistant_api.models.bridge import NexusRun, ToolCallReceipt, UserAsk
 from assistant_api.models.business import BusinessRecord, Note, ScheduleEvent, TaskItem
+from assistant_api.models.calendar import CalendarSubscription
 from assistant_api.models.content import (
     ContentItem,
     ContentSource,
     ContentSourceScope,
     ContentSyncBatch,
+    SyncUploadToken,
 )
 from assistant_api.models.commute import (
     AdvisoryAction,
@@ -26,17 +28,31 @@ from assistant_api.models.commute import (
     PushDevice,
 )
 from assistant_api.models.identity import NexusIdentityLink, User, UserProfile, UserSession
+from assistant_api.models.matter import (
+    MATTER_STATUSES,
+    SYNC_STATUSES,
+    TODO_STATUSES,
+    Matter,
+    MatterChange,
+    MatterDraft,
+    MatterProgress,
+    MatterTodo,
+    Reminder,
+    ScheduleRouteResult,
+)
 
 __all__ = [
     "AdvisoryAction",
     "Base",
     "BarkReminderSetting",
     "BusinessRecord",
+    "CalendarSubscription",
     "CommuteAdvisory",
     "ContentItem",
     "ContentSource",
     "ContentSourceScope",
     "ContentSyncBatch",
+    "SyncUploadToken",
     "CommuteCheck",
     "CommuteEtaSnapshot",
     "CommuteIdempotencyKey",
@@ -45,13 +61,23 @@ __all__ = [
     "CommutePlan",
     "CommuteWeatherSnapshot",
     "ServiceHeartbeat",
+    "MATTER_STATUSES",
+    "Matter",
+    "MatterChange",
+    "MatterDraft",
+    "MatterProgress",
+    "MatterTodo",
     "NexusIdentityLink",
     "NexusRun",
+    "Reminder",
+    "SYNC_STATUSES",
+    "TODO_STATUSES",
     "Note",
     "NotificationOutbox",
     "PushAttempt",
     "PushDevice",
     "ScheduleEvent",
+    "ScheduleRouteResult",
     "TaskItem",
     "ToolCallReceipt",
     "User",

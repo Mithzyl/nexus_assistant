@@ -7,7 +7,18 @@ service has already filtered by the authenticated user.
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from assistant_api.models.base import Base, TimestampMixin, new_id
@@ -30,11 +41,21 @@ class TaskItem(TimestampMixin, Base):
 
 
 class ScheduleEvent(TimestampMixin, Base):
-    """Represent a calendar entry; the business record, not a memory item."""
+    """Represent a calendar entry; the business record, not a memory item.
+
+    The table existed before matters. The columns below are additive and stay
+    NULL/NULL-compatible for old rows; `source_run_id` keeps its original meaning
+    ("which AI run created this") and is not reused for the new record origin.
+    """
 
     __tablename__ = "schedules"
     __table_args__ = (
         Index("ix_schedules_user_start", "user_id", "starts_at"),
+        Index("ix_schedules_matter", "matter_id"),
+        UniqueConstraint(
+            "user_id", "source", "data_source_id", "source_external_id",
+            name="uq_schedules_user_source_device_external",
+        ),
     )
 
     schedule_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -47,6 +68,28 @@ class ScheduleEvent(TimestampMixin, Base):
     location: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(16), default="scheduled")
     source_run_id: Mapped[str | None] = mapped_column(String(36))
+
+    # Record origin: web_native | ios_eventkit. Not the same as source_run_id or
+    # ContentSource.source_type (calendar/reminders/notes).
+    source: Mapped[str | None] = mapped_column(String(24))
+    # local_only | pending_ios | ios_synced. See docs for the unresolved mapping
+    # to the product text's `web_confirmed_pending_ios`.
+    sync_status: Mapped[str | None] = mapped_column(String(24))
+    source_external_id: Mapped[str | None] = mapped_column(String(255))
+    source_scope_key: Mapped[str | None] = mapped_column(String(255))
+    # Incoming Apple `last_modified_at`; `updated_at` remains the server edit time.
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_version: Mapped[int | None] = mapped_column(Integer)
+    matter_id: Mapped[str | None] = mapped_column(String(36))
+    data_source_id: Mapped[str | None] = mapped_column(String(36))
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    coordinate_system: Mapped[str | None] = mapped_column(String(16))
+    location_city: Mapped[str | None] = mapped_column(String(64))
+    location_address: Mapped[str | None] = mapped_column(String(255))
+    location_source: Mapped[str | None] = mapped_column(String(32))
+    location_external_id: Mapped[str | None] = mapped_column(String(128))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Note(TimestampMixin, Base):

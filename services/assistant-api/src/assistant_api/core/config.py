@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     commute_maps_id: str | None = None
     commute_maps_private_key_path: Path | None = None
     commute_maps_base_url: str = "https://maps-api.apple.com"
+    commute_amap_api_key: SecretStr | None = None
+    commute_amap_base_url: str = "https://restapi.amap.com"
     commute_weather_base_url: str = "https://weatherkit.apple.com"
     open_meteo_base_url: str = "https://api.open-meteo.com/v1/forecast"
     commute_http_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
@@ -129,6 +131,15 @@ class Settings(BaseSettings):
     commute_outbox_max_attempts: int = Field(default=4, ge=1, le=10)
     commute_data_retention_days: int = Field(default=30, ge=1, le=365)
 
+    # ---- Matters / work planning ------------------------------------------
+    matter_ai_timeout_seconds: float = Field(default=60.0, ge=10, le=180)
+    # Conflict scan: schedules within this many hours around the proposal.
+    matter_conflict_window_hours: int = Field(default=3, ge=1, le=12)
+    # Minimum slack between two appointments before a warning is raised.
+    matter_conflict_min_gap_seconds: int = Field(default=900, ge=0, le=3600)
+    matter_default_timezone: str = "Asia/Shanghai"
+    calendar_public_base_url: str | None = None
+
     @field_validator(
         "commute_weather_team_id",
         "commute_weather_key_id",
@@ -138,6 +149,7 @@ class Settings(BaseSettings):
         "commute_maps_key_id",
         "commute_maps_id",
         "commute_maps_private_key_path",
+        "commute_amap_api_key",
         "commute_apns_team_id",
         "commute_apns_key_id",
         "commute_apns_private_key_path",

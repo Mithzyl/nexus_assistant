@@ -32,6 +32,36 @@ cp .env.example .env          # 修改两个令牌
 [`../../docs/backend-integration/16-后端运行与客户端交付-20261025.md`](../../docs/backend-integration/16-后端运行与客户端交付-20261025.md)。
 `GET /api/v1/commute/runtime` 现在返回 `server_time`，与进程心跳、任务进度分开。
 
+## 本机开发环境（可重复启动）
+
+供两个客户端长期连接的本机环境，**不是**共同 8010，也**不是**旧数据恢复：
+
+```bash
+.venv/bin/python scripts/dev_env.py init      # 首次：建库/增量升级 + data/dev.env
+.venv/bin/python scripts/dev_env.py doctor    # 库结构、端口、进程检查
+.venv/bin/python scripts/dev_env.py start     # stub + API(8093) + scheduler + worker
+.venv/bin/python scripts/dev_env.py status    # 进程、记录计数、心跳
+.venv/bin/python scripts/dev_env.py stop      # 只停本脚本记录的 PID
+.venv/bin/python scripts/dev_env.py backup    # SQLite 在线备份 + 校验
+.venv/bin/python scripts/dev_env.py restore-check data/backups/<file>.db
+```
+
+- 数据：`data/local-development.db`（Git 忽略）；配置 `data/dev.env`；日志
+  `data/logs/`；备份 `data/backups/`；PID `data/run/`。
+  `start` 不建库、不清库、不重置账号；库缺表/缺列时拒绝启动并提示运行 `init`。
+- 默认模拟能力：Nexus 用 `services/nexus-stub`（8191），天气/路线用 mock，
+  自动天气检查开启、自动模型分析关闭、不发送通知。
+- 需要账号时（密码只走环境变量，线下交付）：
+
+```bash
+ASSISTANT_PROVISION_PASSWORD='<一次性密码>' \
+  .venv/bin/python scripts/dev_env.py init --seed-email dev-a@example.com
+```
+
+详细配置、本轮验证结果与客户端交接见
+[`../../docs/backend-integration/16-后端运行与客户端交付-20261025.md`](../../docs/backend-integration/16-后端运行与客户端交付-20261025.md)
+第 10 节。
+
 ## 通勤提醒
 
 通勤计划、手动检查、建议、设备绑定、通知 outbox 在 API 进程；

@@ -4,6 +4,8 @@ No request path starts a timer. Commute scheduling runs in separate processes;
 this app only validates input, writes durable state and answers reads.
 """
 
+import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -27,8 +29,48 @@ from assistant_api.core.errors import AssistantError
 from assistant_api.infrastructure.database import create_engine_and_factory
 from assistant_api.models import Base
 from assistant_api.nexus_client import NexusError, NexusPilotClient
-from assistant_api.routers import assistant, auth, data_sources, internal_tools
+from assistant_api.routers import (
+    assistant,
+    auth,
+    calendar_feed,
+    data_sources,
+    internal_tools,
+    matters,
+    sync_ios,
+)
 from assistant_api.services.run_service import shutdown_background_tasks
+
+
+_CALENDAR_TOKEN_PATH = re.compile(r"(/api/v1/calendar/)[^/\s?]+(\.ics)")
+
+
+class _CalendarTokenLogFilter(logging.Filter):
+    """Redact private feed tokens if a server access logger records the path."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, dict):
+            record.args = {
+                key: (
+                    _CALENDAR_TOKEN_PATH.sub(r"\1<redacted>\2", value)
+                    if isinstance(value, str)
+                    else value
+                )
+                for key, value in record.args.items()
+            }
+        elif record.args:
+            record.args = tuple(
+                _CALENDAR_TOKEN_PATH.sub(r"\1<redacted>\2", item)
+                if isinstance(item, str)
+                else item
+                for item in record.args
+            )
+        return True
+
+
+def _redact_calendar_tokens() -> None:
+    logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(item, _CalendarTokenLogFilter) for item in logger.filters):
+        logger.addFilter(_CalendarTokenLogFilter())
 
 
 def create_app(
@@ -45,6 +87,7 @@ def create_app(
     """
 
     resolved = settings or get_settings()
+    _redact_calendar_tokens()
     validate_commute_configuration(resolved)
 
     @asynccontextmanager
@@ -103,6 +146,10 @@ def create_app(
     app.include_router(data_sources.content_router)
     app.include_router(commute_router)
     app.include_router(bark_router)
+    app.include_router(calendar_feed.router)
+    app.include_router(calendar_feed.feed_router)
+    app.include_router(matters.router)
+    app.include_router(sync_ios.router)
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):

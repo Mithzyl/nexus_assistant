@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,8 @@ from assistant_api.models import (
     ContentSource,
     ContentSourceScope,
     ContentSyncBatch,
+    Reminder,
+    ScheduleEvent,
 )
 from assistant_api.schemas.data_sources import (
     FIELDS_FOR_SOURCE,
@@ -227,9 +229,85 @@ async def update_source(
         await _strip_unauthorized_fields(db, source)
     if payload.scope_keys is not None:
         await _replace_scopes(db, source, payload.scope_keys)
+    await _strip_imported_records(db, source)
     await db.commit()
     await db.refresh(source)
     return await _to_source_read(db, source)
+
+
+async def _strip_imported_records(db: AsyncSession, source: ContentSource) -> None:
+    """Apply field/scope revocation to the new schedules/reminders copies too.
+
+    App-native rows have data_source_id NULL and are never touched here.
+    """
+
+    allowed = _mask(source)
+    scope_rows = (
+        await db.execute(
+            select(ContentSourceScope.scope_key, ContentSourceScope.active).where(
+                ContentSourceScope.source_id == source.source_id
+            )
+        )
+    ).all()
+    scopes_defined = bool(scope_rows)
+    active_scopes = {key for key, active in scope_rows if active}
+    now = _now()
+
+    if source.source_type == "calendar":
+        rows = (
+            await db.scalars(
+                select(ScheduleEvent).where(
+                    ScheduleEvent.user_id == source.user_id,
+                    ScheduleEvent.data_source_id == source.source_id,
+                    ScheduleEvent.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        for row in rows:
+            if scopes_defined and row.source_scope_key not in active_scopes:
+                row.deleted_at = now
+                row.status = "cancelled"
+                continue
+            if "start" not in allowed:
+                row.deleted_at = now
+                row.status = "cancelled"
+                continue
+            if "title" not in allowed:
+                row.title = ""
+            if "end" not in allowed:
+                row.ends_at = None
+            if "location" not in allowed:
+                row.location = None
+                row.latitude = None
+                row.longitude = None
+            if "status" not in allowed:
+                row.status = "scheduled"
+    else:
+        rows = (
+            await db.scalars(
+                select(Reminder).where(
+                    Reminder.user_id == source.user_id,
+                    Reminder.data_source_id == source.source_id,
+                    Reminder.status != "cancelled",
+                )
+            )
+        ).all()
+        for row in rows:
+            if scopes_defined and row.source_scope_key not in active_scopes:
+                row.status = "cancelled"
+                row.cancelled_at = now
+                continue
+            if "due" not in allowed:
+                row.status = "cancelled"
+                row.cancelled_at = now
+                continue
+            if "title" not in allowed:
+                row.title = ""
+            if "status" not in allowed:
+                row.status = "pending"
+                row.completed_at = None
+            if "notes" not in allowed:
+                row.note = None
 
 
 async def _strip_unauthorized_fields(db: AsyncSession, source: ContentSource) -> None:
@@ -561,6 +639,25 @@ async def delete_items(db: AsyncSession, user_id: str, source_id: str) -> int:
     result = await db.execute(
         delete(ContentItem).where(ContentItem.source_id == source.source_id)
     )
+    now = _now()
+    await db.execute(
+        update(ScheduleEvent)
+        .where(
+            ScheduleEvent.user_id == user_id,
+            ScheduleEvent.data_source_id == source.source_id,
+            ScheduleEvent.deleted_at.is_(None),
+        )
+        .values(deleted_at=now, status="cancelled")
+    )
+    await db.execute(
+        update(Reminder)
+        .where(
+            Reminder.user_id == user_id,
+            Reminder.data_source_id == source.source_id,
+            Reminder.status != "cancelled",
+        )
+        .values(status="cancelled", cancelled_at=now)
+    )
     source.last_sync_status = "items_deleted"
     await db.commit()
     return int(result.rowcount or 0)
@@ -569,6 +666,23 @@ async def delete_items(db: AsyncSession, user_id: str, source_id: str) -> int:
 async def delete_source(db: AsyncSession, user_id: str, source_id: str) -> None:
     source = await get_source(db, user_id, source_id, lock=True)
     await db.execute(delete(ContentItem).where(ContentItem.source_id == source.source_id))
+    now = _now()
+    await db.execute(
+        update(ScheduleEvent)
+        .where(
+            ScheduleEvent.user_id == user_id,
+            ScheduleEvent.data_source_id == source.source_id,
+        )
+        .values(deleted_at=now, status="cancelled")
+    )
+    await db.execute(
+        update(Reminder)
+        .where(
+            Reminder.user_id == user_id,
+            Reminder.data_source_id == source.source_id,
+        )
+        .values(status="cancelled", cancelled_at=now)
+    )
     await db.execute(
         delete(ContentSourceScope).where(ContentSourceScope.source_id == source.source_id)
     )

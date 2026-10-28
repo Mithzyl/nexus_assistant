@@ -16,6 +16,7 @@ from assistant_api.nexus_client import NexusPilotClient
 from assistant_api.commute.providers.apns import ApnsPushProvider
 from assistant_api.commute.providers.base import (
     AdviceTextProvider,
+    PlaceProvider,
     ProviderNotConfigured,
     PushProvider,
     RouteEtaProvider,
@@ -23,8 +24,10 @@ from assistant_api.commute.providers.base import (
 )
 from assistant_api.commute.providers.http_advice import HttpAdviceTextProvider
 from assistant_api.commute.providers.maps_eta import MapsEtaProvider
+from assistant_api.commute.providers.amap import AmapProvider
 from assistant_api.commute.providers.mock import (
     MockEtaProvider,
+    MockPlaceProvider,
     MockPushProvider,
     MockWeatherProvider,
     TemplateOnlyAdviceTextProvider,
@@ -60,6 +63,14 @@ class UnavailableEtaProvider:
         return None
 
 
+class UnavailablePlaceProvider:
+    provider = "unavailable"
+    available = False
+
+    async def search(self, **_kwargs):
+        raise ProviderNotConfigured("amap_not_configured")
+
+
 class DisabledPushProvider:
     """APNs is unreachable in this Bark-only deployment."""
 
@@ -86,11 +97,25 @@ class CommuteRuntime:
     advice_text: AdviceTextProvider
     push: PushProvider
     provider_mode: str
+    places: PlaceProvider | None = None
     bark: BarkNotifier | None = None
     nexus: NexusPilotClient | None = None
 
     async def aclose(self) -> None:
-        for provider in (self.weather, self.eta, self.advice_text, self.push, self.bark, self.nexus):
+        providers = (
+            self.weather,
+            self.eta,
+            self.places,
+            self.advice_text,
+            self.push,
+            self.bark,
+            self.nexus,
+        )
+        closed: set[int] = set()
+        for provider in providers:
+            if provider is None or id(provider) in closed:
+                continue
+            closed.add(id(provider))
             close = getattr(provider, "aclose", None)
             if close is not None:
                 await close()
@@ -135,6 +160,7 @@ def build_runtime(settings: Settings, *, clock: Callable[[], datetime] | None = 
             ),
             push=MockPushProvider(now=now, result=settings.commute_mock_push_result),
             provider_mode="mock",
+            places=MockPlaceProvider(),
             nexus=NexusPilotClient(
                 base_url=settings.nexus_base_url,
                 application_id=settings.nexus_application_id,
@@ -150,7 +176,17 @@ def build_runtime(settings: Settings, *, clock: Callable[[], datetime] | None = 
         now=now,
         base_url=settings.open_meteo_base_url,
     )
-    eta = (
+    amap = (
+        AmapProvider(
+            api_key=settings.commute_amap_api_key.get_secret_value(),
+            base_url=settings.commute_amap_base_url,
+            timeout_seconds=settings.commute_http_timeout_seconds,
+            now=now,
+        )
+        if settings.commute_amap_api_key
+        else None
+    )
+    eta = amap or (
         MapsEtaProvider(
             team_id=settings.commute_maps_team_id or "",
             key_id=settings.commute_maps_key_id or "",
@@ -196,6 +232,7 @@ def build_runtime(settings: Settings, *, clock: Callable[[], datetime] | None = 
             else DisabledPushProvider()
         ),
         provider_mode="live",
+        places=amap or UnavailablePlaceProvider(),
         nexus=NexusPilotClient(
             base_url=settings.nexus_base_url,
             application_id=settings.nexus_application_id,
