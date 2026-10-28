@@ -72,6 +72,14 @@ async def test_upgrade_keeps_existing_schedules(tmp_path):
             row[1] for row in connection.execute("PRAGMA table_info(matter_drafts)")
         }
         assert {"option_base_json", "base_todo_id", "base_todo_updated_at"} <= draft_columns
+        reminder_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(reminders)")
+        }
+        assert {"schedule_id", "acknowledged_at", "deleted_at"} <= reminder_columns
+        todo_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(matter_todos)")
+        }
+        assert "deleted_at" in todo_columns
         tables = {
             row[0]
             for row in connection.execute(

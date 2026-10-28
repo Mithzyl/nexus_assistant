@@ -19,6 +19,10 @@ from assistant_api.commute.providers.base import (
     ProviderRateLimited,
     ProviderTimeout,
     ProviderUnavailable,
+    ReverseGeocodeResult,
+    RoutePoint,
+    RouteSegment,
+    RouteShapeStatus,
 )
 from assistant_api.commute.timeutil import ensure_aware
 
@@ -145,6 +149,56 @@ class AmapProvider:
             )
         return results
 
+    async def reverse_geocode(
+        self,
+        *,
+        latitude: float,
+        longitude: float,
+    ) -> ReverseGeocodeResult:
+        """Return the clicked coordinate and its explicit nearby address."""
+
+        body = await self._get(
+            "/v3/geocode/regeo",
+            {
+                "location": self._coord((latitude, longitude)),
+                "extensions": "base",
+                "radius": 200,
+                "batch": "false",
+            },
+        )
+        regeocode = body.get("regeocode") or {}
+        address_component = regeocode.get("addressComponent") or {}
+        address = self._text(regeocode.get("formatted_address"))
+        if address is None:
+            parts = (
+                self._text(address_component.get("province")),
+                self._text(address_component.get("city")),
+                self._text(address_component.get("district")),
+                self._text(address_component.get("township")),
+                self._text((address_component.get("streetNumber") or {}).get("street")),
+                self._text((address_component.get("streetNumber") or {}).get("number")),
+            )
+            address = "".join(part for part in parts if part) or None
+        if address is None:
+            raise ProviderInvalidResponse(
+                "AMap returned no nearby address for the map point",
+                code="map_pick_address_missing",
+            )
+        building_name = self._text((address_component.get("building") or {}).get("name"))
+        return ReverseGeocodeResult(
+            provider=self.provider,
+            name=building_name or "地图选点",
+            address=address,
+            city=(
+                self._text(address_component.get("city"))
+                or self._text(address_component.get("province"))
+            ),
+            latitude=latitude,
+            longitude=longitude,
+            coordinate_system=self.coordinate_system,
+            source="amap_regeo",
+        )
+
     async def fetch(
         self,
         *,
@@ -185,7 +239,7 @@ class AmapProvider:
         params = {
             "origin": self._coord(origin),
             "destination": self._coord(destination),
-            "extensions": "base",
+            "extensions": "all",
         }
         if mode == "driving":
             body = await self._get("/v3/direction/driving", {**params, "strategy": 0})
@@ -195,12 +249,16 @@ class AmapProvider:
             duration = self._positive_int(path.get("duration"))
             distance = self._positive_int(path.get("distance"))
             taxi_cost = self._positive_float((body.get("route") or {}).get("taxi_cost"))
+            route_segments = self._driving_segments(path.get("steps"))
             result = self._result(
                 mode=mode,
+                origin=origin,
+                destination=destination,
                 request_depart_at=request_depart_at,
                 target_arrival_at=target_arrival_at,
                 duration=duration,
                 distance=distance,
+                route_segments=route_segments,
                 fare=taxi_cost,
                 fare_kind=(
                     "amap_taxi_cost_estimate" if taxi_cost is not None else None
@@ -238,12 +296,17 @@ class AmapProvider:
                     name = line.get("name")
                     if name:
                         lines.append(str(name))
+            route_segments, shape_status = self._transit_segments(segments)
             result = self._result(
                 mode=mode,
+                origin=origin,
+                destination=destination,
                 request_depart_at=request_depart_at,
                 target_arrival_at=target_arrival_at,
                 duration=self._positive_int(transit.get("duration")),
                 distance=self._positive_int(transit.get("distance")),
+                route_segments=route_segments,
+                route_shape_status=shape_status,
                 walking_distance=walking or None,
                 transfer_count=max(0, len(lines) - 1) if lines else None,
                 transfers_summary=" → ".join(lines[:5]) or None,
@@ -261,10 +324,14 @@ class AmapProvider:
         self,
         *,
         mode: str,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
         request_depart_at: datetime,
         target_arrival_at: datetime,
         duration: int | None,
         distance: int | None,
+        route_segments: tuple[RouteSegment, ...] = (),
+        route_shape_status: RouteShapeStatus | None = None,
         walking_distance: int | None = None,
         transfer_count: int | None = None,
         transfers_summary: str | None = None,
@@ -273,6 +340,9 @@ class AmapProvider:
     ) -> EtaResult:
         if duration is None:
             raise ProviderNoRoute("AMap returned no usable duration", code="route_not_found")
+        shape_status = route_shape_status or (
+            "available" if route_segments else "missing"
+        )
         basis = "provider_departure_time"
         if ensure_aware(request_depart_at) > ensure_aware(self._now()) + timedelta(hours=2):
             basis = "planned_time_not_live_forecast"
@@ -291,7 +361,98 @@ class AmapProvider:
             fare_cny=fare,
             fare_kind=fare_kind,
             timing_basis=basis,
+            route_segments=route_segments,
+            route_shape_status=shape_status,
         )
+
+    def _driving_segments(self, steps) -> tuple[RouteSegment, ...]:
+        """Combine ordered driving steps into one provider-returned road path."""
+
+        points = self._step_points(steps)
+        if len(points) < 2:
+            return ()
+        return (
+            RouteSegment(
+                kind="driving",
+                label="驾车路线",
+                points=points,
+                coordinate_system=self.coordinate_system,
+            ),
+        )
+
+    def _transit_segments(
+        self, segments
+    ) -> tuple[tuple[RouteSegment, ...], RouteShapeStatus]:
+        """Keep walking and the selected bus line as separate provider paths."""
+
+        route_segments: list[RouteSegment] = []
+        missing_segments = 0
+        for segment in segments:
+            if not isinstance(segment, dict):
+                missing_segments += 1
+                continue
+            emitted = False
+            walking_points = self._step_points(
+                (segment.get("walking") or {}).get("steps")
+            )
+            if len(walking_points) >= 2:
+                route_segments.append(
+                    RouteSegment(
+                        kind="walking",
+                        label="步行",
+                        points=walking_points,
+                        coordinate_system=self.coordinate_system,
+                    )
+                )
+                emitted = True
+            buslines = (segment.get("bus") or {}).get("buslines") or []
+            for line in buslines:
+                if not isinstance(line, dict):
+                    continue
+                points = self._polyline_points(line.get("polyline"))
+                if len(points) < 2:
+                    continue
+                route_segments.append(
+                    RouteSegment(
+                        kind="transit",
+                        label=self._text(line.get("name")),
+                        points=points,
+                        coordinate_system=self.coordinate_system,
+                    )
+                )
+                emitted = True
+                break
+            if not emitted:
+                missing_segments += 1
+        if not route_segments:
+            return (), "missing"
+        return (
+            tuple(route_segments),
+            "partial" if missing_segments else "available",
+        )
+
+    def _step_points(self, steps) -> tuple[RoutePoint, ...]:
+        points: list[RoutePoint] = []
+        for step in steps or []:
+            if not isinstance(step, dict):
+                continue
+            for point in self._polyline_points(step.get("polyline")):
+                if not points or points[-1] != point:
+                    points.append(point)
+        return tuple(points)
+
+    def _polyline_points(self, value) -> tuple[RoutePoint, ...]:
+        if not isinstance(value, str):
+            return ()
+        points: list[RoutePoint] = []
+        for pair in value.split(";"):
+            parsed = self._parse_location(pair)
+            if parsed is None:
+                continue
+            point = RoutePoint(latitude=parsed[0], longitude=parsed[1])
+            if not points or points[-1] != point:
+                points.append(point)
+        return tuple(points)
 
     @staticmethod
     def _parse_location(value: str) -> tuple[float, float] | None:
@@ -322,6 +483,13 @@ class AmapProvider:
         except (TypeError, ValueError):
             return None
         return parsed if parsed >= 0 else None
+
+    @staticmethod
+    def _text(value) -> str | None:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return None
 
     async def aclose(self) -> None:
         await self._client.aclose()

@@ -11,6 +11,8 @@ import time
 from assistant_api.commute.providers.base import ProviderError
 from assistant_api.commute.runtime import CommuteRuntime
 
+GCJ02_CHINA_BOUNDS = (73.0, 3.0, 136.0, 54.0)
+
 
 def _b64(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
@@ -20,9 +22,21 @@ def _unb64(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def sign_selection(candidate: dict, secret: str) -> str:
+def sign_selection(
+    candidate: dict,
+    secret: str,
+    *,
+    user_id: str,
+    draft_id: str,
+    selection_kind: str,
+) -> str:
+    """Sign one short-lived place selection bound to its account and draft."""
+
     payload = {
         **candidate,
+        "selection_kind": selection_kind,
+        "user_id": user_id,
+        "draft_id": draft_id,
         "issued_at": int(time.time()),
         "expires_at": int(time.time()) + 900,
     }
@@ -54,6 +68,8 @@ async def search_places(
     runtime: CommuteRuntime,
     *,
     secret: str,
+    user_id: str,
+    draft_id: str,
     query: str,
     city: str | None,
     search_type: str,
@@ -110,7 +126,13 @@ async def search_places(
         for row in rows
     ]
     for candidate in candidates:
-        candidate["selection_token"] = sign_selection(candidate, secret)
+        candidate["selection_token"] = sign_selection(
+            candidate,
+            secret,
+            user_id=user_id,
+            draft_id=draft_id,
+            selection_kind="place_candidate",
+        )
     return {
         "query": query,
         "city": city,
@@ -121,4 +143,86 @@ async def search_places(
     }
 
 
-__all__ = ["search_places", "sign_selection", "verify_selection"]
+async def map_pick_place(
+    runtime: CommuteRuntime,
+    *,
+    secret: str,
+    user_id: str,
+    draft_id: str,
+    latitude: float,
+    longitude: float,
+    coordinate_system: str,
+) -> dict:
+    """Reverse geocode one explicit map point without treating it as a POI."""
+
+    if coordinate_system != "gcj02":
+        return {
+            "status": "unavailable",
+            "reason_code": "map_pick_coordinate_system_unsupported",
+            "location": None,
+        }
+    min_longitude, min_latitude, max_longitude, max_latitude = GCJ02_CHINA_BOUNDS
+    if not (
+        min_latitude <= latitude <= max_latitude
+        and min_longitude <= longitude <= max_longitude
+    ):
+        return {
+            "status": "unavailable",
+            "reason_code": "map_pick_coordinate_out_of_bounds",
+            "location": None,
+        }
+    if runtime.places is None or not getattr(runtime.places, "available", False):
+        return {
+            "status": "unavailable",
+            "reason_code": "amap_not_configured",
+            "location": None,
+        }
+    try:
+        location = await runtime.places.reverse_geocode(
+            latitude=latitude,
+            longitude=longitude,
+        )
+    except ProviderError as exc:
+        return {
+            "status": "unavailable",
+            "reason_code": exc.code,
+            "location": None,
+        }
+    except Exception:  # noqa: BLE001 - provider boundary
+        return {
+            "status": "unavailable",
+            "reason_code": "place_provider_error",
+            "location": None,
+        }
+    candidate = {
+        "provider": location.provider,
+        "provider_place_id": None,
+        "name": location.name,
+        "address": location.address,
+        "city": location.city,
+        "latitude": location.latitude,
+        "longitude": location.longitude,
+        "coordinate_system": location.coordinate_system,
+        "source": location.source,
+    }
+    candidate["selection_token"] = sign_selection(
+        candidate,
+        secret,
+        user_id=user_id,
+        draft_id=draft_id,
+        selection_kind="map_pick",
+    )
+    return {
+        "status": "available",
+        "reason_code": None,
+        "address_notice": "地址为地图坐标附近的反查结果，请核对门牌或建筑。",
+        "location": candidate,
+    }
+
+
+__all__ = [
+    "map_pick_place",
+    "search_places",
+    "sign_selection",
+    "verify_selection",
+]

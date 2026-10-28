@@ -327,7 +327,7 @@ async def test_stop_following_only_archives_and_cancels_reminders_after_confirma
         )
     ).json()
     assert before["status"] == "active"
-    assert before["reminders"][0]["status"] == "pending"
+    assert before["reminders"][0]["status"] == "scheduled"
 
     stopped = await confirm(h, draft, "stop-confirm-01")
     assert stopped.status_code == 200, stopped.text
@@ -390,7 +390,7 @@ async def test_archive_without_explicit_stop_request_keeps_pending_reminders(har
         )
     ).json()
     assert detail["status"] == "archived"
-    assert detail["reminders"][0]["status"] == "pending"
+    assert detail["reminders"][0]["status"] == "scheduled"
 
 
 @pytest.mark.asyncio
@@ -449,7 +449,7 @@ async def test_long_intake_keeps_existing_context_and_multiple_time_actions(harn
         "confidence": 0.9,
     }
     text = (
-        "下周四下午三点去陆家嘴和林总谈合作。周二下班前让法务发合同，"
+            "下周四下午三点去陆家嘴和林总谈合作。周二18点前让法务发合同，"
         "那天中午约了牙医洗牙，一点半结束。"
     )
     response = await intake(h, "long-context-01", text, extraction)

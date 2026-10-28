@@ -127,6 +127,8 @@ async def _get_matter(db: AsyncSession, user: User, matter_id: str) -> Matter:
 
 
 async def _get_draft(db: AsyncSession, user: User, draft_id: str) -> MatterDraft:
+    """Load an editable preview only while every current target remains usable."""
+
     draft = await db.scalar(
         select(MatterDraft).where(
             MatterDraft.draft_id == draft_id,
@@ -135,6 +137,44 @@ async def _get_draft(db: AsyncSession, user: User, draft_id: str) -> MatterDraft
     )
     if draft is None:
         raise NotFoundError("draft_not_found", "变更预览不存在。")
+    target_matter_id = draft.matter_id or (draft.result_json or {}).get("matter_id")
+    if target_matter_id:
+        matter = await db.scalar(
+            select(Matter).where(
+                Matter.matter_id == target_matter_id,
+                Matter.user_id == user.user_id,
+                Matter.deleted_at.is_(None),
+            )
+        )
+        if matter is None:
+            raise NotFoundError("draft_not_found", "变更预览不存在。")
+    target_schedule_id = draft.base_schedule_id or (draft.result_json or {}).get(
+        "schedule_id"
+    )
+    if target_schedule_id:
+        schedule = await db.scalar(
+            select(ScheduleEvent).where(
+                ScheduleEvent.schedule_id == target_schedule_id,
+                ScheduleEvent.user_id == user.user_id,
+                ScheduleEvent.deleted_at.is_(None),
+            )
+        )
+        if schedule is None:
+            raise NotFoundError("draft_not_found", "变更预览不存在。")
+        if schedule.data_source_id:
+            source = await db.scalar(
+                select(ContentSource.source_id).where(
+                    ContentSource.source_id == schedule.data_source_id,
+                    ContentSource.user_id == user.user_id,
+                    ContentSource.assistant_enabled.is_(True),
+                )
+            )
+            if source is None:
+                raise NotFoundError("draft_not_found", "变更预览不存在。")
+    payload = draft.payload_json or {}
+    if payload.get("requires_choice") and draft.candidates_json:
+        if not await _visible_draft_candidates(db, user, draft):
+            raise NotFoundError("draft_not_found", "变更预览不存在。")
     return draft
 
 
@@ -194,6 +234,7 @@ def _todo_snapshot(todo: MatterTodo | None) -> dict | None:
         "due_at": _as_utc(todo.due_at).isoformat() if todo.due_at else None,
         "reminder_at": _as_utc(todo.reminder_at).isoformat() if todo.reminder_at else None,
         "completed_at": _as_utc(todo.completed_at).isoformat() if todo.completed_at else None,
+        "deleted_at": _as_utc(todo.deleted_at).isoformat() if todo.deleted_at else None,
         "updated_at": _as_utc(todo.updated_at).isoformat() if todo.updated_at else None,
     }
 
@@ -205,6 +246,7 @@ def _reminder_snapshot(reminder: Reminder | None) -> dict | None:
         "reminder_id": reminder.reminder_id,
         "matter_id": reminder.matter_id,
         "todo_id": reminder.todo_id,
+        "schedule_id": reminder.schedule_id,
         "title": reminder.title,
         "note": reminder.note,
         "trigger_at": _as_utc(reminder.trigger_at).isoformat() if reminder.trigger_at else None,
@@ -221,7 +263,13 @@ def _reminder_snapshot(reminder: Reminder | None) -> dict | None:
         ),
         "source_version": reminder.source_version,
         "completed_at": _as_utc(reminder.completed_at).isoformat() if reminder.completed_at else None,
+        "acknowledged_at": (
+            _as_utc(reminder.acknowledged_at).isoformat()
+            if reminder.acknowledged_at
+            else None
+        ),
         "cancelled_at": _as_utc(reminder.cancelled_at).isoformat() if reminder.cancelled_at else None,
+        "deleted_at": _as_utc(reminder.deleted_at).isoformat() if reminder.deleted_at else None,
         "result_json": reminder.result_json,
         "updated_at": _as_utc(reminder.updated_at).isoformat() if reminder.updated_at else None,
     }
@@ -243,7 +291,7 @@ def _schedule_matches(schedule: ScheduleEvent | None, snapshot: dict) -> bool:
         and _as_utc(schedule.starts_at) == _snap_dt(snapshot.get("starts_at"))
         and _as_utc(schedule.ends_at) == _snap_dt(snapshot.get("ends_at"))
         and schedule.location == snapshot.get("location")
-        and schedule.deleted_at is None
+        and _as_utc(schedule.deleted_at) == _snap_dt(snapshot.get("deleted_at"))
     )
 
 
@@ -260,6 +308,7 @@ def _todo_matches(todo: MatterTodo | None, snapshot: dict) -> bool:
         and _as_utc(todo.due_at) == _snap_dt(snapshot.get("due_at"))
         and _as_utc(todo.reminder_at) == _snap_dt(snapshot.get("reminder_at"))
         and _as_utc(todo.completed_at) == _snap_dt(snapshot.get("completed_at"))
+        and _as_utc(todo.deleted_at) == _snap_dt(snapshot.get("deleted_at"))
     )
 
 
@@ -274,8 +323,13 @@ def _reminder_matches(reminder: Reminder | None, snapshot: dict) -> bool:
         reminder.title == snapshot.get("title")
         and _as_utc(reminder.trigger_at) == _snap_dt(snapshot.get("trigger_at"))
         and reminder.status == snapshot.get("status")
+        and reminder.schedule_id == snapshot.get("schedule_id")
         and _as_utc(reminder.completed_at) == _snap_dt(snapshot.get("completed_at"))
+        and _as_utc(reminder.acknowledged_at) == _snap_dt(
+            snapshot.get("acknowledged_at")
+        )
         and _as_utc(reminder.cancelled_at) == _snap_dt(snapshot.get("cancelled_at"))
+        and _as_utc(reminder.deleted_at) == _snap_dt(snapshot.get("deleted_at"))
     )
 
 
@@ -318,6 +372,7 @@ TODO_SNAPSHOT_KEYS = frozenset(
         "due_at",
         "reminder_at",
         "completed_at",
+        "deleted_at",
         "updated_at",
     }
 )
@@ -326,6 +381,7 @@ REMINDER_SNAPSHOT_KEYS = frozenset(
         "reminder_id",
         "matter_id",
         "todo_id",
+        "schedule_id",
         "title",
         "note",
         "trigger_at",
@@ -338,7 +394,9 @@ REMINDER_SNAPSHOT_KEYS = frozenset(
         "source_updated_at",
         "source_version",
         "completed_at",
+        "acknowledged_at",
         "cancelled_at",
+        "deleted_at",
         "result_json",
         "updated_at",
     }
@@ -374,6 +432,12 @@ def _change_snapshot_incomplete(before: dict, after: dict) -> bool:
     collection_specs = (
         (
             "adjacent_schedules",
+            SCHEDULE_SNAPSHOT_KEYS,
+            "schedule_id",
+            None,
+        ),
+        (
+            "cancelled_schedules",
             SCHEDULE_SNAPSHOT_KEYS,
             "schedule_id",
             None,
@@ -452,19 +516,37 @@ def _serialize_schedule(schedule: ScheduleEvent) -> dict:
     }
 
 
+def _effective_reminder_status(
+    reminder: Reminder, *, now: datetime | None = None
+) -> str:
+    """Project stored reminder fields onto the four app-facing states."""
+
+    if reminder.deleted_at is not None or reminder.status == "cancelled":
+        return "cancelled"
+    if reminder.acknowledged_at is not None or reminder.status == "completed":
+        return "acknowledged"
+    current_time = now or datetime.now(UTC)
+    if ensure_aware(reminder.trigger_at) <= current_time:
+        return "due"
+    return "scheduled"
+
+
 def _serialize_reminder(reminder: Reminder) -> dict:
     return {
         "reminder_id": reminder.reminder_id,
         "matter_id": reminder.matter_id,
         "todo_id": reminder.todo_id,
+        "schedule_id": reminder.schedule_id,
         "title": reminder.title,
         "note": reminder.note,
         "trigger_at": reminder.trigger_at,
-        "status": reminder.status,
+        "status": _effective_reminder_status(reminder),
         "sync_status": reminder.sync_status,
         "source": reminder.source,
         "completed_at": reminder.completed_at,
+        "acknowledged_at": reminder.acknowledged_at,
         "cancelled_at": reminder.cancelled_at,
+        "deleted_at": reminder.deleted_at,
     }
 
 
@@ -488,7 +570,10 @@ async def _serialize_matters(
     ids = [matter.matter_id for matter in matters]
     todo_rows = (
         await db.scalars(
-            select(MatterTodo).where(MatterTodo.matter_id.in_(ids))
+            select(MatterTodo).where(
+                MatterTodo.matter_id.in_(ids),
+                MatterTodo.deleted_at.is_(None),
+            )
         )
     ).all()
     open_counts: dict[str, int] = {}
@@ -523,7 +608,9 @@ async def _serialize_matters(
     ]
 
 
-def _serialize_draft(draft: MatterDraft) -> dict:
+def _serialize_draft(
+    draft: MatterDraft, *, candidates: list[dict] | None = None
+) -> dict:
     payload = draft.payload_json or {}
     return {
         "draft_id": draft.draft_id,
@@ -535,11 +622,41 @@ def _serialize_draft(draft: MatterDraft) -> dict:
         "conflicts": draft.conflict_json,
         "action_plan": payload.get("action_plan") or [],
         "communication_draft": payload.get("communication_draft"),
-        "candidates": draft.candidates_json,
+        "candidates": draft.candidates_json if candidates is None else candidates,
         "ai_run_id": draft.ai_run_id,
         "created_at": draft.created_at,
         "updated_at": draft.updated_at,
     }
+
+
+async def _visible_draft_candidates(
+    db: AsyncSession, user: User, draft: MatterDraft
+) -> list[dict] | None:
+    """Remove deleted or unauthorized matter choices from a cached preview."""
+
+    items = draft.candidates_json
+    if not items:
+        return None
+    candidate_ids = {
+        item.get("matter_id") for item in items if isinstance(item, dict)
+    }
+    visible_ids = set(
+        (
+            await db.scalars(
+                select(Matter.matter_id).where(
+                    Matter.user_id == user.user_id,
+                    Matter.matter_id.in_(candidate_ids),
+                    Matter.deleted_at.is_(None),
+                    Matter.status.in_(("active", "waiting")),
+                )
+            )
+        ).all()
+    )
+    return [
+        item
+        for item in items
+        if isinstance(item, dict) and item.get("matter_id") in visible_ids
+    ]
 
 
 def _build_action_plan(payload: dict) -> list[dict]:
@@ -614,6 +731,19 @@ def _build_action_plan(payload: dict) -> list[dict]:
                 "reminder_id": item.get("reminder_id"),
                 "title": item.get("title"),
                 "trigger_at": item.get("trigger_at"),
+                "reason": item.get("reason"),
+            }
+        )
+    for item in payload.get("schedule_cancellations") or []:
+        plan.append(
+            {
+                "kind": "cancel_schedule",
+                "schedule_id": item.get("schedule_id"),
+                "title": item.get("title"),
+                "starts_at": item.get("starts_at"),
+                "selected": bool(item.get("selected")),
+                "cancellable": bool(item.get("cancellable")),
+                "reason": item.get("reason"),
             }
         )
     return plan
@@ -731,7 +861,10 @@ async def get_matter_detail(db: AsyncSession, user: User, matter_id: str) -> dic
         (
             await db.scalars(
                 select(MatterTodo)
-                .where(MatterTodo.matter_id == matter.matter_id)
+                .where(
+                    MatterTodo.matter_id == matter.matter_id,
+                    MatterTodo.deleted_at.is_(None),
+                )
                 .order_by(MatterTodo.position, MatterTodo.created_at)
             )
         ).all()
@@ -748,8 +881,10 @@ async def get_matter_detail(db: AsyncSession, user: User, matter_id: str) -> dic
     reminders = list(
         (
             await db.scalars(
-                select(Reminder)
-                .where(Reminder.matter_id == matter.matter_id)
+                select(Reminder).where(
+                    Reminder.matter_id == matter.matter_id,
+                    Reminder.deleted_at.is_(None),
+                )
                 .order_by(Reminder.trigger_at)
             )
         ).all()
@@ -834,6 +969,8 @@ async def set_status(
             .where(
                 Reminder.matter_id == matter.matter_id,
                 Reminder.status == "pending",
+                Reminder.trigger_at > now,
+                Reminder.deleted_at.is_(None),
             )
             .values(status="cancelled", cancelled_at=now)
         )
@@ -856,7 +993,12 @@ async def delete_matter(db: AsyncSession, user: User, matter_id: str) -> dict:
     await db.execute(
         update(Reminder)
         .where(Reminder.matter_id == matter.matter_id, Reminder.status == "pending")
-        .values(status="cancelled", cancelled_at=now)
+        .values(status="cancelled", cancelled_at=now, deleted_at=now)
+    )
+    await db.execute(
+        update(MatterTodo)
+        .where(MatterTodo.matter_id == matter.matter_id)
+        .values(deleted_at=now)
     )
     await db.execute(
         update(MatterDraft)
@@ -882,6 +1024,7 @@ async def complete_todo(
             MatterTodo.todo_id == todo_id,
             MatterTodo.matter_id == matter_id,
             MatterTodo.user_id == user.user_id,
+            MatterTodo.deleted_at.is_(None),
         )
     )
     if todo is None:
@@ -896,6 +1039,8 @@ async def complete_todo(
                 Reminder.user_id == user.user_id,
                 Reminder.todo_id == todo.todo_id,
                 Reminder.status == "pending",
+                Reminder.trigger_at > now,
+                Reminder.deleted_at.is_(None),
             )
             .values(status="cancelled", cancelled_at=now)
         )
@@ -1029,6 +1174,49 @@ async def _matching_schedules(
     return matched[:limit]
 
 
+async def _schedule_cancellation_items(
+    db: AsyncSession, user: User, matter: Matter, *, now: datetime
+) -> list[dict]:
+    """List future records a stop-following preview may cancel, with edit rights."""
+
+    rows = list(
+        (
+            await db.scalars(
+                select(ScheduleEvent)
+                .where(
+                    ScheduleEvent.user_id == user.user_id,
+                    ScheduleEvent.matter_id == matter.matter_id,
+                    ScheduleEvent.deleted_at.is_(None),
+                    ScheduleEvent.status.notin_(("cancelled", "deleted")),
+                    ScheduleEvent.starts_at > now,
+                )
+                .order_by(ScheduleEvent.starts_at)
+            )
+        ).all()
+    )
+    items = []
+    for schedule in rows:
+        cancellable = can_edit_schedule(schedule.source, schedule.data_source_id)
+        items.append(
+            {
+                "schedule_id": schedule.schedule_id,
+                "title": schedule.title,
+                "starts_at": _as_utc(schedule.starts_at),
+                "ends_at": _as_utc(schedule.ends_at),
+                "location": schedule.location,
+                "selected": cancellable,
+                "cancellable": cancellable,
+                "reason": (
+                    None
+                    if cancellable
+                    else "该日程来自手机只读副本，应用内不能代为取消。"
+                ),
+                "base_updated_at": _as_utc(schedule.updated_at),
+            }
+        )
+    return items
+
+
 async def _extraction_context(
     db: AsyncSession,
     user: User,
@@ -1050,7 +1238,8 @@ async def _extraction_context(
         rows = (
             await db.scalars(
                 select(MatterTodo).where(
-                    MatterTodo.matter_id.in_([matter.matter_id for matter in matters])
+                    MatterTodo.matter_id.in_([matter.matter_id for matter in matters]),
+                    MatterTodo.deleted_at.is_(None),
                 )
             )
         ).all()
@@ -1075,6 +1264,7 @@ async def _extraction_context(
         "matter_ids": [matter.matter_id for matter in matters],
         "todos": todos,
         "todo_ids": [item["todo_id"] for rows in todos.values() for item in rows],
+        "schedule_coverage_complete": False,
     }
     return context, todos
 
@@ -1091,6 +1281,20 @@ async def _intake_draft(
             MatterDraft.ai_run_id == local_run_id,
         )
     )
+
+
+async def _visible_intake_draft(
+    db: AsyncSession, user: User, local_run_id: str
+) -> MatterDraft | None:
+    """Return a prior draft only if its matter and source scope still authorize it."""
+
+    draft = await _intake_draft(db, user, local_run_id)
+    if draft is None:
+        return None
+    try:
+        return await _get_draft(db, user, draft.draft_id)
+    except NotFoundError:
+        return None
 
 
 def _intake_resolution(run: NexusRun) -> dict:
@@ -1161,9 +1365,12 @@ async def get_intake_result(
     )
     if run is None:
         raise NotFoundError("intake_result_not_found", "统一输入结果不存在。")
-    draft = await _intake_draft(db, user, run.local_run_id)
+    draft = await _visible_intake_draft(db, user, run.local_run_id)
     resolution = _intake_resolution(run)
     outcome = _resolved_outcome(run, resolution, draft)
+    inaccessible_draft = resolution.get("outcome") == "draft" and draft is None
+    if inaccessible_draft:
+        outcome = "unknown"
     context = run.context_json or {}
     return {
         "local_run_id": run.local_run_id,
@@ -1174,12 +1381,29 @@ async def get_intake_result(
         "status": run.status,
         "answer": resolution.get("answer") if outcome == "answer" else None,
         "clarify": (
-            resolution.get("clarify") if outcome == "needs_clarification" else None
+            "原预览关联的事项已删除或资料来源已撤权，不能继续读取。"
+            if inaccessible_draft
+            else resolution.get("clarify")
+            if outcome == "needs_clarification"
+            else None
         ),
-        "pending_context": resolution.get("pending_context") or {},
-        "matter_id": resolution.get("matter_id") or (draft.matter_id if draft else None),
+        "pending_context": (
+            {} if inaccessible_draft else resolution.get("pending_context") or {}
+        ),
+        "matter_id": (
+            None
+            if inaccessible_draft
+            else resolution.get("matter_id") or (draft.matter_id if draft else None)
+        ),
         "draft_id": draft.draft_id if draft else None,
-        "draft": _serialize_draft(draft) if draft else None,
+        "draft": (
+            _serialize_draft(
+                draft,
+                candidates=await _visible_draft_candidates(db, user, draft),
+            )
+            if draft
+            else None
+        ),
         "created_at": run.created_at,
         "completed_at": run.completed_at,
     }
@@ -1481,6 +1705,19 @@ async def intake(
             "matter_extraction_invalid", f"整理结果未通过校验：{exc.reason}"
         ) from None
 
+    if parsed.get("requires_clarification"):
+        _store_intake_resolution(
+            run,
+            outcome="needs_clarification",
+            clarify=parsed.get("clarify"),
+            pending_context=parsed.get("pending_context"),
+            matter_id=parsed.get("matter_id"),
+            parent_run_id=continuation_run_id,
+        )
+        await db.commit()
+        result = await get_intake_result(db, user, run.local_run_id)
+        result["replayed"] = replayed
+        return result
     if parsed.get("intent") == "question":
         # One model run answers the question here; no draft and no second run.
         _store_intake_resolution(
@@ -1562,7 +1799,10 @@ async def intake(
     if target is not None:
         rows = (
             await db.scalars(
-                select(MatterTodo).where(MatterTodo.matter_id == target.matter_id)
+                select(MatterTodo).where(
+                    MatterTodo.matter_id == target.matter_id,
+                    MatterTodo.deleted_at.is_(None),
+                )
             )
         ).all()
         allowed_todos = {row.todo_id for row in rows}
@@ -1570,18 +1810,36 @@ async def intake(
         todo_id for todo_id in parsed["complete_todo_ids"] if todo_id in allowed_todos
     ]
 
+    now = datetime.now(UTC)
     reminder_cancellations = []
+    reminder_todo_ids: set[str] | None = None
+    cancellation_reason = "用户明确要求停止提醒"
     if target is not None and parsed.get("cancel_reminders"):
-        pending_reminders = (
-            await db.scalars(
-                select(Reminder)
-                .where(
-                    Reminder.user_id == user.user_id,
-                    Reminder.matter_id == target.matter_id,
-                    Reminder.status == "pending",
-                )
-                .order_by(Reminder.trigger_at)
+        if (
+            parsed.get("matter_action") != "archive"
+            and parsed.get("complete_todo_ids")
+        ):
+            reminder_todo_ids = set(parsed["complete_todo_ids"])
+            cancellation_reason = "关联待办已完成"
+    elif target is not None and parsed.get("complete_todo_ids"):
+        reminder_todo_ids = set(parsed["complete_todo_ids"])
+        cancellation_reason = "关联待办已完成"
+    if target is not None and (
+        parsed.get("cancel_reminders") or reminder_todo_ids is not None
+    ):
+        reminder_query = select(Reminder).where(
+            Reminder.user_id == user.user_id,
+            Reminder.matter_id == target.matter_id,
+            Reminder.status == "pending",
+            Reminder.trigger_at > now,
+            Reminder.deleted_at.is_(None),
+        )
+        if reminder_todo_ids is not None:
+            reminder_query = reminder_query.where(
+                Reminder.todo_id.in_(reminder_todo_ids)
             )
+        pending_reminders = (
+            await db.scalars(reminder_query.order_by(Reminder.trigger_at))
         ).all()
         reminder_cancellations = [
             {
@@ -1589,9 +1847,20 @@ async def intake(
                 "title": reminder.title,
                 "trigger_at": reminder.trigger_at,
                 "base_updated_at": reminder.updated_at,
+                "reason": cancellation_reason,
             }
             for reminder in pending_reminders
         ]
+
+    schedule_cancellations = []
+    if (
+        target is not None
+        and parsed.get("matter_action") == "archive"
+        and parsed.get("cancel_reminders")
+    ):
+        schedule_cancellations = await _schedule_cancellation_items(
+            db, user, target, now=now
+        )
 
     related_schedules = list(parsed.get("related_schedules") or [])
     existing_matches = await _matching_schedules(db, user, text=text)
@@ -1655,6 +1924,7 @@ async def intake(
         ),
         "cancel_reminders": bool(parsed.get("cancel_reminders")),
         "reminder_cancellations": reminder_cancellations,
+        "schedule_cancellations": schedule_cancellations,
         "source_text": text,
         "analysis": {
             "ai_run_id": run.local_run_id,
@@ -1831,7 +2101,19 @@ async def list_drafts(
     rows = (
         await db.scalars(query.order_by(MatterDraft.updated_at.desc()).limit(limit))
     ).all()
-    return [_serialize_draft(row) for row in rows]
+    visible = []
+    for row in rows:
+        try:
+            checked = await _get_draft(db, user, row.draft_id)
+        except NotFoundError:
+            continue
+        visible.append(
+            _serialize_draft(
+                checked,
+                candidates=await _visible_draft_candidates(db, user, checked),
+            )
+        )
+    return visible
 
 
 async def get_draft(
@@ -1887,7 +2169,10 @@ async def get_draft(
         draft.conflict_json = _jsonable(conflict) if conflict else None
         await db.commit()
         await db.refresh(draft)
-    return _serialize_draft(draft)
+    return _serialize_draft(
+        draft,
+        candidates=await _visible_draft_candidates(db, user, draft),
+    )
 
 
 async def select_matter(
@@ -2218,7 +2503,8 @@ async def patch_draft(
             rows = (
                 await db.scalars(
                     select(MatterTodo.todo_id).where(
-                        MatterTodo.matter_id.in_([m for m in matter_ids if m])
+                            MatterTodo.matter_id.in_([m for m in matter_ids if m]),
+                            MatterTodo.deleted_at.is_(None),
                     )
                 )
             ).all()
@@ -2243,7 +2529,8 @@ async def patch_draft(
                 (
                     await db.scalars(
                         select(MatterTodo.todo_id).where(
-                            MatterTodo.matter_id == target_id
+                            MatterTodo.matter_id == target_id,
+                            MatterTodo.deleted_at.is_(None),
                         )
                     )
                 ).all()
@@ -2252,6 +2539,32 @@ async def patch_draft(
         if unknown:
             raise InvalidRequestError("todo_not_in_matter", "待办不属于该事项。")
         merged["complete_todo_ids"] = changes["complete_todo_ids"]
+
+    if "cancel_schedule_ids" in changes and changes["cancel_schedule_ids"] is not None:
+        requested = set(changes["cancel_schedule_ids"])
+        options = {
+            item.get("schedule_id"): item
+            for item in merged.get("schedule_cancellations") or []
+            if item.get("schedule_id")
+        }
+        unknown = sorted(requested - set(options))
+        if unknown:
+            raise InvalidRequestError(
+                "schedule_not_in_stop_preview",
+                "只能选择当前停止跟进预览中列出的未来日程。",
+            )
+        read_only = [
+            schedule_id
+            for schedule_id in requested
+            if not options[schedule_id].get("cancellable")
+        ]
+        if read_only:
+            raise InvalidRequestError(
+                "schedule_not_editable",
+                "手机导入的只读日程不能在应用内取消。",
+            )
+        for schedule_id, item in options.items():
+            item["selected"] = schedule_id in requested
 
     merged.pop("previous_adjustment", None)
     merged.pop("selected_option", None)
@@ -2278,6 +2591,55 @@ async def patch_draft(
     return _serialize_draft(draft)
 
 
+async def validate_place_draft(
+    db: AsyncSession,
+    user: User,
+    draft_id: str,
+) -> MatterDraft:
+    """Require a preview with a schedule before issuing or applying a place token."""
+
+    draft = await _get_draft(db, user, draft_id)
+    if draft.status != "preview":
+        raise ConflictError("draft_not_editable", "该草稿当前不能再修改地点。")
+    source = (
+        draft.option_base_json
+        if draft.option_base_json is not None
+        else draft.payload_json or {}
+    )
+    if not (source or {}).get("schedule"):
+        raise InvalidRequestError(
+            "place_target_has_no_schedule", "该草稿没有可关联的日程。"
+        )
+    return draft
+
+
+async def create_map_pick(
+    db: AsyncSession,
+    runtime: CommuteRuntime,
+    settings: Settings,
+    user: User,
+    *,
+    draft_id: str,
+    latitude: float,
+    longitude: float,
+    coordinate_system: str,
+) -> dict:
+    """Validate the target draft before one explicit reverse-geocode request."""
+
+    from assistant_api.services import commute_places
+
+    await validate_place_draft(db, user, draft_id)
+    return await commute_places.map_pick_place(
+        runtime,
+        secret=settings.tool_callback_token.get_secret_value(),
+        user_id=user.user_id,
+        draft_id=draft_id,
+        latitude=latitude,
+        longitude=longitude,
+        coordinate_system=coordinate_system,
+    )
+
+
 async def apply_place_selection(
     db: AsyncSession,
     runtime: CommuteRuntime,
@@ -2292,7 +2654,7 @@ async def apply_place_selection(
 
     from assistant_api.services.commute_places import verify_selection
 
-    draft = await _get_draft(db, user, draft_id)
+    draft = await validate_place_draft(db, user, draft_id)
     source = (
         draft.option_base_json
         if draft.option_base_json is not None
@@ -2309,6 +2671,16 @@ async def apply_place_selection(
         raise InvalidRequestError(
             "place_selection_invalid", "地点候选已失效或不属于服务端返回结果。"
         ) from exc
+    if candidate.get("selection_kind") not in {"place_candidate", "map_pick"}:
+        raise InvalidRequestError(
+            "place_selection_invalid", "地点候选缺少有效的选择类型。"
+        )
+    if candidate.get("user_id") != user.user_id:
+        raise NotFoundError("draft_not_found", "变更预览不存在。")
+    if candidate.get("draft_id") != draft_id:
+        raise InvalidRequestError(
+            "place_selection_wrong_draft", "这个地点选择不属于当前草稿。"
+        )
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
     payload = schemas.DraftPatchRequest(
         expected_version=draft.version,
@@ -2383,6 +2755,7 @@ async def confirm_draft(
             "option_not_selected", "请先在预览中选择调整方案，再提交确认。"
         )
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
+    now = datetime.now(UTC)
 
     claim = await db.execute(
         update(MatterDraft)
@@ -2433,7 +2806,10 @@ async def confirm_draft(
         if matter is not None:
             rows = (
                 await db.scalars(
-                    select(MatterTodo).where(MatterTodo.matter_id == matter.matter_id)
+                    select(MatterTodo).where(
+                        MatterTodo.matter_id == matter.matter_id,
+                        MatterTodo.deleted_at.is_(None),
+                    )
                 )
             ).all()
             existing_todos = {row.todo_id: row for row in rows}
@@ -2490,19 +2866,65 @@ async def confirm_draft(
                     Reminder.reminder_id == item.get("reminder_id"),
                     Reminder.user_id == user.user_id,
                     Reminder.matter_id == matter_id,
+                    Reminder.deleted_at.is_(None),
                 )
             )
             if reminder is None:
                 raise NotFoundError("reminder_not_found", "待取消的提醒不存在。")
             if (
                 reminder.status != "pending"
+                or ensure_aware(reminder.trigger_at) <= now
                 or ensure_aware(reminder.updated_at)
                 != _parse_dt(item.get("base_updated_at"), timezone)
             ):
                 raise ConflictError(
-                    "reminder_changed", "待取消的提醒已变化，请重新整理。"
+                    "reminder_changed",
+                    "待取消的提醒已变化或已经到点，请重新整理并保留到点提醒。",
                 )
             reminder_cancellations[reminder.reminder_id] = reminder
+
+        schedule_cancellations: dict[str, ScheduleEvent] = {}
+        for item in payload.get("schedule_cancellations") or []:
+            if not item.get("selected"):
+                continue
+            if not item.get("cancellable"):
+                raise InvalidRequestError(
+                    "schedule_not_editable",
+                    "手机导入的只读日程不能在应用内取消。",
+                )
+            schedule = await db.scalar(
+                select(ScheduleEvent).where(
+                    ScheduleEvent.schedule_id == item.get("schedule_id"),
+                    ScheduleEvent.user_id == user.user_id,
+                    ScheduleEvent.matter_id == matter_id,
+                    ScheduleEvent.deleted_at.is_(None),
+                )
+            )
+            if schedule is None:
+                raise NotFoundError("schedule_not_found", "待取消的未来日程不存在。")
+            if ensure_aware(schedule.starts_at) <= now:
+                raise ConflictError(
+                    "schedule_started",
+                    "有日程已经开始，停止跟进预览需要重新读取。",
+                )
+            if schedule.schedule_id == (proposed or {}).get("schedule_id"):
+                raise InvalidRequestError(
+                    "schedule_conflict_in_stop_preview",
+                    "同一日程不能同时修改和取消，请分别确认。",
+                )
+            if not can_edit_schedule(schedule.source, schedule.data_source_id):
+                raise InvalidRequestError(
+                    "schedule_not_editable",
+                    "手机导入的只读日程不能在应用内取消。",
+                )
+            if ensure_aware(schedule.updated_at) != _parse_dt(
+                item.get("base_updated_at"), timezone
+            ):
+                raise ConflictError(
+                    "schedule_changed",
+                    "待取消的未来日程已变化，请重新整理。",
+                )
+            schedule_cancellations[schedule.schedule_id] = schedule
 
         adjustment = payload.get("previous_adjustment")
         if adjustment and payload.get("selected_option") != "B":
@@ -2557,13 +2979,16 @@ async def confirm_draft(
                 )
             )
 
-        now = datetime.now(UTC)
         before = {
             "matter": None,
             "schedule": None,
             "todos": [],
             "reminders": [],
             "adjacent_schedules": [adjacent_before] if adjacent_before else [],
+            "cancelled_schedules": [
+                _schedule_snapshot(schedule)
+                for schedule in schedule_cancellations.values()
+            ],
         }
         before_todos: dict[str, dict] = {}
         before_reminders: dict[str, dict] = {}
@@ -2655,6 +3080,35 @@ async def confirm_draft(
                 )
             )
 
+        cancelled_schedule_after: list[dict] = []
+        for schedule in schedule_cancellations.values():
+            result = await db.execute(
+                update(ScheduleEvent)
+                .where(
+                    ScheduleEvent.schedule_id == schedule.schedule_id,
+                    ScheduleEvent.user_id == user.user_id,
+                    ScheduleEvent.matter_id == matter.matter_id,
+                    ScheduleEvent.deleted_at.is_(None),
+                    ScheduleEvent.updated_at == schedule.updated_at,
+                    ScheduleEvent.starts_at > now,
+                )
+                .values(status="cancelled", deleted_at=now, sync_status="local_only")
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount == 0:
+                raise ConflictError(
+                    "schedule_changed",
+                    "待取消的未来日程已变化，请重新整理。",
+                )
+            await db.refresh(schedule)
+            cancelled_schedule_after.append(_schedule_snapshot(schedule))
+            await db.execute(
+                delete(ScheduleRouteResult).where(
+                    ScheduleRouteResult.user_id == user.user_id,
+                    ScheduleRouteResult.schedule_id == schedule.schedule_id,
+                )
+            )
+
         position = len(existing_todos)
         for item in payload.get("todos") or []:
             todo_id = item.get("todo_id")
@@ -2684,6 +3138,7 @@ async def confirm_draft(
                     Reminder.user_id == user.user_id,
                     Reminder.todo_id == todo.todo_id,
                     Reminder.status == "pending",
+                    Reminder.deleted_at.is_(None),
                 )
             )
             if pending is not None:
@@ -2700,6 +3155,11 @@ async def confirm_draft(
                     user_id=user.user_id,
                     matter_id=matter.matter_id,
                     todo_id=todo.todo_id,
+                    schedule_id=(
+                        schedule_row.schedule_id
+                        if body.create_schedule and schedule_row is not None
+                        else None
+                    ),
                     title=f"提醒：{todo.title}",
                     trigger_at=todo.reminder_at,
                     status="pending",
@@ -2807,9 +3267,11 @@ async def confirm_draft(
                     "todos": list(after_todos.values()),
                     "reminders": list(after_reminders.values()),
                     "adjacent_schedules": [adjacent_after] if adjacent_after else [],
+                    "cancelled_schedules": cancelled_schedule_after,
                     "created_todo_ids": created_todo_ids,
                     "created_reminder_ids": created_reminder_ids,
                     "reminder_ids": created_reminder_ids,
+                    "cancelled_schedule_ids": list(schedule_cancellations),
                     "completed_todo_ids": payload.get("complete_todo_ids") or [],
                 }
             ),
@@ -2824,6 +3286,7 @@ async def confirm_draft(
             else None,
             "reminder_ids": created_reminder_ids,
             "cancelled_reminder_ids": list(reminder_cancellations),
+            "cancelled_schedule_ids": list(schedule_cancellations),
             "change_id": change.change_id,
             "conflict": _jsonable(conflict) if conflict else None,
         }
@@ -2899,6 +3362,7 @@ async def _confirm_response(
         "replayed": replayed,
         "applied": True,
         "cancelled_reminder_ids": result.get("cancelled_reminder_ids") or [],
+        "cancelled_schedule_ids": result.get("cancelled_schedule_ids") or [],
         "notifications_retracted": False,
         "conflict": result.get("conflict"),
         "change": (
@@ -3031,7 +3495,7 @@ async def revert_change(
                 source_updated_at=_parse_dt(snapshot.get("source_updated_at")),
                 source_version=snapshot.get("source_version"),
                 data_source_id=snapshot.get("data_source_id"),
-                deleted_at=None,
+                deleted_at=_parse_dt(snapshot.get("deleted_at")),
             )
         )
         if result.rowcount == 0:
@@ -3075,6 +3539,20 @@ async def revert_change(
             )
         await restore_schedule(current, adjacent_before)
 
+    before_cancelled = {
+        item.get("schedule_id"): item
+        for item in before.get("cancelled_schedules") or []
+    }
+    for cancelled_after in after.get("cancelled_schedules") or []:
+        current = await current_schedule(cancelled_after)
+        cancelled_before = before_cancelled.get(cancelled_after.get("schedule_id"))
+        if cancelled_before is None:
+            raise ConflictError(
+                "schedule_changed",
+                "缺少停止跟进日程的撤回依据，不能覆盖撤回。",
+            )
+        await restore_schedule(current, cancelled_before)
+
     after_reminders = {
         item.get("reminder_id"): item for item in after.get("reminders") or []
     }
@@ -3111,7 +3589,12 @@ async def revert_change(
                 )
                 current.source_version = reminder_before.get("source_version")
                 current.completed_at = _parse_dt(reminder_before.get("completed_at"))
+                current.acknowledged_at = _parse_dt(
+                    reminder_before.get("acknowledged_at")
+                )
                 current.cancelled_at = _parse_dt(reminder_before.get("cancelled_at"))
+                current.deleted_at = _parse_dt(reminder_before.get("deleted_at"))
+                current.schedule_id = reminder_before.get("schedule_id")
                 current.result_json = reminder_before.get("result_json")
     after_todos = {item.get("todo_id"): item for item in after.get("todos") or []}
     before_todos = {item.get("todo_id"): item for item in before.get("todos") or []}
@@ -3135,6 +3618,7 @@ async def revert_change(
                 current.due_at = _parse_dt(todo_before.get("due_at"))
                 current.reminder_at = _parse_dt(todo_before.get("reminder_at"))
                 current.completed_at = _parse_dt(todo_before.get("completed_at"))
+                current.deleted_at = _parse_dt(todo_before.get("deleted_at"))
                 if todo_before.get("position") is not None:
                     current.position = todo_before["position"]
     values = {"version": matter.version + 1}
@@ -3226,6 +3710,16 @@ async def _change_eligibility(
         if not _schedule_matches(current, adjacent):
             return False, "schedule_changed", "相邻日程在此之后被修改或删除了。"
 
+    for cancelled in after.get("cancelled_schedules") or []:
+        current = await db.scalar(
+            select(ScheduleEvent).where(
+                ScheduleEvent.schedule_id == cancelled.get("schedule_id"),
+                ScheduleEvent.user_id == user.user_id,
+            )
+        )
+        if not _schedule_matches(current, cancelled):
+            return False, "schedule_changed", "已取消的日程在此之后被修改或恢复了。"
+
     for todo_snapshot in after.get("todos") or []:
         current = await db.scalar(
             select(MatterTodo).where(
@@ -3248,6 +3742,207 @@ async def _change_eligibility(
             return False, "reminder_changed", "提醒在此之后被修改或删除了。"
 
     return True, None, None
+
+
+async def _initial_delete_eligibility(
+    db: AsyncSession, user: User, matter: Matter, change: MatterChange
+) -> tuple[bool, str | None, str | None]:
+    """Check whether the latest create change can be deleted as one initial unit."""
+
+    if change.change_type != "create":
+        return False, "not_initial_create", "只有一次新建事项的确认记录可以初始态删除。"
+    if change.reverted_at is not None:
+        return False, "already_reverted", "这条新建记录已经处理过。"
+    later = await db.scalar(
+        select(MatterChange)
+        .where(
+            MatterChange.matter_id == matter.matter_id,
+            MatterChange.created_at > change.created_at,
+            MatterChange.change_id != change.change_id,
+        )
+        .limit(1)
+    )
+    if later is not None:
+        return False, "later_changes", "事项已有后续确认修改，不能初始态删除。"
+    after = change.after_json or {}
+    if after.get("matter_version") is None or matter.version != after["matter_version"]:
+        return False, "matter_changed", "事项版本已经变化，不能初始态删除。"
+    if matter.status not in ("active", "waiting"):
+        return False, "matter_changed", "事项已经归档或删除，不能继续初始态删除。"
+    progress = list(
+        (
+            await db.scalars(
+                select(MatterProgress).where(
+                    MatterProgress.matter_id == matter.matter_id,
+                    MatterProgress.user_id == user.user_id,
+                )
+            )
+        ).all()
+    )
+    if len(progress) != 1 or progress[0].kind != "created":
+        return False, "progress_added", "事项已有新增进展，不能初始态删除。"
+
+    expected_schedule = after.get("schedule")
+    schedules = list(
+        (
+            await db.scalars(
+                select(ScheduleEvent).where(
+                    ScheduleEvent.matter_id == matter.matter_id,
+                    ScheduleEvent.user_id == user.user_id,
+                )
+            )
+        ).all()
+    )
+    expected_schedule_ids = (
+        {expected_schedule.get("schedule_id")} if expected_schedule else set()
+    )
+    if {row.schedule_id for row in schedules} != expected_schedule_ids:
+        return False, "schedule_added", "事项关联了新建之外的日程，不能初始态删除。"
+    if expected_schedule and not _schedule_matches(
+        next(iter(schedules), None), expected_schedule
+    ):
+        return False, "schedule_changed", "新建日程已被修改，不能初始态删除。"
+
+    expected_todos = {item.get("todo_id"): item for item in after.get("todos") or []}
+    todos = list(
+        (
+            await db.scalars(
+                select(MatterTodo).where(
+                    MatterTodo.matter_id == matter.matter_id,
+                    MatterTodo.user_id == user.user_id,
+                )
+            )
+        ).all()
+    )
+    if {row.todo_id for row in todos} != set(expected_todos):
+        return False, "todo_added", "事项有新建之外的待办，不能初始态删除。"
+    if any(not _todo_matches(row, expected_todos[row.todo_id]) for row in todos):
+        return False, "todo_changed", "新建待办已被修改，不能初始态删除。"
+
+    expected_reminders = {
+        item.get("reminder_id"): item for item in after.get("reminders") or []
+    }
+    reminders = list(
+        (
+            await db.scalars(
+                select(Reminder).where(
+                    Reminder.matter_id == matter.matter_id,
+                    Reminder.user_id == user.user_id,
+                )
+            )
+        ).all()
+    )
+    if {row.reminder_id for row in reminders} != set(expected_reminders):
+        return False, "reminder_added", "事项有新建之外的提醒，不能初始态删除。"
+    if any(
+        not _reminder_matches(row, expected_reminders[row.reminder_id])
+        for row in reminders
+    ):
+        return False, "reminder_changed", "新建提醒已被修改，不能初始态删除。"
+    return True, None, None
+
+
+async def initial_delete_matter(
+    db: AsyncSession, user: User, matter_id: str
+) -> dict:
+    """Delete one untouched initially-created matter and only its created records."""
+
+    matter = await _get_matter(db, user, matter_id)
+    change = await db.scalar(
+        select(MatterChange)
+        .where(
+            MatterChange.matter_id == matter.matter_id,
+            MatterChange.user_id == user.user_id,
+        )
+        .order_by(MatterChange.created_at.desc())
+        .limit(1)
+    )
+    if change is None:
+        raise ConflictError("initial_delete_unavailable", "没有可删除的新建确认记录。")
+    eligible, reason_code, reason = await _initial_delete_eligibility(
+        db, user, matter, change
+    )
+    if not eligible:
+        raise ConflictError(
+            reason_code or "initial_delete_unavailable",
+            reason or "不能初始态删除。",
+        )
+
+    after = change.after_json or {}
+    schedule_ids = (
+        [after["schedule"]["schedule_id"]] if after.get("schedule") else []
+    )
+    todo_ids = [item["todo_id"] for item in after.get("todos") or []]
+    reminder_ids = [item["reminder_id"] for item in after.get("reminders") or []]
+    now = datetime.now(UTC)
+    claimed = await db.execute(
+        update(Matter)
+        .where(
+            Matter.matter_id == matter.matter_id,
+            Matter.user_id == user.user_id,
+            Matter.version == matter.version,
+            Matter.deleted_at.is_(None),
+        )
+        .values(status="deleted", deleted_at=now, version=matter.version + 1)
+    )
+    if claimed.rowcount == 0:
+        raise ConflictError("matter_changed", "事项已被修改，请刷新后再试。")
+    if schedule_ids:
+        await db.execute(
+            update(ScheduleEvent)
+            .where(
+                ScheduleEvent.user_id == user.user_id,
+                ScheduleEvent.schedule_id.in_(schedule_ids),
+                ScheduleEvent.matter_id == matter.matter_id,
+                ScheduleEvent.deleted_at.is_(None),
+            )
+            .values(status="cancelled", deleted_at=now)
+        )
+        await db.execute(
+            delete(ScheduleRouteResult).where(
+                ScheduleRouteResult.user_id == user.user_id,
+                ScheduleRouteResult.schedule_id.in_(schedule_ids),
+            )
+        )
+    if todo_ids:
+        await db.execute(
+            update(MatterTodo)
+            .where(
+                MatterTodo.user_id == user.user_id,
+                MatterTodo.matter_id == matter.matter_id,
+                MatterTodo.todo_id.in_(todo_ids),
+                MatterTodo.deleted_at.is_(None),
+            )
+            .values(deleted_at=now)
+        )
+    if reminder_ids:
+        await db.execute(
+            update(Reminder)
+            .where(
+                Reminder.user_id == user.user_id,
+                Reminder.matter_id == matter.matter_id,
+                Reminder.reminder_id.in_(reminder_ids),
+                Reminder.deleted_at.is_(None),
+            )
+            .values(status="cancelled", cancelled_at=now, deleted_at=now)
+        )
+    await db.execute(
+        update(MatterDraft)
+        .where(
+            MatterDraft.user_id == user.user_id,
+            MatterDraft.matter_id == matter.matter_id,
+            MatterDraft.status == "preview",
+        )
+        .values(status="cancelled", cancelled_at=now)
+    )
+    await db.commit()
+    return {
+        "matter_id": matter.matter_id,
+        "deleted_at": now,
+        "schedule_ids": schedule_ids,
+        "todo_ids": todo_ids,
+        "reminder_ids": reminder_ids,
+    }
 
 
 async def list_changes(
@@ -3314,17 +4009,52 @@ async def list_changes(
                 select(Matter).where(
                     Matter.user_id == user.user_id,
                     Matter.matter_id.in_(source_matter_ids),
+                    Matter.deleted_at.is_(None),
                 )
             )
         ).all()
     }
+    all_affected_matter_ids = {
+        matter_id
+        for change in rows
+        for matter_id in _affected_matter_ids(change.after_json or {})
+    }
+    visible_affected_matter_ids = set(
+        (
+            await db.scalars(
+                select(Matter.matter_id).where(
+                    Matter.user_id == user.user_id,
+                    Matter.matter_id.in_(all_affected_matter_ids),
+                    Matter.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    )
     items = []
     for change in rows:
         after = change.after_json or {}
-        affected_matter_ids = _affected_matter_ids(after)
+        affected_matter_ids = [
+            matter_id
+            for matter_id in _affected_matter_ids(after)
+            if matter_id in visible_affected_matter_ids
+        ]
         is_primary = change.matter_id == matter.matter_id
+        if not is_primary and change.matter_id not in source_titles:
+            continue
+        initial_delete_allowed = False
         if is_primary:
-            eligible, code, reason = await _change_eligibility(db, user, matter, change)
+            if change.change_type == "create":
+                initial_delete_allowed, code, reason = await _initial_delete_eligibility(
+                    db, user, matter, change
+                )
+                eligible = False
+                if initial_delete_allowed:
+                    code = "initial_delete_available"
+                    reason = "这是新建事项的初始状态，可使用初始态连带删除。"
+            else:
+                eligible, code, reason = await _change_eligibility(
+                    db, user, matter, change
+                )
             relation = "primary"
             schedule_id = (after.get("schedule") or {}).get("schedule_id")
         else:
@@ -3364,6 +4094,7 @@ async def list_changes(
                 "before": change.before_json or {},
                 "after": after,
                 "revertable": eligible,
+                "initial_delete_allowed": initial_delete_allowed,
                 "reason_code": code,
                 "reason": reason,
             }
@@ -3469,6 +4200,7 @@ async def create_edit_draft(
                 MatterTodo.todo_id == payload.todo_id,
                 MatterTodo.matter_id == matter.matter_id,
                 MatterTodo.user_id == user.user_id,
+                MatterTodo.deleted_at.is_(None),
             )
         )
         if todo is None:
@@ -3534,9 +4266,16 @@ async def create_edit_draft(
 async def today_view(
     db: AsyncSession, user: User, *, day: date, timezone: str
 ) -> dict:
+    """Read one local day plus every still-unacknowledged due reminder."""
+
     zone = ZoneInfo(timezone)
     starts = datetime.combine(day, time.min, tzinfo=zone).astimezone(UTC)
     ends = starts + timedelta(days=1)
+    now = datetime.now(UTC)
+    deleted_matter_ids = select(Matter.matter_id).where(
+        Matter.user_id == user.user_id,
+        Matter.deleted_at.is_not(None),
+    )
     schedules = list(
         (
             await db.scalars(
@@ -3545,6 +4284,10 @@ async def today_view(
                     ScheduleEvent.user_id == user.user_id,
                     ScheduleEvent.deleted_at.is_(None),
                     ScheduleEvent.status.notin_(("cancelled", "deleted")),
+                    or_(
+                        ScheduleEvent.matter_id.is_(None),
+                        ScheduleEvent.matter_id.notin_(deleted_matter_ids),
+                    ),
                     ScheduleEvent.starts_at < ends,
                     or_(
                         ScheduleEvent.ends_at >= starts,
@@ -3563,8 +4306,16 @@ async def today_view(
                 .where(
                     Reminder.user_id == user.user_id,
                     Reminder.status == "pending",
-                    Reminder.trigger_at >= starts,
+                    Reminder.deleted_at.is_(None),
+                    or_(
+                        Reminder.matter_id.is_(None),
+                        Reminder.matter_id.notin_(deleted_matter_ids),
+                    ),
                     Reminder.trigger_at < ends,
+                    or_(
+                        Reminder.trigger_at >= starts,
+                        Reminder.trigger_at <= now,
+                    ),
                 )
                 .order_by(Reminder.trigger_at)
             )
@@ -3577,6 +4328,7 @@ async def today_view(
         for row in (
             await db.scalars(
                 select(Matter).where(Matter.user_id == user.user_id)
+                .where(Matter.deleted_at.is_(None))
             )
         ).all()
     }
@@ -3588,6 +4340,7 @@ async def today_view(
                 .where(
                     MatterTodo.user_id == user.user_id,
                     MatterTodo.status == "open",
+                    MatterTodo.deleted_at.is_(None),
                     MatterTodo.due_at.is_not(None),
                     MatterTodo.due_at < ends,
                     Matter.deleted_at.is_(None),
@@ -3691,7 +4444,9 @@ async def today_view(
             if row.matter_id and row.matter_id in matters
             else None
         )
-        linked = await schedule_routes.valid_for_schedule(db, user, row)
+        linked, route_reason = await schedule_routes.validation_for_schedule(
+            db, user, row
+        )
         item["route"] = (
             {
                 "status": "available",
@@ -3707,7 +4462,13 @@ async def today_view(
                 "origin_basis": linked.get("origin_basis"),
             }
             if linked
-            else dict(unverified_route)
+            else {
+                **unverified_route,
+                "reason_code": route_reason or "no_linked_route_result",
+                "message": schedule_routes.unverified_message(
+                    route_reason or "no_linked_route_result"
+                ),
+            }
         )
         schedule_items.append(item)
     reminder_items = []
@@ -3776,12 +4537,91 @@ async def list_reminders(
     ends_at: datetime | None,
     status: str | None,
 ) -> list[dict]:
-    query = select(Reminder).where(Reminder.user_id == user.user_id)
+    """List visible reminders and filter by the projected four-state lifecycle."""
+
+    deleted_matter_ids = select(Matter.matter_id).where(
+        Matter.user_id == user.user_id,
+        Matter.deleted_at.is_not(None),
+    )
+    query = select(Reminder).where(
+        Reminder.user_id == user.user_id,
+        Reminder.deleted_at.is_(None),
+        or_(
+            Reminder.matter_id.is_(None),
+            Reminder.matter_id.notin_(deleted_matter_ids),
+        ),
+    )
     if starts_at is not None:
         query = query.where(Reminder.trigger_at >= ensure_aware(starts_at))
     if ends_at is not None:
         query = query.where(Reminder.trigger_at < ensure_aware(ends_at))
-    if status is not None:
-        query = query.where(Reminder.status == status)
     rows = list((await db.scalars(query.order_by(Reminder.trigger_at))).all())
-    return [_serialize_reminder(row) for row in rows]
+    items = [_serialize_reminder(row) for row in rows]
+    if status is None:
+        return items
+    if status == "pending":
+        return [item for item in items if item["status"] in ("scheduled", "due")]
+    return [item for item in items if item["status"] == status]
+
+
+async def acknowledge_reminder(
+    db: AsyncSession, user: User, reminder_id: str
+) -> dict:
+    """Mark one due reminder as seen without duplicating acknowledgement."""
+
+    reminder = await db.scalar(
+        select(Reminder).where(
+            Reminder.reminder_id == reminder_id,
+            Reminder.user_id == user.user_id,
+            Reminder.deleted_at.is_(None),
+        )
+    )
+    if reminder is None:
+        raise NotFoundError("reminder_not_found", "提醒不存在。")
+    if reminder.matter_id:
+        matter = await db.scalar(
+            select(Matter).where(
+                Matter.matter_id == reminder.matter_id,
+                Matter.user_id == user.user_id,
+                Matter.deleted_at.is_(None),
+            )
+        )
+        if matter is None:
+            raise NotFoundError("reminder_not_found", "提醒不存在。")
+    if reminder.status == "cancelled":
+        raise ConflictError("reminder_cancelled", "该提醒已取消。")
+    if reminder.acknowledged_at is not None or reminder.status == "completed":
+        return _serialize_reminder(reminder)
+    now = datetime.now(UTC)
+    if ensure_aware(reminder.trigger_at) > now:
+        raise ConflictError("reminder_not_due", "提醒尚未到点，不能标记为已知晓。")
+    result = await db.execute(
+        update(Reminder)
+        .where(
+            Reminder.reminder_id == reminder.reminder_id,
+            Reminder.user_id == user.user_id,
+            Reminder.status == "pending",
+            Reminder.acknowledged_at.is_(None),
+            Reminder.trigger_at <= now,
+            Reminder.deleted_at.is_(None),
+        )
+        .values(status="completed", completed_at=now, acknowledged_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 0:
+        await db.rollback()
+        fresh = await db.scalar(
+            select(Reminder).where(
+                Reminder.reminder_id == reminder.reminder_id,
+                Reminder.user_id == user.user_id,
+                Reminder.deleted_at.is_(None),
+            )
+        )
+        if fresh is None:
+            raise NotFoundError("reminder_not_found", "提醒不存在。")
+        if fresh.acknowledged_at is not None or fresh.status == "completed":
+            return _serialize_reminder(fresh)
+        raise ConflictError("reminder_changed", "提醒状态已变化，请刷新后再试。")
+    await db.commit()
+    await db.refresh(reminder)
+    return _serialize_reminder(reminder)

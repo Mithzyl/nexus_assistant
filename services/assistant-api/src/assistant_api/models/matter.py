@@ -58,7 +58,7 @@ class Matter(TimestampMixin, Base):
 
 
 class MatterTodo(TimestampMixin, Base):
-    """A checklist item inside a matter; `due_at` is a deadline, not a reminder."""
+    """A checklist item inside a matter; deletion is soft and separate from status."""
 
     __tablename__ = "matter_todos"
     __table_args__ = (Index("ix_matter_todos_matter", "matter_id", "position"),)
@@ -76,6 +76,7 @@ class MatterTodo(TimestampMixin, Base):
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class MatterProgress(TimestampMixin, Base):
@@ -158,7 +159,7 @@ class MatterChange(TimestampMixin, Base):
 
 
 class Reminder(TimestampMixin, Base):
-    """A stored reminder record. Delivery is intentionally not implemented yet."""
+    """A stored reminder; due state is derived and calendar alarms are optional."""
 
     __tablename__ = "reminders"
     __table_args__ = (
@@ -175,6 +176,9 @@ class Reminder(TimestampMixin, Base):
     )
     matter_id: Mapped[str | None] = mapped_column(String(36))
     todo_id: Mapped[str | None] = mapped_column(String(36))
+    schedule_id: Mapped[str | None] = mapped_column(
+        ForeignKey("schedules.schedule_id", ondelete="SET NULL"), index=True
+    )
     title: Mapped[str] = mapped_column(String(255))
     note: Mapped[str | None] = mapped_column(String(500))
     trigger_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -187,7 +191,9 @@ class Reminder(TimestampMixin, Base):
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_version: Mapped[int | None] = mapped_column(Integer)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     result_json: Mapped[dict | None] = mapped_column(JSON)
 
 

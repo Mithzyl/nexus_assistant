@@ -70,6 +70,9 @@ class UnavailablePlaceProvider:
     async def search(self, **_kwargs):
         raise ProviderNotConfigured("amap_not_configured")
 
+    async def reverse_geocode(self, **_kwargs):
+        raise ProviderNotConfigured("amap_not_configured")
+
 
 class DisabledPushProvider:
     """APNs is unreachable in this Bark-only deployment."""

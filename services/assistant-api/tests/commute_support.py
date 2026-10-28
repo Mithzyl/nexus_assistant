@@ -101,12 +101,24 @@ class FakeWeatherProvider:
 
 
 class FakeEtaProvider:
+    """Return deterministic ETA data while allowing shape-specific tests."""
+
     provider = "fake_eta"
 
-    def __init__(self, *, now, duration_seconds: int = 1800, fail: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        now,
+        duration_seconds: int = 1800,
+        fail: Exception | None = None,
+        route_segments=(),
+        route_shape_status: str = "missing",
+    ) -> None:
         self._now = now
         self.duration_seconds = duration_seconds
         self.fail = fail
+        self.route_segments = route_segments
+        self.route_shape_status = route_shape_status
         self.calls: list[dict] = []
 
     async def fetch(
@@ -137,6 +149,8 @@ class FakeEtaProvider:
             target_arrival_at=target_arrival_at,
             duration_seconds=self.duration_seconds,
             distance_meters=10_000,
+            route_segments=self.route_segments,
+            route_shape_status=self.route_shape_status,
         )
 
 

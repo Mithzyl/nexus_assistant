@@ -1,4 +1,4 @@
-"""Build a private ICS feed from confirmed app-native schedules only."""
+"""Build a private ICS feed from confirmed app-native schedules and linked alarms."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from icalendar import Calendar, Event
+from icalendar import Alarm, Calendar, Event
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from assistant_api.core.errors import ConflictError, NotFoundError
 from assistant_api.models import (
     CalendarSubscription,
     Matter,
+    Reminder,
     ScheduleEvent,
     User,
 )
@@ -216,6 +217,26 @@ async def read_feed(db: AsyncSession, token: str) -> tuple[str, str]:
             )
         ).all()
     )
+    schedule_ids = [schedule.schedule_id for schedule in schedules]
+    reminders_by_schedule: dict[str, list[Reminder]] = {}
+    if schedule_ids:
+        reminders = list(
+            (
+                await db.scalars(
+                    select(Reminder).where(
+                        Reminder.user_id == row.user_id,
+                        Reminder.schedule_id.in_(schedule_ids),
+                        Reminder.status == "pending",
+                        Reminder.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+        for reminder in reminders:
+            if reminder.schedule_id:
+                reminders_by_schedule.setdefault(reminder.schedule_id, []).append(
+                    reminder
+                )
     calendar = Calendar()
     calendar.add("prodid", "-//Personal Assistant//Calendar Subscription//CN")
     calendar.add("version", "2.0")
@@ -237,6 +258,15 @@ async def read_feed(db: AsyncSession, token: str) -> tuple[str, str]:
         if schedule.location:
             event.add("location", schedule.location)
         event.add("status", "CONFIRMED")
+        for reminder in reminders_by_schedule.get(schedule.schedule_id, []):
+            alarm = Alarm()
+            alarm.add("action", "DISPLAY")
+            alarm.add("description", reminder.title)
+            alarm.add(
+                "trigger",
+                ensure_aware(reminder.trigger_at).astimezone(UTC),
+            )
+            event.add_component(alarm)
         calendar.add_component(event)
     row.last_read_at = stamp
     await db.commit()

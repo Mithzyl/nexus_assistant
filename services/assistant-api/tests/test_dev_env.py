@@ -34,6 +34,30 @@ def test_config_is_written_with_an_absolute_database_and_private_mode(tmp_path, 
     assert "ASSISTANT_PROVISION_PASSWORD" not in loaded
 
 
+def test_reinitialising_config_preserves_local_amap_settings(tmp_path):
+    config_path = tmp_path / "dev.env"
+    database = tmp_path / "local-development.db"
+    existing = dev_env.config_values(db_path=database)
+    existing.update(
+        {
+            "ASSISTANT_COMMUTE_PROVIDER_MODE": "live",
+            "ASSISTANT_COMMUTE_AMAP_API_KEY": "synthetic-test-key",
+            "ASSISTANT_COMMUTE_AUTO_WEATHER_ENABLED": "false",
+        }
+    )
+    dev_env.write_config(config_path, existing)
+
+    generated = dev_env.config_values(db_path=database, api_port=18094, stub_port=18192)
+    merged = dev_env.preserve_local_provider_settings(
+        dev_env.read_config(config_path), generated
+    )
+
+    assert merged["PA_DEV_API_PORT"] == "18094"
+    assert merged["ASSISTANT_COMMUTE_PROVIDER_MODE"] == "live"
+    assert merged["ASSISTANT_COMMUTE_AMAP_API_KEY"] == "synthetic-test-key"
+    assert merged["ASSISTANT_COMMUTE_AUTO_WEATHER_ENABLED"] == "false"
+
+
 def test_relative_database_urls_are_rejected():
     with pytest.raises(ValueError):
         dev_env.database_path_from_url("sqlite+aiosqlite:///./relative.db")

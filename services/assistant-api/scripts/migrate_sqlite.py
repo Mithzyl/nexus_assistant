@@ -60,6 +60,10 @@ COLUMN_MIGRATIONS = (
     ("0011_location_route", "schedules", "location_address", "VARCHAR(255)"),
     ("0011_location_route", "schedules", "location_source", "VARCHAR(32)"),
     ("0011_location_route", "schedules", "location_external_id", "VARCHAR(128)"),
+    ("0012_reminder_lifecycle", "matter_todos", "deleted_at", "DATETIME"),
+    ("0012_reminder_lifecycle", "reminders", "schedule_id", "VARCHAR(36)"),
+    ("0012_reminder_lifecycle", "reminders", "acknowledged_at", "DATETIME"),
+    ("0012_reminder_lifecycle", "reminders", "deleted_at", "DATETIME"),
 )
 
 # Indexes on pre-existing tables cannot be added by metadata.create_all, so they
@@ -116,6 +120,12 @@ INDEX_MIGRATIONS = (
         "uq_matter_drafts_user_origin",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_matter_drafts_user_origin "
         "ON matter_drafts (user_id, origin_key)",
+    ),
+    (
+        "0012_reminder_lifecycle",
+        "ix_reminders_schedule",
+        "CREATE INDEX IF NOT EXISTS ix_reminders_schedule "
+        "ON reminders (schedule_id)",
     ),
 )
 

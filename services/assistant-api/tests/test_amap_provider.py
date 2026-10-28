@@ -46,6 +46,7 @@ async def test_amap_place_and_transit_normalization_is_cached():
             )
         if request.url.path == "/v3/direction/transit/integrated":
             assert request.url.params["city"] == "上海"
+            assert request.url.params["extensions"] == "all"
             return httpx.Response(
                 200,
                 json={
@@ -58,11 +59,33 @@ async def test_amap_place_and_transit_normalization_is_cached():
                                 "cost": "4.0",
                                 "segments": [
                                     {
-                                        "walking": {"distance": "300"},
+                                        "walking": {
+                                            "distance": "300",
+                                            "steps": [
+                                                {
+                                                    "polyline": (
+                                                        "121.4456,31.2231;"
+                                                        "121.4460,31.2235"
+                                                    )
+                                                }
+                                            ],
+                                        },
                                         "bus": {
                                             "buslines": [
-                                                {"name": "地铁2号线"},
-                                                {"name": "地铁4号线"},
+                                                {
+                                                    "name": "地铁2号线",
+                                                    "polyline": (
+                                                        "121.4460,31.2235;"
+                                                        "121.4737,31.2304"
+                                                    ),
+                                                },
+                                                {
+                                                    "name": "地铁4号线",
+                                                    "polyline": (
+                                                        "121.4460,31.2235;"
+                                                        "121.4737,31.2304"
+                                                    ),
+                                                },
                                             ]
                                         },
                                     }
@@ -73,13 +96,43 @@ async def test_amap_place_and_transit_normalization_is_cached():
                 },
             )
         if request.url.path == "/v3/direction/driving":
+            assert request.url.params["extensions"] == "all"
             return httpx.Response(
                 200,
                 json={
                     "status": "1",
                     "route": {
                         "taxi_cost": "35.0",
-                        "paths": [{"duration": "1200", "distance": "8500"}],
+                        "paths": [
+                            {
+                                "duration": "1200",
+                                "distance": "8500",
+                                "steps": [
+                                    {
+                                        "polyline": (
+                                            "121.4456,31.2231;"
+                                            "121.4500,31.2260;"
+                                            "121.4737,31.2304"
+                                        )
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                },
+            )
+        if request.url.path == "/v3/geocode/regeo":
+            assert request.url.params["location"] == "121.445600,31.223100"
+            return httpx.Response(
+                200,
+                json={
+                    "status": "1",
+                    "regeocode": {
+                        "formatted_address": "上海市静安区南京西路",
+                        "addressComponent": {
+                            "city": "上海市",
+                            "building": {"name": ""},
+                        },
                     },
                 },
             )
@@ -123,6 +176,16 @@ async def test_amap_place_and_transit_normalization_is_cached():
     assert first.fare_cny == 4.0
     assert first.fare_kind == "amap_transit_fare"
     assert first.timing_basis == "planned_time_not_live_forecast"
+    assert first.route_shape_status == "available"
+    assert [segment.kind for segment in first.route_segments] == [
+        "walking",
+        "transit",
+    ]
+    assert first.route_segments[1].label == "地铁2号线"
+    assert first.route_segments[0].points[0].longitude == 121.4456
+    assert {segment.coordinate_system for segment in first.route_segments} == {
+        "gcj02"
+    }
     assert paths.count("/v3/direction/transit/integrated") == 1
 
     driving = await provider.fetch(
@@ -136,6 +199,58 @@ async def test_amap_place_and_transit_normalization_is_cached():
     assert driving.fare_cny == 35.0
     assert driving.fare_kind == "amap_taxi_cost_estimate"
     assert driving.timing_basis == "provider_departure_time"
+    assert driving.route_shape_status == "available"
+    assert driving.route_segments[0].kind == "driving"
+    assert len(driving.route_segments[0].points) == 3
+    assert driving.route_segments[0].coordinate_system == "gcj02"
+
+    map_point = await provider.reverse_geocode(
+        latitude=31.2231,
+        longitude=121.4456,
+    )
+    assert map_point.name == "地图选点"
+    assert map_point.address == "上海市静安区南京西路"
+    assert map_point.coordinate_system == "gcj02"
+    assert map_point.source == "amap_regeo"
+    await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_amap_single_point_route_shape_is_reported_missing():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v3/direction/driving"
+        return httpx.Response(
+            200,
+            json={
+                "status": "1",
+                "route": {
+                    "paths": [
+                        {
+                            "duration": "600",
+                            "distance": "3000",
+                            "steps": [
+                                {"polyline": "121.4456,31.2231"},
+                            ],
+                        }
+                    ]
+                },
+            },
+        )
+
+    provider = AmapProvider(
+        api_key="server-key",
+        now=lambda: NOW,
+        transport=httpx.MockTransport(handler),
+    )
+    result = await provider.fetch(
+        origin=(31.2231, 121.4456),
+        destination=(31.2304, 121.4737),
+        mode="driving",
+        request_depart_at=NOW,
+        target_arrival_at=NOW + timedelta(minutes=20),
+    )
+    assert result.route_segments == ()
+    assert result.route_shape_status == "missing"
     await provider.aclose()
 
 

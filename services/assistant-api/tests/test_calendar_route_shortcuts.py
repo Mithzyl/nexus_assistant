@@ -10,6 +10,7 @@ import pytest
 from icalendar import Calendar
 from sqlalchemy import select
 
+from assistant_api.commute.providers.base import RoutePoint, RouteSegment
 from assistant_api.models import Matter, MatterDraft, Reminder, ScheduleEvent
 from assistant_api.main import _CalendarTokenLogFilter
 from conftest import auth
@@ -83,15 +84,6 @@ async def add_schedule(
 @pytest.mark.asyncio
 async def test_place_candidates_and_linked_route_invalidate_after_schedule_edit(harness):
     h = harness
-    places = await h.client.post(
-        "/api/v1/commute/places/search",
-        json={"query": "静安寺", "city": "上海", "search_type": "place"},
-        headers=auth(h.token_a),
-    )
-    assert places.status_code == 200, places.text
-    assert places.json()["ambiguous"] is True
-    assert len(places.json()["candidates"]) == 2
-
     matter = await create_matter(h, "路线关联")
     starts_at = datetime.now(UTC) + timedelta(days=2)
     schedule_id = await add_schedule(
@@ -106,6 +98,43 @@ async def test_place_candidates_and_linked_route_invalidate_after_schedule_edit(
         title="上一场会议",
         starts_at=starts_at - timedelta(hours=2),
     )
+    direct = await h.client.post(
+        f"/api/v1/matters/{matter['matter_id']}/drafts",
+        json={
+            "idempotency_key": f"place-selection-{schedule_id}",
+            "schedule_id": schedule_id,
+        },
+        headers=auth(h.token_a),
+    )
+    assert direct.status_code == 201, direct.text
+    draft = direct.json()
+    places = await h.client.post(
+        "/api/v1/commute/places/search",
+        json={
+            "query": "静安寺",
+            "city": "上海",
+            "search_type": "place",
+            "draft_id": draft["draft_id"],
+        },
+        headers=auth(h.token_a),
+    )
+    assert places.status_code == 200, places.text
+    assert places.json()["ambiguous"] is True
+    assert len(places.json()["candidates"]) == 2
+
+    eta = h.app.state.commute_runtime.eta
+    eta.route_segments = (
+        RouteSegment(
+            kind="driving",
+            label="测试路线",
+            points=(
+                RoutePoint(latitude=31.2231, longitude=121.4456),
+                RoutePoint(latitude=31.2304, longitude=121.4737),
+            ),
+            coordinate_system="gcj02",
+        ),
+    )
+    eta.route_shape_status = "available"
     measured = await h.client.post(
         "/api/v1/commute/estimate",
         json={
@@ -127,6 +156,41 @@ async def test_place_candidates_and_linked_route_invalidate_after_schedule_edit(
     assert measured.json()["status"] == "available"
     assert measured.json()["origin_basis"] == "previous_schedule"
 
+    route_detail = await h.client.get(
+        f"/api/v1/commute/routes/{schedule_id}",
+        headers=auth(h.token_a),
+    )
+    assert route_detail.status_code == 200, route_detail.text
+    assert route_detail.json()["status"] == "available"
+    assert route_detail.json()["origin"]["basis"] == "previous_schedule"
+    assert route_detail.json()["destination"]["schedule_id"] == schedule_id
+    assert route_detail.json()["shape"]["status"] == "available"
+    assert route_detail.json()["shape"]["segments"][0]["coordinate_system"] == "gcj02"
+    assert len(route_detail.json()["shape"]["segments"][0]["points"]) == 2
+    foreign_route = await h.client.get(
+        f"/api/v1/commute/routes/{schedule_id}",
+        headers=auth(h.token_b),
+    )
+    assert foreign_route.status_code == 404
+    async with h.app.state.session_factory() as db:
+        schedule_row = await db.get(ScheduleEvent, schedule_id)
+        original_start = schedule_row.starts_at
+        original_updated_at = schedule_row.updated_at
+        schedule_row.starts_at = original_start + timedelta(minutes=1)
+        await db.commit()
+    stale_fingerprint = await h.client.get(
+        f"/api/v1/commute/routes/{schedule_id}",
+        headers=auth(h.token_a),
+    )
+    assert stale_fingerprint.status_code == 200
+    assert stale_fingerprint.json()["status"] == "unverified"
+    assert stale_fingerprint.json()["reason_code"] == "route_result_stale"
+    async with h.app.state.session_factory() as db:
+        schedule_row = await db.get(ScheduleEvent, schedule_id)
+        schedule_row.starts_at = original_start
+        schedule_row.updated_at = original_updated_at
+        await db.commit()
+
     day = starts_at.astimezone(ZONE).date().isoformat()
     today = await h.client.get(
         f"/api/v1/today?date={day}", headers=auth(h.token_a)
@@ -137,16 +201,6 @@ async def test_place_candidates_and_linked_route_invalidate_after_schedule_edit(
     assert item["route"]["status"] == "available"
     assert item["route"]["mode"] == "transit"
 
-    direct = await h.client.post(
-        f"/api/v1/matters/{matter['matter_id']}/drafts",
-        json={
-            "idempotency_key": f"place-selection-{schedule_id}",
-            "schedule_id": schedule_id,
-        },
-        headers=auth(h.token_a),
-    )
-    assert direct.status_code == 201, direct.text
-    draft = direct.json()
     selected = places.json()["candidates"][1]
     foreign = await h.client.post(
         "/api/v1/commute/places/confirm",
@@ -182,6 +236,89 @@ async def test_place_candidates_and_linked_route_invalidate_after_schedule_edit(
     )
     assert before_confirm["route"]["status"] == "available"
 
+    map_schedule_id = await add_schedule(
+        h,
+        matter_id=matter["matter_id"],
+        title="地图选点日程",
+        starts_at=starts_at + timedelta(hours=2),
+    )
+    map_draft_response = await h.client.post(
+        f"/api/v1/matters/{matter['matter_id']}/drafts",
+        json={
+            "idempotency_key": f"map-pick-{map_schedule_id}",
+            "schedule_id": map_schedule_id,
+        },
+        headers=auth(h.token_a),
+    )
+    assert map_draft_response.status_code == 201, map_draft_response.text
+    map_draft = map_draft_response.json()
+    out_of_bounds = await h.client.post(
+        "/api/v1/commute/places/map-pick",
+        json={
+            "draft_id": map_draft["draft_id"],
+            "latitude": 0,
+            "longitude": 0,
+            "coordinate_system": "gcj02",
+        },
+        headers=auth(h.token_a),
+    )
+    assert out_of_bounds.status_code == 200, out_of_bounds.text
+    assert out_of_bounds.json()["status"] == "unavailable"
+    assert (
+        out_of_bounds.json()["reason_code"]
+        == "map_pick_coordinate_out_of_bounds"
+    )
+    map_pick = await h.client.post(
+        "/api/v1/commute/places/map-pick",
+        json={
+            "draft_id": map_draft["draft_id"],
+            "latitude": 31.224,
+            "longitude": 121.446,
+            "coordinate_system": "gcj02",
+        },
+        headers=auth(h.token_a),
+    )
+    assert map_pick.status_code == 200, map_pick.text
+    assert map_pick.json()["status"] == "available"
+    assert map_pick.json()["location"]["name"] == "地图选点"
+    assert map_pick.json()["location"]["provider_place_id"] is None
+    map_token = map_pick.json()["location"]["selection_token"]
+    wrong_draft = await h.client.post(
+        "/api/v1/commute/places/confirm",
+        json={
+            "draft_id": draft["draft_id"],
+            "selection_token": map_token,
+        },
+        headers=auth(h.token_a),
+    )
+    assert wrong_draft.status_code == 422, wrong_draft.text
+    assert wrong_draft.json()["error"]["code"] == "place_selection_wrong_draft"
+    foreign_map = await h.client.post(
+        "/api/v1/commute/places/confirm",
+        json={
+            "draft_id": map_draft["draft_id"],
+            "selection_token": map_token,
+        },
+        headers=auth(h.token_b),
+    )
+    assert foreign_map.status_code == 404
+    mapped = await h.client.post(
+        "/api/v1/commute/places/confirm",
+        json={
+            "draft_id": map_draft["draft_id"],
+            "selection_token": map_token,
+        },
+        headers=auth(h.token_a),
+    )
+    assert mapped.status_code == 200, mapped.text
+    assert mapped.json()["payload"]["schedule"]["location"] == "地图选点"
+    assert mapped.json()["payload"]["schedule"]["location_source"] == "mock_regeo"
+    async with h.app.state.session_factory() as db:
+        formal_map_schedule = await db.get(ScheduleEvent, map_schedule_id)
+        assert formal_map_schedule is not None
+        assert formal_map_schedule.latitude == 31.2304
+        assert formal_map_schedule.location == "上海"
+
     done = await h.client.post(
         f"/api/v1/matters/drafts/{draft['draft_id']}/confirm",
         json={
@@ -205,6 +342,14 @@ async def test_place_candidates_and_linked_route_invalidate_after_schedule_edit(
         if row["schedule_id"] == schedule_id
     )
     assert item_after["route"]["status"] == "unverified"
+    assert item_after["route"]["reason_code"] == "no_linked_route_result"
+    stale_detail = await h.client.get(
+        f"/api/v1/commute/routes/{schedule_id}",
+        headers=auth(h.token_a),
+    )
+    assert stale_detail.status_code == 200
+    assert stale_detail.json()["status"] == "unverified"
+    assert stale_detail.json()["reason_code"] == "no_linked_route_result"
 
 
 @pytest.mark.asyncio

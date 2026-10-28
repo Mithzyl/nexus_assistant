@@ -21,7 +21,7 @@ ScheduleSource = Literal["web_native", "ios_eventkit", "ios_reminders"]
 SyncStatus = Literal["local_only", "pending_ios", "ios_synced"]
 DraftStatus = Literal["preview", "confirmed", "cancelled"]
 TodoStatus = Literal["open", "done"]
-ReminderStatus = Literal["pending", "completed", "cancelled"]
+ReminderStatus = Literal["scheduled", "due", "acknowledged", "cancelled"]
 CoordinateSystem = Literal["gcj02", "wgs84", "unknown"]
 PlaceSearchType = Literal["place", "address"]
 
@@ -145,6 +145,7 @@ class ReminderRead(BaseModel):
     reminder_id: str
     matter_id: str | None = None
     todo_id: str | None = None
+    schedule_id: str | None = None
     title: str
     note: str | None = None
     trigger_at: UtcDateTime
@@ -152,7 +153,9 @@ class ReminderRead(BaseModel):
     sync_status: SyncStatus | None = None
     source: ScheduleSource | None = None
     completed_at: UtcDateTime | None = None
+    acknowledged_at: UtcDateTime | None = None
     cancelled_at: UtcDateTime | None = None
+    deleted_at: UtcDateTime | None = None
 
 
 class MatterRead(BaseModel):
@@ -255,6 +258,8 @@ class DraftActionRead(BaseModel):
     location: str | None = None
     status: str | None = None
     reason: str | None = None
+    selected: bool | None = None
+    cancellable: bool | None = None
 
 
 class CommunicationDraftRead(BaseModel):
@@ -360,6 +365,7 @@ class ChangeRead(BaseModel):
     before: dict
     after: dict
     revertable: bool
+    initial_delete_allowed: bool = False
     reason_code: str | None = None
     reason: str | None = None
 
@@ -375,6 +381,7 @@ class DraftPatchRequest(BaseModel):
     schedule: SchedulePayload | None = None
     todos: list[TodoPayload] | None = None
     complete_todo_ids: list[str] | None = None
+    cancel_schedule_ids: list[str] | None = Field(default=None, max_length=30)
 
 
 class DraftSelectMatterRequest(BaseModel):
@@ -417,6 +424,7 @@ class ConfirmResponse(BaseModel):
     replayed: bool = False
     applied: bool = True
     cancelled_reminder_ids: list[str] = Field(default_factory=list)
+    cancelled_schedule_ids: list[str] = Field(default_factory=list)
     notifications_retracted: bool = False
     conflict: ConflictRead | None = None
     change: dict | None = None
@@ -426,6 +434,14 @@ class RevertResponse(BaseModel):
     matter: MatterRead
     change_id: str
     reverted_at: UtcDateTime
+
+
+class InitialDeleteResponse(BaseModel):
+    matter_id: str
+    deleted_at: UtcDateTime
+    schedule_ids: list[str] = Field(default_factory=list)
+    todo_ids: list[str] = Field(default_factory=list)
+    reminder_ids: list[str] = Field(default_factory=list)
 
 
 class TodayReminderRead(ReminderRead):
@@ -502,6 +518,30 @@ class EstimateRequest(BaseModel):
         return self
 
 
+class RoutePointRead(BaseModel):
+    latitude: float
+    longitude: float
+
+
+class RouteEndpointRead(RoutePointRead):
+    coordinate_system: CoordinateSystem
+    city: str | None = None
+    basis: Literal["user_confirmed", "previous_schedule", "destination_schedule"]
+    schedule_id: str | None = None
+
+
+class RouteSegmentRead(BaseModel):
+    kind: Literal["driving", "walking", "transit"]
+    label: str | None = None
+    coordinate_system: CoordinateSystem
+    points: list[RoutePointRead] = Field(min_length=2)
+
+
+class RouteShapeRead(BaseModel):
+    status: Literal["available", "partial", "missing"] = "missing"
+    segments: list[RouteSegmentRead] = Field(default_factory=list)
+
+
 class EstimateResponse(BaseModel):
     status: Literal["available", "unavailable"]
     provider: str
@@ -524,6 +564,9 @@ class EstimateResponse(BaseModel):
     origin_basis: Literal["user_confirmed", "previous_schedule"] = "user_confirmed"
     origin_schedule_id: str | None = None
     schedule_id: str | None = None
+    origin: RouteEndpointRead | None = None
+    destination: RouteEndpointRead | None = None
+    shape: RouteShapeRead = Field(default_factory=RouteShapeRead)
 
 
 class PlaceSearchRequest(BaseModel):
@@ -533,6 +576,7 @@ class PlaceSearchRequest(BaseModel):
     city: str | None = Field(default=None, max_length=64)
     search_type: PlaceSearchType = "place"
     limit: int = Field(default=5, ge=1, le=10)
+    draft_id: str = Field(min_length=8, max_length=36)
 
 
 class PlaceCandidateRead(BaseModel):
@@ -562,6 +606,63 @@ class PlaceSelectionRequest(BaseModel):
 
     draft_id: str = Field(min_length=8, max_length=36)
     selection_token: str = Field(min_length=32, max_length=4096)
+
+
+class MapPickRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    draft_id: str = Field(min_length=8, max_length=36)
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    coordinate_system: Literal["gcj02"] = "gcj02"
+
+
+class MapPickLocationRead(BaseModel):
+    provider: str
+    provider_place_id: str | None = None
+    name: str
+    address: str
+    city: str | None = None
+    latitude: float
+    longitude: float
+    coordinate_system: CoordinateSystem
+    source: str
+    selection_token: str
+
+
+class MapPickResponse(BaseModel):
+    status: Literal["available", "unavailable"]
+    reason_code: str | None = None
+    address_notice: str | None = None
+    location: MapPickLocationRead | None = None
+
+
+class ScheduledRouteRead(BaseModel):
+    status: Literal["available", "unverified"]
+    reason_code: str | None = None
+    message: str | None = None
+    schedule_id: str
+    provider: str | None = None
+    mode: Literal["driving", "walking", "transit"] | None = None
+    duration_seconds: int | None = None
+    distance_meters: int | None = None
+    walking_distance_meters: int | None = None
+    transfer_count: int | None = None
+    transfers_summary: str | None = None
+    fare_cny: float | None = None
+    fare_kind: str | None = None
+    fare_notice: str | None = None
+    origin_basis: Literal["user_confirmed", "previous_schedule"] | None = None
+    origin_schedule_id: str | None = None
+    fetched_at: UtcDateTime | None = None
+    requested_depart_at: UtcDateTime | None = None
+    target_arrival_at: UtcDateTime | None = None
+    calculated_at: UtcDateTime | None = None
+    timing_basis: str | None = None
+    accuracy_notice: str | None = None
+    origin: RouteEndpointRead | None = None
+    destination: RouteEndpointRead | None = None
+    shape: RouteShapeRead = Field(default_factory=RouteShapeRead)
 
 
 class IosRecord(BaseModel):

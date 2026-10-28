@@ -341,6 +341,18 @@ async def delete_matter(
     return await matters.delete_matter(db, user, matter_id)
 
 
+@router.delete(
+    "/matters/{matter_id}/initial",
+    response_model=schemas.InitialDeleteResponse,
+)
+async def initial_delete_matter(
+    matter_id: str, db: DatabaseSession, user: CurrentUser
+) -> dict:
+    """Delete one untouched initial create and only records created with it."""
+
+    return await matters.initial_delete_matter(db, user, matter_id)
+
+
 @router.post("/matters/{matter_id}/todos/{todo_id}/complete", response_model=schemas.TodoRead)
 async def complete_todo(
     matter_id: str,
@@ -404,22 +416,60 @@ async def list_reminders(
     )
 
 
+@router.post(
+    "/reminders/{reminder_id}/acknowledge",
+    response_model=schemas.ReminderRead,
+)
+async def acknowledge_reminder(
+    reminder_id: str, db: DatabaseSession, user: CurrentUser
+) -> dict:
+    """Mark a due reminder as seen; repeated calls return the same state."""
+
+    return await matters.acknowledge_reminder(db, user, reminder_id)
+
+
 @router.post("/commute/places/search", response_model=schemas.PlaceSearchResponse)
 async def commute_place_search(
     payload: schemas.PlaceSearchRequest,
+    db: DatabaseSession,
     runtime: CommuteRuntimeDependency,
     settings: SettingsDependency,
     user: CurrentUser,
 ) -> dict:
     """Search places or addresses; multiple results remain explicit candidates."""
 
+    await matters.validate_place_draft(db, user, payload.draft_id)
     return await commute_places.search_places(
         runtime,
         secret=settings.tool_callback_token.get_secret_value(),
+        user_id=user.user_id,
+        draft_id=payload.draft_id,
         query=payload.query,
         city=payload.city,
         search_type=payload.search_type,
         limit=payload.limit,
+    )
+
+
+@router.post("/commute/places/map-pick", response_model=schemas.MapPickResponse)
+async def commute_place_map_pick(
+    payload: schemas.MapPickRequest,
+    db: DatabaseSession,
+    settings: SettingsDependency,
+    runtime: CommuteRuntimeDependency,
+    user: CurrentUser,
+) -> dict:
+    """Reverse geocode one explicit GCJ-02 point for the current draft."""
+
+    return await matters.create_map_pick(
+        db,
+        runtime,
+        settings,
+        user,
+        draft_id=payload.draft_id,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        coordinate_system=payload.coordinate_system,
     )
 
 
@@ -506,6 +556,20 @@ async def commute_estimate_endpoint(
         )
         return {**result, **stored}
     return result
+
+
+@router.get(
+    "/commute/routes/{schedule_id}",
+    response_model=schemas.ScheduledRouteRead,
+)
+async def commute_schedule_route(
+    schedule_id: str,
+    db: DatabaseSession,
+    user: CurrentUser,
+) -> dict:
+    """Read one saved route without measuring again or mutating the schedule."""
+
+    return await schedule_routes.detail_for_schedule(db, user, schedule_id)
 
 
 __all__ = ["router"]

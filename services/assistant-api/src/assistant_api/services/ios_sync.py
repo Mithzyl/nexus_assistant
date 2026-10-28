@@ -58,7 +58,7 @@ def _dt(value: datetime | None) -> datetime | None:
 
 def _reminder_state(status: str | None) -> str:
     value = (status or "").strip().lower()
-    if value in ("completed", "complete", "done", "checked"):
+    if value in ("completed", "complete", "done", "checked", "acknowledged"):
         return "completed"
     if value in ("deleted", "cancelled", "canceled", "removed"):
         return "cancelled"
@@ -202,6 +202,7 @@ async def apply_snapshot(
             else:
                 current.status = "cancelled"
                 current.cancelled_at = now
+                current.deleted_at = now
                 current.source_updated_at = incoming
                 current.source_version = version
                 removed += 1
@@ -270,6 +271,7 @@ async def apply_snapshot(
                 current.status = state
                 current.completed_at = incoming if state == "completed" else None
                 current.cancelled_at = incoming if state == "cancelled" else None
+                current.deleted_at = None
                 current.source_scope_key = record.scope_key
                 current.data_source_id = source.source_id
             current.source_updated_at = incoming
@@ -294,6 +296,7 @@ async def apply_snapshot(
                 continue
             current.status = "cancelled"
             current.cancelled_at = target_time
+            current.deleted_at = target_time
         removed += 1
 
     source.last_sync_at = now
@@ -342,6 +345,7 @@ async def pending_actions(db: AsyncSession, user: User) -> dict:
                     Reminder.user_id == user.user_id,
                     Reminder.sync_status == "pending_ios",
                     Reminder.status == "pending",
+                    Reminder.deleted_at.is_(None),
                 )
             )
         ).all()

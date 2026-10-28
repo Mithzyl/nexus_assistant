@@ -46,6 +46,9 @@ def _unavailable(
         "origin_basis": origin_basis,
         "origin_schedule_id": origin_schedule_id,
         "schedule_id": schedule_id,
+        "origin": None,
+        "destination": None,
+        "shape": {"status": "missing", "segments": []},
     }
 
 
@@ -146,6 +149,40 @@ async def estimate(
         "origin_basis": origin_basis,
         "origin_schedule_id": origin_schedule_id,
         "schedule_id": schedule_id,
+        "origin": {
+            "latitude": origin[0],
+            "longitude": origin[1],
+            "coordinate_system": origin_coordinate_system or "unknown",
+            "city": origin_city,
+            "basis": origin_basis,
+            "schedule_id": origin_schedule_id,
+        },
+        "destination": {
+            "latitude": destination[0],
+            "longitude": destination[1],
+            "coordinate_system": destination_coordinate_system or "unknown",
+            "city": destination_city,
+            "basis": "destination_schedule" if schedule_id else "user_confirmed",
+            "schedule_id": schedule_id,
+        },
+        "shape": {
+            "status": result.route_shape_status,
+            "segments": [
+                {
+                    "kind": segment.kind,
+                    "label": segment.label,
+                    "coordinate_system": segment.coordinate_system,
+                    "points": [
+                        {
+                            "latitude": point.latitude,
+                            "longitude": point.longitude,
+                        }
+                        for point in segment.points
+                    ],
+                }
+                for segment in result.route_segments
+            ],
+        },
     }
 
 

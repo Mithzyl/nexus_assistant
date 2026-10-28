@@ -20,6 +20,7 @@ from assistant_api.commute.providers.base import (
     ProviderUnavailable,
     PushMessage,
     PushResult,
+    ReverseGeocodeResult,
     WeatherResult,
 )
 
@@ -97,13 +98,25 @@ class MockWeatherProvider:
 
 
 class MockEtaProvider:
+    """Return explicit mock ETA data and optional test-only route shapes."""
+
     provider = "mock"
     available = True
 
-    def __init__(self, *, now, duration_seconds: int = 1800, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        now,
+        duration_seconds: int = 1800,
+        fail: bool = False,
+        route_segments=(),
+        route_shape_status: str = "missing",
+    ) -> None:
         self._now = now
         self.duration_seconds = duration_seconds
         self.fail = fail
+        self.route_segments = route_segments
+        self.route_shape_status = route_shape_status
         self.calls: list[dict] = []
 
     async def fetch(
@@ -135,6 +148,8 @@ class MockEtaProvider:
             duration_seconds=self.duration_seconds,
             distance_meters=12_000,
             response_basis="departAt",
+            route_segments=self.route_segments,
+            route_shape_status=self.route_shape_status,
         )
 
 
@@ -177,6 +192,25 @@ class MockPlaceProvider:
             ),
         ]
         return places[:limit]
+
+    async def reverse_geocode(
+        self,
+        *,
+        latitude: float,
+        longitude: float,
+    ) -> ReverseGeocodeResult:
+        """Return one explicit synthetic nearby address for development."""
+
+        return ReverseGeocodeResult(
+            provider=self.provider,
+            name="地图选点",
+            address="上海示例路附近",
+            city="上海",
+            latitude=latitude,
+            longitude=longitude,
+            coordinate_system="gcj02",
+            source="mock_regeo",
+        )
 
 
 class MockPushProvider:

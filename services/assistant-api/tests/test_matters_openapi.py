@@ -29,6 +29,7 @@ def test_committed_openapi_covers_the_new_surface():
         ("/api/v1/matters/intake/{local_run_id}", "get"),
         ("/api/v1/matters", "get"),
         ("/api/v1/matters/{matter_id}", "get"),
+        ("/api/v1/matters/{matter_id}/initial", "delete"),
         ("/api/v1/matters/drafts", "get"),
         ("/api/v1/matters/drafts/{draft_id}", "get"),
         ("/api/v1/matters/drafts/{draft_id}/apply-option", "post"),
@@ -37,9 +38,12 @@ def test_committed_openapi_covers_the_new_surface():
         ("/api/v1/matters/{matter_id}/changes/{change_id}/revert", "post"),
         ("/api/v1/today", "get"),
         ("/api/v1/reminders", "get"),
+        ("/api/v1/reminders/{reminder_id}/acknowledge", "post"),
         ("/api/v1/commute/estimate", "post"),
         ("/api/v1/commute/places/search", "post"),
+        ("/api/v1/commute/places/map-pick", "post"),
         ("/api/v1/commute/places/confirm", "post"),
+        ("/api/v1/commute/routes/{schedule_id}", "get"),
         ("/api/v1/calendar-subscription", "post"),
         ("/api/v1/calendar-subscription/rotate", "post"),
         ("/api/v1/sync/ios/shortcut-tokens", "post"),
@@ -102,7 +106,33 @@ def test_new_response_models_expose_required_fields():
         "fare_notice",
         "timing_basis",
         "accuracy_notice",
+        "origin",
+        "destination",
+        "shape",
     } <= set(estimate)
+    assert schemas["RouteShapeRead"]["properties"]["status"]["enum"] == [
+        "available",
+        "partial",
+        "missing",
+    ]
+    segment = schemas["RouteSegmentRead"]["properties"]
+    assert {"kind", "label", "coordinate_system", "points"} <= set(segment)
+    map_pick = schemas["MapPickResponse"]["properties"]
+    assert {"status", "reason_code", "address_notice", "location"} <= set(map_pick)
+    route = schemas["ScheduledRouteRead"]["properties"]
+    assert {
+        "status",
+        "reason_code",
+        "origin",
+        "destination",
+        "shape",
+        "calculated_at",
+        "timing_basis",
+    } <= set(route)
+    assert schemas["ScheduledRouteRead"]["properties"]["status"]["enum"] == [
+        "available",
+        "unverified",
+    ]
     shortcut = schemas["ShortcutTokenCreated"]["properties"]
     assert {"credential", "credential_returned_once", "source_id"} <= set(shortcut)
     intake_result = schemas["IntakeResultRead"]["properties"]
@@ -119,7 +149,11 @@ def test_new_response_models_expose_required_fields():
     place = schemas["PlaceCandidateRead"]["properties"]
     assert "selection_token" in place
     confirm = schemas["ConfirmResponse"]["properties"]
-    assert {"cancelled_reminder_ids", "notifications_retracted"} <= set(confirm)
+    assert {
+        "cancelled_reminder_ids",
+        "cancelled_schedule_ids",
+        "notifications_retracted",
+    } <= set(confirm)
     snapshot_headers = {
         item["name"]
         for item in spec["paths"]["/api/v1/sync/ios/snapshot"]["post"]["parameters"]
@@ -133,8 +167,24 @@ def test_new_response_models_expose_required_fields():
         "relation",
         "affected_matter_ids",
         "revertable",
+        "initial_delete_allowed",
         "reason_code",
     } <= set(change)
+    reminder = schemas["ReminderRead"]["properties"]
+    assert {
+        "schedule_id",
+        "acknowledged_at",
+        "deleted_at",
+        "status",
+    } <= set(reminder)
+    assert schemas["ReminderRead"]["properties"]["status"]["enum"] == [
+        "scheduled",
+        "due",
+        "acknowledged",
+        "cancelled",
+    ]
+    draft_patch = schemas["DraftPatchRequest"]["properties"]
+    assert "cancel_schedule_ids" in draft_patch
 
 
 def test_estimate_is_documented_as_post_and_committed_file_is_current():

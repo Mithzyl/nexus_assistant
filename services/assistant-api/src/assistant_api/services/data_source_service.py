@@ -289,6 +289,7 @@ async def _strip_imported_records(db: AsyncSession, source: ContentSource) -> No
                     Reminder.user_id == source.user_id,
                     Reminder.data_source_id == source.source_id,
                     Reminder.status != "cancelled",
+                    Reminder.deleted_at.is_(None),
                 )
             )
         ).all()
@@ -296,10 +297,12 @@ async def _strip_imported_records(db: AsyncSession, source: ContentSource) -> No
             if scopes_defined and row.source_scope_key not in active_scopes:
                 row.status = "cancelled"
                 row.cancelled_at = now
+                row.deleted_at = now
                 continue
             if "due" not in allowed:
                 row.status = "cancelled"
                 row.cancelled_at = now
+                row.deleted_at = now
                 continue
             if "title" not in allowed:
                 row.title = ""
@@ -656,7 +659,7 @@ async def delete_items(db: AsyncSession, user_id: str, source_id: str) -> int:
             Reminder.data_source_id == source.source_id,
             Reminder.status != "cancelled",
         )
-        .values(status="cancelled", cancelled_at=now)
+        .values(status="cancelled", cancelled_at=now, deleted_at=now)
     )
     source.last_sync_status = "items_deleted"
     await db.commit()
@@ -681,7 +684,7 @@ async def delete_source(db: AsyncSession, user_id: str, source_id: str) -> None:
             Reminder.user_id == user_id,
             Reminder.data_source_id == source.source_id,
         )
-        .values(status="cancelled", cancelled_at=now)
+        .values(status="cancelled", cancelled_at=now, deleted_at=now)
     )
     await db.execute(
         delete(ContentSourceScope).where(ContentSourceScope.source_id == source.source_id)

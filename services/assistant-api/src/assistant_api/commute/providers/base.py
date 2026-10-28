@@ -12,6 +12,7 @@ from typing import Literal, Protocol
 
 TransportMode = Literal["driving", "walking", "transit"]
 LocationRole = Literal["origin", "destination"]
+RouteShapeStatus = Literal["available", "partial", "missing"]
 
 
 class ProviderError(Exception):
@@ -121,6 +122,22 @@ class EtaResult:
     fare_cny: float | None = None
     fare_kind: str | None = None
     timing_basis: str = "provider_departure_time"
+    route_segments: tuple["RouteSegment", ...] = ()
+    route_shape_status: RouteShapeStatus = "missing"
+
+
+@dataclass(frozen=True)
+class RoutePoint:
+    latitude: float
+    longitude: float
+
+
+@dataclass(frozen=True)
+class RouteSegment:
+    kind: Literal["driving", "walking", "transit"]
+    label: str | None
+    points: tuple[RoutePoint, ...]
+    coordinate_system: str = "gcj02"
 
 
 @dataclass(frozen=True)
@@ -129,6 +146,18 @@ class PlaceResult:
     provider_place_id: str
     name: str
     address: str | None
+    city: str | None
+    latitude: float
+    longitude: float
+    coordinate_system: str
+    source: str
+
+
+@dataclass(frozen=True)
+class ReverseGeocodeResult:
+    provider: str
+    name: str
+    address: str
     city: str | None
     latitude: float
     longitude: float
@@ -222,6 +251,13 @@ class PlaceProvider(Protocol):
         limit: int,
         search_type: Literal["place", "address"],
     ) -> list[PlaceResult]: ...
+
+    async def reverse_geocode(
+        self,
+        *,
+        latitude: float,
+        longitude: float,
+    ) -> ReverseGeocodeResult: ...
 
 
 class AdviceTextProvider(Protocol):

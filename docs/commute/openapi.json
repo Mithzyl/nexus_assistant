@@ -1078,6 +1078,11 @@
             ],
             "title": "Draft Id"
           },
+          "initial_delete_allowed": {
+            "default": false,
+            "title": "Initial Delete Allowed",
+            "type": "boolean"
+          },
           "matter_id": {
             "title": "Matter Id",
             "type": "string"
@@ -1744,6 +1749,13 @@
               "type": "string"
             },
             "title": "Cancelled Reminder Ids",
+            "type": "array"
+          },
+          "cancelled_schedule_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cancelled Schedule Ids",
             "type": "array"
           },
           "change": {
@@ -2508,6 +2520,17 @@
       },
       "DraftActionRead": {
         "properties": {
+          "cancellable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancellable"
+          },
           "due_at": {
             "anyOf": [
               {
@@ -2588,6 +2611,17 @@
               }
             ],
             "title": "Schedule Id"
+          },
+          "selected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected"
           },
           "starts_at": {
             "anyOf": [
@@ -2679,6 +2713,21 @@
       "DraftPatchRequest": {
         "additionalProperties": false,
         "properties": {
+          "cancel_schedule_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Schedule Ids"
+          },
           "changes_note": {
             "anyOf": [
               {
@@ -3062,6 +3111,16 @@
             ],
             "title": "Accuracy Notice"
           },
+          "destination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RouteEndpointRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "distance_meters": {
             "anyOf": [
               {
@@ -3137,6 +3196,16 @@
             "title": "Mode",
             "type": "string"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RouteEndpointRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "origin_basis": {
             "default": "user_confirmed",
             "enum": [
@@ -3193,6 +3262,9 @@
               }
             ],
             "title": "Schedule Id"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/RouteShapeRead"
           },
           "source": {
             "const": "server_provider",
@@ -3270,6 +3342,45 @@
           "mode"
         ],
         "title": "EstimateResponse",
+        "type": "object"
+      },
+      "InitialDeleteResponse": {
+        "properties": {
+          "deleted_at": {
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "matter_id": {
+            "title": "Matter Id",
+            "type": "string"
+          },
+          "reminder_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reminder Ids",
+            "type": "array"
+          },
+          "schedule_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Schedule Ids",
+            "type": "array"
+          },
+          "todo_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Todo Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "matter_id",
+          "deleted_at"
+        ],
+        "title": "InitialDeleteResponse",
         "type": "object"
       },
       "IntakeRequest": {
@@ -3816,6 +3927,166 @@
           "user_id"
         ],
         "title": "LoginResponse",
+        "type": "object"
+      },
+      "MapPickLocationRead": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "coordinate_system": {
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_place_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Place Id"
+          },
+          "selection_token": {
+            "title": "Selection Token",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "name",
+          "address",
+          "latitude",
+          "longitude",
+          "coordinate_system",
+          "source",
+          "selection_token"
+        ],
+        "title": "MapPickLocationRead",
+        "type": "object"
+      },
+      "MapPickRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "coordinate_system": {
+            "const": "gcj02",
+            "default": "gcj02",
+            "title": "Coordinate System",
+            "type": "string"
+          },
+          "draft_id": {
+            "maxLength": 36,
+            "minLength": 8,
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "latitude": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Longitude",
+            "type": "number"
+          }
+        },
+        "required": [
+          "draft_id",
+          "latitude",
+          "longitude"
+        ],
+        "title": "MapPickRequest",
+        "type": "object"
+      },
+      "MapPickResponse": {
+        "properties": {
+          "address_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Notice"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MapPickLocationRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "MapPickResponse",
         "type": "object"
       },
       "MatterCreate": {
@@ -4443,6 +4714,12 @@
             ],
             "title": "City"
           },
+          "draft_id": {
+            "maxLength": 36,
+            "minLength": 8,
+            "title": "Draft Id",
+            "type": "string"
+          },
           "limit": {
             "default": 5,
             "maximum": 10.0,
@@ -4467,7 +4744,8 @@
           }
         },
         "required": [
-          "query"
+          "query",
+          "draft_id"
         ],
         "title": "PlaceSearchRequest",
         "type": "object"
@@ -4779,6 +5057,17 @@
       },
       "ReminderRead": {
         "properties": {
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
           "cancelled_at": {
             "anyOf": [
               {
@@ -4800,6 +5089,17 @@
               }
             ],
             "title": "Completed At"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
           },
           "matter_id": {
             "anyOf": [
@@ -4827,6 +5127,17 @@
             "title": "Reminder Id",
             "type": "string"
           },
+          "schedule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Id"
+          },
           "source": {
             "anyOf": [
               {
@@ -4845,8 +5156,9 @@
           },
           "status": {
             "enum": [
-              "pending",
-              "completed",
+              "scheduled",
+              "due",
+              "acknowledged",
               "cancelled"
             ],
             "title": "Status",
@@ -5019,6 +5331,66 @@
         "title": "RouteCandidateInput",
         "type": "object"
       },
+      "RouteEndpointRead": {
+        "properties": {
+          "basis": {
+            "enum": [
+              "user_confirmed",
+              "previous_schedule",
+              "destination_schedule"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "coordinate_system": {
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          },
+          "schedule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Id"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "coordinate_system",
+          "basis"
+        ],
+        "title": "RouteEndpointRead",
+        "type": "object"
+      },
       "RoutePoint": {
         "additionalProperties": false,
         "properties": {
@@ -5040,6 +5412,95 @@
           "longitude"
         ],
         "title": "RoutePoint",
+        "type": "object"
+      },
+      "RoutePointRead": {
+        "properties": {
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ],
+        "title": "RoutePointRead",
+        "type": "object"
+      },
+      "RouteSegmentRead": {
+        "properties": {
+          "coordinate_system": {
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "driving",
+              "walking",
+              "transit"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/RoutePointRead"
+            },
+            "minItems": 2,
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "coordinate_system",
+          "points"
+        ],
+        "title": "RouteSegmentRead",
+        "type": "object"
+      },
+      "RouteShapeRead": {
+        "properties": {
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/RouteSegmentRead"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "status": {
+            "default": "missing",
+            "enum": [
+              "available",
+              "partial",
+              "missing"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "RouteShapeRead",
         "type": "object"
       },
       "RouteSnapshotInput": {
@@ -5729,6 +6190,280 @@
         "title": "ScheduleRead",
         "type": "object"
       },
+      "ScheduledRouteRead": {
+        "properties": {
+          "accuracy_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy Notice"
+          },
+          "calculated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculated At"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RouteEndpointRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "distance_meters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Meters"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "fare_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fare Cny"
+          },
+          "fare_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fare Kind"
+          },
+          "fare_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fare Notice"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "driving",
+                  "walking",
+                  "transit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RouteEndpointRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin_basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user_confirmed",
+                  "previous_schedule"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Basis"
+          },
+          "origin_schedule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Schedule Id"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "requested_depart_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Depart At"
+          },
+          "schedule_id": {
+            "title": "Schedule Id",
+            "type": "string"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/RouteShapeRead"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "unverified"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_arrival_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Arrival At"
+          },
+          "timing_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timing Basis"
+          },
+          "transfer_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfer Count"
+          },
+          "transfers_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfers Summary"
+          },
+          "walking_distance_meters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Walking Distance Meters"
+          }
+        },
+        "required": [
+          "status",
+          "schedule_id"
+        ],
+        "title": "ScheduledRouteRead",
+        "type": "object"
+      },
       "ShortcutTokenCreate": {
         "additionalProperties": false,
         "properties": {
@@ -6340,6 +7075,17 @@
       },
       "TodayReminderRead": {
         "properties": {
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
           "cancelled_at": {
             "anyOf": [
               {
@@ -6361,6 +7107,17 @@
               }
             ],
             "title": "Completed At"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
           },
           "matter_id": {
             "anyOf": [
@@ -6399,6 +7156,17 @@
             "title": "Reminder Id",
             "type": "string"
           },
+          "schedule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Id"
+          },
           "source": {
             "anyOf": [
               {
@@ -6417,8 +7185,9 @@
           },
           "status": {
             "enum": [
-              "pending",
-              "completed",
+              "scheduled",
+              "due",
+              "acknowledged",
               "cancelled"
             ],
             "title": "Status",
@@ -11230,6 +11999,128 @@
         ]
       }
     },
+    "/api/v1/commute/places/map-pick": {
+      "post": {
+        "description": "Reverse geocode one explicit GCJ-02 point for the current draft.",
+        "operationId": "commute_place_map_pick_api_v1_commute_places_map_pick_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MapPickRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapPickResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Commute Place Map Pick",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
     "/api/v1/commute/places/search": {
       "post": {
         "description": "Search places or addresses; multiple results remain explicit candidates.",
@@ -11347,6 +12238,129 @@
           }
         },
         "summary": "Commute Place Search",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
+    "/api/v1/commute/routes/{schedule_id}": {
+      "get": {
+        "description": "Read one saved route without measuring again or mutating the schedule.",
+        "operationId": "commute_schedule_route_api_v1_commute_routes__schedule_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledRouteRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Commute Schedule Route",
         "tags": [
           "matters"
         ]
@@ -15114,6 +16128,129 @@
         ]
       }
     },
+    "/api/v1/matters/{matter_id}/initial": {
+      "delete": {
+        "description": "Delete one untouched initial create and only records created with it.",
+        "operationId": "initial_delete_matter_api_v1_matters__matter_id__initial_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InitialDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Initial Delete Matter",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
     "/api/v1/matters/{matter_id}/intake": {
       "post": {
         "operationId": "intake_for_matter_api_v1_matters__matter_id__intake_post",
@@ -16182,6 +17319,129 @@
           }
         },
         "summary": "List Reminders",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
+    "/api/v1/reminders/{reminder_id}/acknowledge": {
+      "post": {
+        "description": "Mark a due reminder as seen; repeated calls return the same state.",
+        "operationId": "acknowledge_reminder_api_v1_reminders__reminder_id__acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reminder_id",
+            "required": true,
+            "schema": {
+              "title": "Reminder Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Acknowledge Reminder",
         "tags": [
           "matters"
         ]
