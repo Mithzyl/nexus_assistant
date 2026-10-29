@@ -71,3 +71,48 @@ async def test_commute_bundle_quote_confirm_is_atomic_and_replay_safe(harness):
         assert route['destination']['schedule_id']==schedule.schedule_id
         stored=await db.get(MatterDraft,did)
         assert stored.result_json.get('memory_local_run_id'),stored.result_json
+
+@pytest.mark.asyncio
+async def test_linked_plan_materialization_and_stop(harness):
+    from assistant_api.models import CommutePlan
+    from assistant_api.services.commute_lifecycle import generate_day
+    from assistant_api.services import matters
+    from assistant_api.core.errors import ConflictError
+    h=harness
+    matter=await create_matter(h,'通勤生命周期')
+    start=datetime.now(UTC)+timedelta(days=2)
+    sid=await add_schedule(h,matter_id=matter['matter_id'],title='首日',starts_at=start)
+    async with h.app.state.session_factory() as db:
+        plan=CommutePlan(user_id=h.user_a,matter_id=matter['matter_id'],first_schedule_id=sid,effective_from=start.date(),name='通勤',enabled=True,timezone='Asia/Shanghai',weekdays_json=[1,2,3,4,5,6,7],arrival_local_time='08:00',check_local_time='07:00',transport_mode='driving',buffer_minutes=10,origin_label='起点',origin_latitude=31.22,origin_longitude=121.44,destination_label='终点',destination_latitude=31.23,destination_longitude=121.47,revision=1,notify_enabled=False)
+        db.add(plan);await db.commit();user=await db.get(User,h.user_a)
+        target=(start+timedelta(days=1)).date()
+        one=await generate_day(db,h.app.state.commute_runtime,user,plan.plan_id,target)
+        db.expire_all()
+        await db.refresh(plan);await db.refresh(user)
+        generated=await db.get(ScheduleEvent,one['schedule_id'])
+        assert generated.ends_at.replace(tzinfo=UTC).hour == 23
+        assert (await schedule_routes.validation_for_schedule(db,user,generated))[1] is None
+        await db.refresh(plan);await db.refresh(user)
+        two=await generate_day(db,h.app.state.commute_runtime,user,plan.plan_id,target)
+        assert one['schedule_id']==two['schedule_id'] and two['replayed']
+        await matters.set_status(db,user,matter['matter_id'],status='archived',expected_version=matter['version'],cancel_reminders=True)
+        await db.refresh(plan);assert not plan.enabled
+        with pytest.raises(ConflictError):await generate_day(db,h.app.state.commute_runtime,user,plan.plan_id,target+timedelta(days=1))
+
+@pytest.mark.asyncio
+async def test_commute_revision_preserves_todo_datetime_and_existing_schedule(harness):
+    from types import SimpleNamespace
+    from sqlalchemy import select
+    from assistant_api.models import CommutePlan
+    from assistant_api.services.commute_lifecycle import revision_draft
+    from assistant_api.services.matter_plan import validate_result
+    h=harness
+    await test_commute_bundle_quote_confirm_is_atomic_and_replay_safe(h)
+    async with h.app.state.session_factory() as db:
+        plan=await db.scalar(select(CommutePlan).where(CommutePlan.user_id==h.user_a))
+        user=await db.get(User,h.user_a)
+        parsed={'matter_id':plan.matter_id,'commute_update':{'service_date':str(plan.effective_from),'arrival_local_time':'08:30'},'todos':[{'title':'加油','due_at':datetime.now(UTC)+timedelta(hours=3),'reminder_at':datetime.now(UTC)+timedelta(hours=2)}]}
+        draft=await revision_draft(db,h.app.state.commute_runtime,h.settings,user,SimpleNamespace(local_run_id=None),parsed,'修改通勤并提醒加油')
+        assert draft.base_schedule_id==plan.first_schedule_id
+        assert draft.payload_json['commute_revision']['status']=='ready'
+        assert isinstance(draft.payload_json['todos'][0]['due_at'],str)

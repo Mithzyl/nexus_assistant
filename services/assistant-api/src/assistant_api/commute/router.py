@@ -419,3 +419,9 @@ async def advisory_action(
     )
     response.headers["X-Idempotent-Replay"] = "true" if replayed else "false"
     return AdvisoryActionRead(**{**record, "replayed": replayed})
+
+
+@router.post("/commute-plans/{plan_id}/generate-day")
+async def generate_commute_day(plan_id: str, db: DatabaseSession, runtime: CommuteRuntimeDependency, user: CurrentUser, service_date: date = Body(embed=True)):
+    from assistant_api.services.commute_lifecycle import generate_day
+    return await generate_day(db,runtime,user,plan_id,service_date)

@@ -962,6 +962,9 @@ async def set_status(
     matter.status = status
     matter.version += 1
     matter.archived_at = datetime.now(UTC) if status == "archived" else None
+    if status == "archived":
+        from assistant_api.services import commute_lifecycle
+        await commute_lifecycle.stop_plans(db, user, matter_id)
     if cancel_reminders:
         now = datetime.now(UTC)
         await db.execute(
@@ -982,6 +985,8 @@ async def set_status(
 async def delete_matter(db: AsyncSession, user: User, matter_id: str) -> dict:
     matter = await _get_matter(db, user, matter_id)
     now = datetime.now(UTC)
+    from assistant_api.services import commute_lifecycle
+    await commute_lifecycle.stop_plans(db, user, matter_id)
     matter.status = "deleted"
     matter.deleted_at = now
     matter.version += 1
@@ -1709,6 +1714,17 @@ async def intake(
             "matter_extraction_invalid", f"整理结果未通过校验：{exc.reason}"
         ) from None
 
+    if pinned is None and len(context.get("matters", [])) > 1 and re.search(r"^(?:把)?(?:时间|它的时间|这个时间).*(?:推迟|提前|改)", text.strip()):
+        names = [item['title'] for item in context['matters']]
+        _store_intake_resolution(run, outcome="needs_clarification", clarify="请先选择要调整的事项：" + "、".join(names), pending_context={"matter_candidates":context['matters']})
+        await db.commit()
+        return await get_intake_result(db,user,run.local_run_id)
+    if parsed.get("commute_update"):
+        from assistant_api.services import commute_lifecycle
+        draft = await commute_lifecycle.revision_draft(db, runtime, settings, user, run, parsed, text)
+        _store_intake_resolution(run, outcome="draft", draft_id=draft.draft_id, matter_id=draft.matter_id)
+        await db.commit()
+        return await get_intake_result(db, user, run.local_run_id)
     if parsed.get("commute"):
         from assistant_api.services import commute_bundle
         draft = await commute_bundle.create_draft(db, runtime, settings, user, run, parsed, text)
@@ -1943,6 +1959,10 @@ async def intake(
             "dropped_complete_todo_ids": parsed["dropped_complete_todo_ids"],
         },
     }
+
+    if target is not None and payload.get("proposed_status") == "archived":
+        from assistant_api.services import commute_lifecycle
+        payload["commute_plan_cancellations"] = [{"plan_id":p.plan_id,"name":p.name,"revision":p.revision} for p in await commute_lifecycle.active_plans(db,user,target.matter_id)]
 
     base_schedule = None
     if target is not None and payload["schedule"] is not None:
@@ -2574,8 +2594,13 @@ async def patch_draft(
                 "schedule_not_editable",
                 "手机导入的只读日程不能在应用内取消。",
             )
-        for schedule_id, item in options.items():
-            item["selected"] = schedule_id in requested
+        # Explicitly saving a stop preview refreshes its cancellation baseline;
+        # the refreshed dates remain visible before the separate confirmation.
+        target = await _get_matter(db, user, draft.matter_id)
+        refreshed = await _schedule_cancellation_items(db, user, target, now=datetime.now(UTC))
+        for item in refreshed:
+            item["selected"] = item["schedule_id"] in requested
+        merged["schedule_cancellations"] = refreshed
 
     merged.pop("previous_adjustment", None)
     merged.pop("selected_option", None)
@@ -2770,6 +2795,8 @@ async def confirm_draft(
 
     from assistant_api.services import commute_bundle
     commute_bundle.validate_quote(payload)
+    from assistant_api.services import commute_lifecycle
+    await commute_lifecycle.validate_revision(db, user, payload)
     if payload.get("commute") and not body.create_schedule:
         raise InvalidRequestError("commute_schedule_required", "组合通勤必须同时保存首日日程。")
 
@@ -3092,6 +3119,11 @@ async def confirm_draft(
             # Keep the measurement. validation_for_schedule compares route-relevant
             # fields against the saved fingerprint and reports unverified only
             # when those fields change; title/notes/no-op edits remain verified.
+
+        if payload.get("commute_revision") and schedule_row is not None:
+            await schedule_routes.save_for_schedule(db, user, schedule_id=schedule_row.schedule_id, result=payload["commute_revision"]["route"], commit=False)
+        if payload.get("proposed_status") == "archived":
+            await commute_lifecycle.stop_plans(db, user, matter.matter_id)
 
         commute_plan_id = None
         if payload.get("commute"):
@@ -3882,6 +3914,8 @@ async def initial_delete_matter(
             reason or "不能初始态删除。",
         )
 
+    from assistant_api.services import commute_lifecycle
+    await commute_lifecycle.stop_plans(db, user, matter.matter_id)
     after = change.after_json or {}
     schedule_ids = (
         [after["schedule"]["schedule_id"]] if after.get("schedule") else []

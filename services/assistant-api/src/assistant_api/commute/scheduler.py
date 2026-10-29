@@ -15,7 +15,7 @@ import socket
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from assistant_api.commute.runtime import build_runtime, validate_commute_configuration
@@ -24,7 +24,7 @@ from assistant_api.commute.services.leases import acquire_lease
 from assistant_api.commute.services.scheduling import enqueue_due_checks
 from assistant_api.core.config import Settings, get_settings
 from assistant_api.infrastructure.database import create_engine_and_factory
-from assistant_api.models import Base, CommuteInstance, NotificationOutbox
+from assistant_api.models import Base, CommuteInstance, NotificationOutbox, CommutePlan, User
 
 logger = logging.getLogger("commute.scheduler")
 LEASE_NAME = "commute-scheduler"
@@ -50,6 +50,7 @@ async def scheduler_tick(
     now: datetime | None = None,
     auto_analysis_mode: str = "full",
     enqueue_enabled: bool = True,
+    runtime=None,
 ) -> int:
     now = now or datetime.now(UTC)
     acquired = await acquire_lease(
@@ -81,6 +82,20 @@ async def scheduler_tick(
     # Keep creating checks when the route provider is absent: weather refresh
     # and client-snapshot/manual paths must continue. The worker skips the
     # server route call and does not invoke the model without a route.
+    if runtime is not None and settings.commute_auto_ai_enabled:
+        from assistant_api.services.commute_lifecycle import generate_day
+        from assistant_api.commute.timeutil import local_today, target_arrival_for
+        from assistant_api.core.errors import AssistantError
+        plans = list(await db.scalars(select(CommutePlan).where(CommutePlan.enabled.is_(True), CommutePlan.matter_id.is_not(None))))
+        for plan in plans:
+            day = local_today(now, plan.timezone)
+            if (plan.effective_from and day < plan.effective_from) or day.isoweekday() not in plan.weekdays_json or target_arrival_for(day, plan.arrival_local_time, plan.timezone) <= now:
+                continue
+            try:
+                await generate_day(db, runtime, await db.get(User, plan.user_id), plan.plan_id, day)
+            except AssistantError:
+                await db.rollback()
+                logger.warning("commute day not materialized; inspect scoped instance status")
     created = []
     if enqueue_enabled:
         created = await enqueue_due_checks(
@@ -124,7 +139,7 @@ async def run_forever(settings: Settings) -> None:
             try:
                 async with factory() as db:
                     await scheduler_tick(
-                        db, settings, owner=owner,
+                        db, settings, owner=owner, runtime=runtime,
                         auto_analysis_mode=scheduled_analysis_mode(settings, runtime),
                         enqueue_enabled=(
                             settings.commute_auto_weather_enabled

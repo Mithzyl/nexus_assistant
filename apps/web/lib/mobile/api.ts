@@ -717,6 +717,8 @@ export interface DraftCommunication {
 
 export interface DraftPayload {
   commute?: CommuteBundleState;
+  commute_revision?: {status:string; target_arrival_at?:string; buffer_minutes?:number; route?:RouteEstimate};
+  commute_plan_cancellations?: {plan_id:string;name:string;revision:number}[];
   kind?: "create" | "update";
   matter_id?: string | null;
   requires_choice?: boolean;

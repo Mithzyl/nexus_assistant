@@ -41,6 +41,8 @@ PROMPT = """你是个人事项整理助手。请把用户这句话整理成一�
 - matter_action: "none" 或 "archive"。只有用户明确说暂停/归档/停止跟进时才用 archive。
 - cancel_reminders: 用户明确说暂停/不做了/停止跟进/不用再提醒/不用催时为 true；只说“归档”而没有停止跟进意图时不要推断。
 - commute: 仅用户要求新建/安排通勤时输出 {{origin_query,destination_query,city,arrival_local_time,buffer_minutes,effective_from,weekdays}}。起终点保留用户地名，city用明确城市。arrival_local_time为HH:mm；未指定首日/星期范围/余量时对应字段为null，不能猜测。通勤场景 intent= matter、kind=create、schedule=null，真实地点候选与驾车/公交比较由后端生成，用户在组合草稿确认日期/周期/方式。仅询问已有记忆时不输出commute、不创建安排。
+- commute_update: 修改已有通勤某一天的到达时间时输出 {{service_date:"YYYY-MM-DD",arrival_local_time:"HH:mm"}}，kind=update，matter_id必须匹配已有通勤事项，schedule=null；新增待办/提醒仍放todos。只改所指那天，不修改长期周期；服务端用原计划真实重测路线。
+- 多个事项且“把时间推迟半小时”等指令未指明事项时，intent=unclear，列出事项名称追问，不猜测。
 - confidence: 0~1。
 时间必须用 ISO 8601；能确定时区就带偏移（用户时区：{timezone}）。
 不要编造不存在的路线耗时、门牌号或人物；信息不足时省略字段。
@@ -447,7 +449,16 @@ def validate_result(text: str | None, context: dict[str, Any]) -> dict:
     ):
         _reject("confidence_invalid")
 
+    commute_update = value.get("commute_update")
+    if commute_update is not None:
+        from datetime import date
+        try:
+            date.fromisoformat(commute_update["service_date"])
+            assert re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", commute_update["arrival_local_time"]) and kind == "update" and matter_id
+        except (ValueError, KeyError, TypeError, AssertionError):
+            _reject("commute_update_invalid")
     result = {
+        "commute_update": commute_update,
         "intent": intent,
         "answer": None,
         "clarify": None,

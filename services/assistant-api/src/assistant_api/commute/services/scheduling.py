@@ -46,6 +46,7 @@ async def ensure_instance(
     *,
     now: datetime,
     allow_non_scheduled_day: bool = False,
+    service_date=None,
 ) -> CommuteInstance | None:
     """Create or reconcile today's instance for one plan.
 
@@ -56,7 +57,7 @@ async def ensure_instance(
 
     if not plan.enabled:
         return None
-    day = local_today(now, plan.timezone)
+    day = service_date or local_today(now, plan.timezone)
     if plan.effective_from and day < plan.effective_from:
         return None
     if not allow_non_scheduled_day and iso_weekday(day) not in (plan.weekdays_json or []):

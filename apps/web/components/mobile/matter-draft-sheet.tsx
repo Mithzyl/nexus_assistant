@@ -1658,6 +1658,8 @@ export function MatterDraftSheet({
               </label>
             ) : null}
 
+            {current.payload.commute_revision ? <div className="card"><p>只调整本次通勤，重复计划的常规时间保持不变。</p><p>目标到达：{current.payload.commute_revision.target_arrival_at ? new Date(current.payload.commute_revision.target_arrival_at).toLocaleString('zh-CN') : '待核实'}；提前 {current.payload.commute_revision.buffer_minutes} 分钟。</p><p>{current.payload.commute_revision.route?.status === 'available' ? `真实路线已重测，约 ${Math.ceil((current.payload.commute_revision.route.duration_seconds ?? 0)/60)} 分钟；确认后绑定新出发时间。` : '路线未核实，不能确认。'}</p></div> : null}
+            {current.payload.commute_plan_cancellations?.length ? <div className="card"><strong>同时停止重复通勤计划</strong>{current.payload.commute_plan_cancellations.map(p=><p key={p.plan_id}>{p.name}（当前版本 {p.revision}）</p>)}<p>停止未来检查与尚未发送的推送；不能撤回手机上已显示的通知。</p></div> : null}
             {fieldError ? <p className="danger-text" style={{ margin: 0 }}>{fieldError}</p> : null}
             {message ? <p className="caption" style={{ margin: 0 }}>{message}</p> : null}
             {outcome === "unknown" ? (
