@@ -7,7 +7,7 @@ never include another user's rows, coordinates for devices, or provider secrets.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -40,7 +40,7 @@ UtcDateTime = Annotated[
     ),
 ]
 
-TransportMode = Literal["driving", "walking"]
+TransportMode = Literal["driving", "walking", "transit"]
 CheckStatus = Literal["queued", "running", "succeeded", "degraded", "failed", "cancelled", "unknown"]
 # Phase is the current step, status is the task outcome. They are orthogonal:
 # a running task has a non-terminal phase; a terminal phase ("done"/"failed"/
@@ -85,6 +85,7 @@ class CommutePlanInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    effective_from: date | None = None
     name: str = Field(min_length=1, max_length=120)
     enabled: bool = True
     timezone: str = Field(min_length=1, max_length=64)
@@ -142,6 +143,8 @@ class CommutePlanInput(BaseModel):
 
 
 class CommutePlanRead(CommutePlanInput):
+    matter_id: str | None = None
+    first_schedule_id: str | None = None
     """A plan plus server-owned revision and timestamps."""
 
     id: str

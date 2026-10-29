@@ -7,6 +7,7 @@ declared before parameterised ones. Every route scopes by the authenticated user
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Header, Query, Request, Response, status
 from pydantic import BaseModel
@@ -23,7 +24,7 @@ from assistant_api.core.deps import (
 from assistant_api.schemas import matters as schemas
 from assistant_api.core.errors import InvalidRequestError, NotFoundError
 from assistant_api.models import ScheduleEvent
-from assistant_api.services import commute_estimate, commute_places, matters, schedule_routes
+from assistant_api.services import commute_estimate, commute_places, matters, schedule_routes, commute_bundle
 
 router = APIRouter(prefix="/api/v1", tags=["matters"])
 
@@ -103,6 +104,7 @@ async def intake(
         text=payload.text,
         idempotency_key=payload.idempotency_key,
         continuation_run_id=payload.continuation_run_id,
+        memory_disclosures=[item.model_dump() for item in payload.memory_disclosures],
     )
     return _intake_response(result=result, response=response)
 
@@ -134,6 +136,7 @@ async def intake_for_matter(
         idempotency_key=payload.idempotency_key,
         matter_id=matter_id,
         continuation_run_id=payload.continuation_run_id,
+        memory_disclosures=[item.model_dump() for item in payload.memory_disclosures],
     )
     return _intake_response(result=result, response=response)
 
@@ -236,6 +239,8 @@ async def patch_draft(
     response_model=schemas.ConfirmResponse,
 )
 async def confirm_draft(
+    request: Request,
+    client: NexusClient,
     draft_id: str,
     payload: schemas.ConfirmRequest,
     db: DatabaseSession,
@@ -244,9 +249,41 @@ async def confirm_draft(
     user: CurrentUser,
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=128),
 ) -> dict:
-    return await matters.confirm_draft(
+    result = await matters.confirm_draft(
         db, runtime, settings, user, draft_id, payload, idempotency_key
     )
+    if result["draft"]["payload"].get("commute"):
+        from assistant_api.services import commute_memory
+        draft = await matters._get_draft(db, user, draft_id)
+        try:
+            await commute_memory.start(db, client, settings, request.app.state.session_factory, user, draft)
+        except Exception:
+            await db.rollback()
+            draft = await matters._get_draft(db, user, draft_id)
+            draft.result_json = {**(draft.result_json or {}), "memory_error": "记忆提取启动失败；业务已保存。"}
+            await db.commit()
+    return result
+
+
+@router.post("/matters/drafts/{draft_id}/commute-quote", response_model=schemas.DraftRead)
+async def quote_commute(draft_id: str, payload: commute_bundle.QuoteRequest, db: DatabaseSession, runtime: CommuteRuntimeDependency, settings: SettingsDependency, user: CurrentUser):
+    return await commute_bundle.quote(db, runtime, settings, user, draft_id, payload)
+
+
+@router.get("/matters/drafts/{draft_id}/memory-candidate")
+async def memory_candidate(draft_id: str, db: DatabaseSession, client: NexusClient, user: CurrentUser):
+    from assistant_api.services import commute_memory
+    return await commute_memory.candidate(db, client, user, await matters._get_draft(db, user, draft_id))
+
+
+class ConfirmMemoryBody(BaseModel):
+    confirmed_sensitive: Literal[True]
+
+
+@router.post("/matters/drafts/{draft_id}/memory-candidate/confirm")
+async def confirm_memory_candidate(draft_id: str, payload: ConfirmMemoryBody, db: DatabaseSession, client: NexusClient, user: CurrentUser):
+    from assistant_api.services import commute_memory
+    return await commute_memory.save(db, client, user, await matters._get_draft(db, user, draft_id))
 
 
 @router.post("/matters/drafts/{draft_id}/cancel", response_model=schemas.DraftRead)

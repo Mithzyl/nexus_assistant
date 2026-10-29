@@ -125,7 +125,10 @@ NexusPilot 应用 API 的服务，并断言 9 次上游调用里没有任何请�
 | GET | `/api/v1/asks/{id}` | 单条请求状态与最终回答（刷新时向上游对账） |
 | POST | `/api/v1/asks/{id}/cancel` | 取消（转发 NexusPilot） |
 | GET | `/api/v1/asks/{id}/events` | SSE 代理，支持 `Last-Event-ID` |
-| POST | `/api/v1/memory/search` | 遗留记忆代理；当前 App Run 契约不包含 |
+| POST | `/api/v1/memory/search` | 按关键词匹配 Nexus 新版个人记忆，保留状态、版本、结构化数据和分页 |
+| GET | `/api/v1/memory` | 当前账号的 Nexus 个人记忆原始分页；可指定本地 `local_run_id` |
+| GET | `/api/v1/memory/settings` | 当前 App 记忆开关与版本 |
+| POST | `/api/v1/memory/commands` | 显式用户记忆操作；必填本地 `local_run_id`，支持现有 Nexus `app_data` |
 | POST | `/api/v1/data-sources` | 登记设备内容来源与授权范围 |
 | GET | `/api/v1/data-sources` | 当前用户的来源、同步状态与授权 |
 | PATCH | `/api/v1/data-sources/{id}` | 分别更新同步、助手授权、字段和范围 |
@@ -159,3 +162,16 @@ NexusPilot 应用 API 的服务，并断言 9 次上游调用里没有任何请�
 - 当前数据库：SQLite + SQLAlchemy/aiosqlite。新增表/列通过
   `scripts/migrate_sqlite.py` 管理。
 - 记忆召回失败返回 5xx，不返回空列表——"没有"和"查不到"必须能区分。
+
+记忆桥接复用 `/api/v1/app/runs/{run_id}/user-memories` 和 `memory-settings`。
+服务端从当前账号的本地 Run 解析 Nexus Run；调用者不能指定远端身份或跨账号 Run。
+没有已建立的 Run 时返回 409 `memory_context_required`，不创建占位 Run，也不宣称记忆为空。
+搜索为正文关键词匹配，每次读取一个有界上游分页；`next_cursor` 可作为下一次 `offset`。
+`commands` 保留 Nexus 的候选确认、敏感内容确认、版本与幂等语义；`app_data.namespace`
+固定为 `personal_assistant`。此桥接不会自动提取历史，也不会把日程视为记忆。
+
+`POST /api/v1/asks` 可显式传入 `memory_disclosures`（最多 10 条，每条包含
+`entry_id`、当前 `expected_version`、`confirmed_sensitive: true`）。服务端先在新建的
+当前 Nexus Run 上执行既有 `disclose`，再启动模型；失败时不启动模型。默认不披露，
+授权只适用于该次对话，幂等重放不能改变授权列表。Nexus 继续核验归属和版本。
+网页当前只有记忆检索展示，尚未提供选择记忆并授权本次 AI 对话的交互。

@@ -58,7 +58,7 @@ const TERMINAL = new Set(["succeeded", "degraded", "failed", "cancelled", "unkno
 const POLL_DELAYS = [1200, 2000, 3000, 5000, 8000, 12000];
 
 function toDraft(plan: CommutePlan): CommutePlanDraft {
-  const { id: _id, revision: _revision, created_at: _created, updated_at: _updated, ...draft } = plan;
+  const { id: _id, revision: _revision, created_at: _created, updated_at: _updated, matter_id: _matter, first_schedule_id: _schedule, ...draft } = plan;
   return draft;
 }
 
@@ -757,6 +757,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   <span className="micro">服务器保存</span>
                 </div>
                 <div className="mt-8" style={{ display: "grid", gap: 5 }}>
+                  <p>首次生效：{plan.data.effective_from ?? "未设置"}</p>
+                  {plan.data.matter_id ? <Link href={`/matters/${plan.data.matter_id}`}>查看关联事项与首日日程</Link> : null}
                   <div className="flex items-start justify-between gap-12">
                     <span className="micro">到达</span>
                     <span style={{ fontSize: 13, textAlign: "right" }}>
@@ -773,7 +775,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     <span className="micro">检查</span>
                     <span style={{ fontSize: 13, textAlign: "right" }}>
                       {plan.data.check_local_time} ·{" "}
-                      {plan.data.transport_mode === "driving" ? "驾车" : "步行"} · 缓冲{" "}
+                      {plan.data.transport_mode === "driving" ? "驾车" : plan.data.transport_mode === "transit" ? "公交" : "步行"} · 缓冲{" "}
                       {plan.data.buffer_minutes} 分钟
                     </span>
                   </div>

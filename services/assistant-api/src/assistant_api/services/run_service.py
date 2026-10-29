@@ -336,6 +336,19 @@ async def _start_workflow(
     except AssistantError as exc:
         await _finish(db, row, status="failed", error_code=exc.code)
         raise
+    # Nexus enforces owner/version checks and per-run sensitive disclosure.
+    # Complete these explicit grants before any model starts; errors fail closed.
+    for disclosure in (row.context_json or {}).get("memory_disclosures", []):
+        await client.mutate_product_memory(
+            external_user_id,
+            row.nexus_run_id,
+            {
+                **disclosure,
+                "action": "disclose",
+                "scope": "personal",
+                "key": f"disclose:{row.local_run_id}:{disclosure['entry_id']}",
+            },
+        )
     ready: asyncio.Future[WorkflowView] = asyncio.get_running_loop().create_future()
     task = asyncio.create_task(
         _consume_workflow(
@@ -870,13 +883,16 @@ async def start_chat_ask(
     user: User,
     request_text: str,
     idempotency_key: str,
+    memory_disclosures: list[dict[str, Any]] | None = None,
 ) -> tuple[NexusRun, bool]:
     """Submit one chat question: association + run first, Nexus call afterwards."""
 
     ask_id = new_id()
+    disclosures = memory_disclosures or []
 
     def attach(row: NexusRun) -> None:
         row.business_ref = ask_id
+        row.context_json = {"memory_disclosures": disclosures}
         db.add(
             UserAsk(
                 ask_id=ask_id,
@@ -896,6 +912,8 @@ async def start_chat_ask(
         business_ref=ask_id,
         attach=attach,
     )
+    if (row.context_json or {}).get("memory_disclosures", []) != disclosures:
+        raise ConflictError("idempotency_conflict", "同一幂等键的记忆授权不能变更。")
     await _ensure_user_ask(db, user=user, row=row, request_text=row.request_text)
     if replayed:
         return await resume_ai_task(

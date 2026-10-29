@@ -92,7 +92,7 @@ export default function CommutePage() {
                       </span>
                       <span className="caption" style={{ display: "block", marginTop: 2 }}>
                         {weekdayText(plan.weekdays)} · {plan.arrival_local_time} 到达 ·{" "}
-                        {plan.transport_mode === "driving" ? "驾车" : "步行"}
+                        {plan.transport_mode === "driving" ? "驾车" : plan.transport_mode === "transit" ? "公交" : "步行"}
                       </span>
                       <span className="micro" style={{ display: "block", marginTop: 2 }}>
                         {plan.origin.label} → {plan.destination.label}
@@ -126,8 +126,8 @@ export default function CommutePage() {
             </div>
 
             <Notice tone="amber" title="原生能力边界">
-              浏览器没有地图选点与路线 ETA，计划里的坐标需要手动填写；检查时也不会上传路线快照。
-              后台检查、天气与推送全部由服务器进程完成，关闭浏览器不影响已排定的提醒。
+              网页组合草稿支持地点候选、真实驾车与公交测算及路线地图；手动计划表单仍需填写坐标。
+              未来日期检查、天气与推送取决于服务器调度和通知配置，需另行核验。
             </Notice>
           </>
         ) : null}

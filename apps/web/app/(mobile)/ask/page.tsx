@@ -15,8 +15,14 @@ import { isVisibleChat, useAskStore } from "@/components/mobile/ask-store";
 import { Markdown } from "@/components/mobile/markdown";
 import { useAuth, useUI } from "@/components/mobile/providers";
 import { LoadingCard, ScreenHeader } from "@/components/mobile/ui";
+import { MemoryPicker, MemoryCandidates, type SelectedMemory } from "@/components/mobile/account-memory";
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
-import type { MatterDraft, MatterIntakeResult } from "@/lib/mobile/api";
+import type {
+  IntakePendingContext,
+  IntakeScheduleCandidate,
+  MatterDraft,
+  MatterIntakeResult,
+} from "@/lib/mobile/api";
 import { ApiError } from "@/lib/mobile/api";
 import {
   confirmSummary,
@@ -25,6 +31,7 @@ import {
   listDrafts,
   listIntakeResults,
   newOperationKey,
+  requestTodayRefresh,
 } from "@/lib/mobile/matters-api";
 import { mergeIntakeHistory } from "@/lib/mobile/matter-draft.mjs";
 import { formatDateTime } from "@/lib/mobile/format";
@@ -42,6 +49,15 @@ interface IntakeAnswer {
   question: string;
   answer: string;
   createdAt: string;
+}
+
+/** Turn a server schedule candidate into a continuation message without IDs. */
+function scheduleCandidatePrompt(candidate: IntakeScheduleCandidate): string {
+  const when = formatDateTime(candidate.starts_at);
+  const end = candidate.ends_at ? formatDateTime(candidate.ends_at) : null;
+  return `选择「${candidate.title}」${when ? `（${when}${end ? ` 至 ${end}` : ""})` : ""}${
+    candidate.location ? `，地点：${candidate.location}` : ""
+  }`;
 }
 
 const SUGGESTIONS = [
@@ -244,12 +260,16 @@ export default function AskPage() {
   const ask = useAskStore();
   const [draft, setDraft] = useState("");
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [selectedMemories, setSelectedMemories] = useState<SelectedMemory[]>([]);
+  const [memoryRefresh, setMemoryRefresh] = useState(0);
   const [intakeDraft, setIntakeDraft] = useState<MatterDraft | null>(null);
   const [pendingDrafts, setPendingDrafts] = useState<MatterDraft[]>([]);
   const [intakeAnswers, setIntakeAnswers] = useState<IntakeAnswer[]>([]);
   const [serverIntakeResults, setServerIntakeResults] = useState<MatterIntakeResult[]>([]);
   const [processing, setProcessing] = useState(false);
   const [supplementQuestion, setSupplementQuestion] = useState<string | null>(null);
+  const [clarificationContext, setClarificationContext] =
+    useState<IntakePendingContext>({});
   const [operationFailure, setOperationFailure] = useState<string | null>(null);
   const [continuationRunId, setContinuationRunId] = useState<string | null>(null);
   const [recoveryRunId, setRecoveryRunId] = useState<string | null>(null);
@@ -330,6 +350,7 @@ export default function AskPage() {
     setPendingDrafts([]);
     setIntakeDraft(null);
     setSupplementQuestion(null);
+    setClarificationContext({});
     setOperationFailure(null);
     setContinuationRunId(null);
     setRecoveryRunId(null);
@@ -364,8 +385,13 @@ export default function AskPage() {
 
   const canSend = draft.trim().length > 0 && state === "signedIn" && !processing;
 
-  const send = async (text?: string) => {
+  const send = async (
+    text?: string,
+    continuationOverride?: string | null,
+  ) => {
     const value = (text ?? draft).trim();
+    const activeContinuation =
+      continuationOverride === undefined ? continuationRunId : continuationOverride;
     if (!value) return;
     if (processing) return;
     if (state !== "signedIn") {
@@ -378,25 +404,28 @@ export default function AskPage() {
     }
     setComposerError(null);
     setSupplementQuestion(null);
+    setClarificationContext({});
     setOperationFailure(null);
     setProcessing(true);
     if (
       !intakeKey.current ||
       intakeKey.current.text !== value ||
-      intakeKey.current.continuationRunId !== continuationRunId
+      intakeKey.current.continuationRunId !== activeContinuation
     ) {
       intakeKey.current = {
         text: value,
         key: newOperationKey("web-intake"),
-        continuationRunId,
+        continuationRunId: activeContinuation,
       };
     }
     try {
       const result = await intakeMatter(
         value,
         intakeKey.current.key,
-        continuationRunId,
+        activeContinuation,
+        selectedMemories,
       );
+      if (result.outcome === "answer" || result.draft) setSelectedMemories([]);
       if (result.outcome === "answer") {
         if (!result.answer) {
           setOperationFailure(
@@ -419,11 +448,13 @@ export default function AskPage() {
         toast("服务器已直接回答");
         intakeKey.current = null;
         setContinuationRunId(null);
+        setClarificationContext({});
         setRecoveryRunId(result.local_run_id);
         void refreshServerIntake();
         return;
       }
       if (result.outcome === "needs_clarification") {
+        setClarificationContext(result.pending_context ?? {});
         setSupplementQuestion(
           result.clarify || result.message || "请补充缺失的信息。",
         );
@@ -446,6 +477,7 @@ export default function AskPage() {
       if (result.outcome === "draft" && result.draft) {
         setIntakeDraft(result.draft);
         setContinuationRunId(null);
+        setClarificationContext({});
         setRecoveryRunId(result.local_run_id);
         toast("已生成待确认变更，尚未写入正式安排");
         void refreshServerIntake();
@@ -496,12 +528,15 @@ export default function AskPage() {
       if (result.outcome === "draft" && result.draft) {
         setIntakeDraft(result.draft);
         setContinuationRunId(null);
+        setClarificationContext({});
         toast("已读取服务器保存的待确认结果");
       } else if (result.outcome === "needs_clarification") {
+        setClarificationContext(result.pending_context ?? {});
         setSupplementQuestion(result.clarify || "请补充缺失的信息。");
         setContinuationRunId(result.local_run_id);
       } else if (result.outcome === "answer") {
         setContinuationRunId(null);
+        setClarificationContext({});
         toast("服务器回答已恢复到历史");
       } else if (result.outcome === "processing" || result.outcome === "unknown") {
         setOperationFailure("服务器仍在核实这次结果，请稍后再次查询。");
@@ -591,6 +626,8 @@ export default function AskPage() {
         ) : null}
       </section>
 
+      {state === "signedIn" ? <section style={{padding: "0 var(--m-gutter)", marginBottom: 16}}><MemoryCandidates refresh={memoryRefresh} /><MemoryPicker selected={selectedMemories} onChange={(items) => { setSelectedMemories(items); intakeKey.current = null; }} /></section> : null}
+
       {pendingDrafts.length > 0 ? (
         <section style={{ padding: "0 var(--m-gutter)", marginBottom: 16 }}>
           <div className="card card--amber">
@@ -622,6 +659,17 @@ export default function AskPage() {
             const question = serverItem ? item.request_text : item.question;
             const answer = serverItem ? item.answer : item.answer;
             const clarify = serverItem ? item.clarify : null;
+            const pendingContext = (
+              serverItem ? item.pending_context : null
+            ) as IntakePendingContext | null;
+            const serverRunId = serverItem ? item.local_run_id : null;
+            const scheduleCandidates: IntakeScheduleCandidate[] =
+              pendingContext?.schedule_candidates ?? [];
+            const hasContinuation = serverItem
+              ? serverIntakeResults.some(
+                  (result) => result.parent_run_id === item.local_run_id,
+                )
+              : false;
             const outcome = serverItem ? item.outcome : "answer";
             const createdAt = serverItem ? item.created_at : item.createdAt;
             const key = serverItem ? item.local_run_id : item.id;
@@ -648,6 +696,13 @@ export default function AskPage() {
                 <div className="mt-8">
                   {answer ? <Markdown source={answer} /> : null}
                   {clarify ? <p className="body-text" style={{ margin: 0 }}>{clarify}</p> : null}
+                  {pendingContext?.missing_information?.length ? (
+                    <div className="chip-row mt-8">
+                      {pendingContext.missing_information.map((item) => (
+                        <span key={item} className="chip chip--sm">{item}</span>
+                      ))}
+                    </div>
+                  ) : null}
                   {!answer && !clarify ? (
                     <p className="caption" style={{ margin: 0 }}>
                       {outcome === "processing" || outcome === "unknown"
@@ -657,6 +712,41 @@ export default function AskPage() {
                   ) : null}
                 </div>
               </div>
+              {scheduleCandidates.length > 0 ? (
+                <div className="m-stack-8 mt-8" aria-label="选择要修改的日程">
+                  {scheduleCandidates.map((candidate) => (
+                    <button
+                      key={candidate.schedule_id}
+                      type="button"
+                      className="choice-card"
+                      disabled={processing || hasContinuation}
+                      onClick={() => {
+                        setContinuationRunId(serverRunId);
+                        setClarificationContext(pendingContext ?? {});
+                        void send(
+                          scheduleCandidatePrompt(candidate),
+                          serverRunId,
+                        );
+                      }}
+                    >
+                      <span className="choice-card__dot" aria-hidden="true" />
+                      <span className="grow">
+                        <span className="choice-card__title">{candidate.title}</span>
+                        <span className="choice-card__detail">
+                          {formatDateTime(candidate.starts_at)}
+                          {candidate.ends_at ? ` 至 ${formatDateTime(candidate.ends_at)}` : ""}
+                          {candidate.location ? ` · ${candidate.location}` : ""}
+                        </span>
+                        <span className="choice-card__detail">
+                          {hasContinuation
+                            ? "已继续处理，这条候选不能再次提交。"
+                            : "只用于继续生成待确认草稿，不会直接保存修改。"}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
             );
           })}
@@ -786,6 +876,41 @@ export default function AskPage() {
         <div className="composer-operation" role="status">
           <strong>还需要补充一点</strong>
           <p>{supplementQuestion}</p>
+          {clarificationContext.missing_information?.length ? (
+            <div className="chip-row" style={{ marginBottom: 8 }}>
+              {clarificationContext.missing_information.map((item) => (
+                <span key={item} className="chip chip--sm">{item}</span>
+              ))}
+            </div>
+          ) : null}
+          {clarificationContext.schedule_candidates?.length ? (
+            <div className="m-stack-8" aria-label="选择要修改的日程">
+              {clarificationContext.schedule_candidates.map((candidate) => (
+                <button
+                  key={candidate.schedule_id}
+                  type="button"
+                  className="choice-card"
+                  disabled={processing}
+                  onClick={() => {
+                    const runId = continuationRunId;
+                    setSupplementQuestion(null);
+                    setClarificationContext({});
+                    void send(scheduleCandidatePrompt(candidate), runId);
+                  }}
+                >
+                  <span className="choice-card__dot" aria-hidden="true" />
+                  <span className="grow">
+                    <span className="choice-card__title">{candidate.title}</span>
+                    <span className="choice-card__detail">
+                      {formatDateTime(candidate.starts_at)}
+                      {candidate.ends_at ? ` 至 ${formatDateTime(candidate.ends_at)}` : ""}
+                      {candidate.location ? ` · ${candidate.location}` : ""}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <span>
             下方会接续刚才的事项和已填写内容发送，不需要重述背景。
           </span>
@@ -795,6 +920,7 @@ export default function AskPage() {
             onClick={() => {
               setContinuationRunId(null);
               setSupplementQuestion(null);
+              setClarificationContext({});
             }}
           >
             改作新的输入
@@ -866,17 +992,20 @@ export default function AskPage() {
         open={Boolean(intakeDraft)}
         onClose={() => setIntakeDraft(null)}
         onConfirmed={(response) => {
+          setMemoryRefresh(x => x + 1);
           setPendingDrafts((rows) => rows.filter((row) => row.draft_id !== response.draft.draft_id));
           setIntakeDraft(null);
           setDraft("");
           intakeKey.current = null;
           toast(confirmSummary(response));
+          requestTodayRefresh();
           void refreshServerIntake();
         }}
         onDraftCancelled={(cancelled) => {
           setPendingDrafts((rows) => rows.filter((row) => row.draft_id !== cancelled.draft_id));
           setIntakeDraft(null);
           toast("草稿已取消");
+          requestTodayRefresh();
           void refreshServerIntake();
         }}
       />

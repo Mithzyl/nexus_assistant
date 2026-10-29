@@ -21,6 +21,9 @@ from assistant_api.models import Base
 
 VERSION = "0001_sqlite_baseline"
 COLUMN_MIGRATIONS = (
+    ("0013_commute_bundle", "commute_plans", "effective_from", "DATE"),
+    ("0013_commute_bundle", "commute_plans", "matter_id", "VARCHAR(36) REFERENCES matters(matter_id)"),
+    ("0013_commute_bundle", "commute_plans", "first_schedule_id", "VARCHAR(36) REFERENCES schedules(schedule_id)"),
     ("0002_commute_route_ai", "commute_checks", "route_snapshot_json", "JSON"),
     ("0002_commute_route_ai", "commute_checks", "route_snapshot_hash", "VARCHAR(64)"),
     ("0002_commute_route_ai", "commute_advisories", "ai_analysis_json", "JSON"),

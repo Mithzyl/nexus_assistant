@@ -1,4 +1,5 @@
 "use client";
+import { CommuteBundlePanel } from "./commute-bundle-panel";
 
 /**
  * Editable server draft for creating or updating a matter, schedule or todo.
@@ -6,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, Map, RefreshCw } from "lucide-react";
 
 import type {
   DraftConfirmResponse,
@@ -14,7 +15,9 @@ import type {
   DraftTodo,
   MatterAffectedSchedule,
   MatterConflict,
+  MatterDetail,
   MatterDraft,
+  MapPickLocation,
   MatterTodoStatus,
   PlaceCandidate,
 } from "@/lib/mobile/api";
@@ -25,8 +28,10 @@ import {
   confirmDraft,
   confirmPlaceSelection,
   getDraft,
+  getMatter,
   newOperationKey,
   patchDraft,
+  pickMapLocation,
   searchPlaces,
   selectDraftMatter,
 } from "@/lib/mobile/matters-api";
@@ -38,8 +43,11 @@ import {
   isRecordChangedError,
   manualEditSelection,
   optionConsequences,
+  selectedCancelScheduleIds,
 } from "@/lib/mobile/matter-draft.mjs";
 import { dateTimeLabel } from "@/lib/mobile/work-plan";
+import { AmapMapCanvas, type AmapPoint } from "./amap-map";
+import { DraftImpactSummary } from "./draft-impact-summary";
 import { RouteTextCard } from "./route-text-card";
 import { Sheet } from "./ui";
 
@@ -105,6 +113,7 @@ function conflictText(conflict: MatterConflict | null): string | null {
 }
 
 function sheetTitle(mode: string): string {
+  if (mode === "archive") return "停止跟进";
   if (mode === "create") return "整理成事项";
   if (mode === "schedule") return "调整日程";
   if (mode === "todo") return "调整待办";
@@ -112,6 +121,7 @@ function sheetTitle(mode: string): string {
 }
 
 function primarySummary(mode: string): string {
+  if (mode === "archive") return "归档并停止提醒";
   if (mode === "create") return "新建事项";
   if (mode === "schedule") return "只调整日程";
   if (mode === "todo") return "只调整待办";
@@ -132,6 +142,7 @@ export function MatterDraftSheet({
   onDraftCancelled?: (draft: MatterDraft) => void;
 }) {
   const [current, setCurrent] = useState<MatterDraft | null>(draft);
+  const [baseMatter, setBaseMatter] = useState<MatterDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -146,7 +157,14 @@ export function MatterDraftSheet({
   const [syncToIos, setSyncToIos] = useState(false);
   const [acknowledge, setAcknowledge] = useState(false);
   const [selectedMatter, setSelectedMatter] = useState("");
+  const [candidateDetails, setCandidateDetails] = useState<
+    Record<string, MatterDetail>
+  >({});
+  const [unavailableCandidateIds, setUnavailableCandidateIds] = useState<
+    Set<string>
+  >(new Set());
   const [selectedOption, setSelectedOption] = useState<"A" | "B" | "C" | null>(null);
+  const [cancelScheduleIds, setCancelScheduleIds] = useState<string[]>([]);
   const [selectedImpact, setSelectedImpact] = useState<string[]>([]);
   const [selectedAffected, setSelectedAffected] = useState<MatterAffectedSchedule[]>([]);
   const [placeQuery, setPlaceQuery] = useState("");
@@ -156,6 +174,20 @@ export function MatterDraftSheet({
   const [selectedPlaceToken, setSelectedPlaceToken] = useState<string | null>(null);
   const [placeSearching, setPlaceSearching] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
+  const [placeMapOpen, setPlaceMapOpen] = useState(false);
+  const [placeMapMode, setPlaceMapMode] = useState<"candidates" | "pick">(
+    "candidates",
+  );
+  const [placeMapStatus, setPlaceMapStatus] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [placePickCenter, setPlacePickCenter] = useState<
+    [number, number] | null
+  >(null);
+  const [pickedMapLocation, setPickedMapLocation] =
+    useState<MapPickLocation | null>(null);
+  const [placePickNotice, setPlacePickNotice] = useState<string | null>(null);
+  const [placePicking, setPlacePicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -165,6 +197,19 @@ export function MatterDraftSheet({
   const [confirmCancel, setConfirmCancel] = useState(false);
   const confirmKey = useRef(newOperationKey("web-confirm"));
   const confirmDraftId = useRef<string | null>(null);
+  const placeSearchRequestId = useRef(0);
+  const placePickRequestId = useRef(0);
+
+  /** Clear temporary map selection without changing the server draft. */
+  const clearPlaceMapSelection = () => {
+    placePickRequestId.current += 1;
+    setPlaceMapMode("candidates");
+    setPlaceMapStatus("loading");
+    setPlacePickCenter(null);
+    setPickedMapLocation(null);
+    setPlacePickNotice(null);
+    setPlacePicking(false);
+  };
 
   const hydrate = (
     next: MatterDraft,
@@ -172,6 +217,7 @@ export function MatterDraftSheet({
     affected: MatterAffectedSchedule[] = [],
   ) => {
     setCurrent(next);
+    placeSearchRequestId.current += 1;
     setTitle(next.payload.title ?? "");
     setGoal(next.payload.goal ?? "");
     setNextStep(next.payload.next_step ?? "");
@@ -184,10 +230,13 @@ export function MatterDraftSheet({
     setPlaceCandidates([]);
     setSelectedPlaceToken(null);
     setPlaceError(null);
+    setPlaceMapOpen(false);
+    clearPlaceMapSelection();
     setTodos(editableTodos(next.payload.todos));
     setCreateSchedule(Boolean(next.payload.schedule));
     setSelectedMatter(next.matter_id ?? "");
     setSelectedOption(next.payload.selected_option ?? null);
+    setCancelScheduleIds(selectedCancelScheduleIds(next.payload));
     setSelectedImpact(impact);
     setSelectedAffected(affected);
     setAcknowledge(false);
@@ -199,7 +248,12 @@ export function MatterDraftSheet({
     setLoadError(null);
     try {
       const next = await getDraft(draft.draft_id);
+      let sourceMatter: MatterDetail | null = null;
+      if (next.matter_id) {
+        sourceMatter = await getMatter(next.matter_id).catch(() => null);
+      }
       hydrate(next);
+      setBaseMatter(sourceMatter);
       setMessage("已读取服务器最新草稿。");
     } catch (caught) {
       setLoadError(caught instanceof Error ? caught.message : "读取草稿失败");
@@ -215,6 +269,7 @@ export function MatterDraftSheet({
       confirmDraftId.current = draft.draft_id;
     }
     setCurrent(draft);
+    setBaseMatter(null);
     hydrate(draft);
     setSyncToIos(false);
     setAcknowledge(false);
@@ -230,14 +285,22 @@ export function MatterDraftSheet({
   }, [open, draft?.draft_id]);
 
   const mode = classifyMatterDraft(current);
+  const isArchiveDraft = Boolean(
+    current &&
+      (current.payload.matter_action === "archive" ||
+        current.payload.proposed_status === "archived"),
+  );
+  const effectiveMode = isArchiveDraft ? "archive" : mode;
   const directSchedule = mode === "schedule";
   const directTodo = mode === "todo";
-  const matterFieldsVisible = !directSchedule && !directTodo;
+  const matterFieldsVisible = !isArchiveDraft && !directSchedule && !directTodo;
   const scheduleVisible =
-    directSchedule ||
-    mode === "create" ||
-    (mode === "matter" && (createSchedule || Boolean(current?.payload.schedule)));
-  const todosVisible = !directSchedule && (directTodo || todos.length > 0);
+    !isArchiveDraft &&
+    (directSchedule ||
+      mode === "create" ||
+      (mode === "matter" && (createSchedule || Boolean(current?.payload.schedule))));
+  const todosVisible =
+    !isArchiveDraft && !directSchedule && (directTodo || todos.length > 0);
   const conflict = current?.conflicts ?? null;
   const conflictNote = useMemo(() => conflictText(conflict), [conflict]);
   const routeUnverified = conflictHasUnverifiedRoute(conflict);
@@ -255,7 +318,13 @@ export function MatterDraftSheet({
         createSchedule !== Boolean(current.payload.schedule) ||
         !todosEqual(todos, originalTodos)),
   );
+  const archiveSchedules = current?.payload.schedule_cancellations ?? [];
   const candidates = current?.candidates ?? [];
+  const candidateIdsKey = candidates
+    .map((candidate) => candidate.matter_id)
+    .filter(Boolean)
+    .sort()
+    .join("|");
   const needsChoice = candidates.length > 0;
   const hasConflictOptions = Boolean(conflict?.has_conflict && (conflict.options?.length ?? 0) > 0);
   const selectedOptionValue =
@@ -266,6 +335,82 @@ export function MatterDraftSheet({
   const clearedReminder = todos.some(
     (todo) => todo.originalReminderAt && !todo.reminderAt,
   );
+  const locationMatchesSavedPlace =
+    location.trim() === (current?.payload.schedule?.location ?? "").trim();
+  const currentPlaceCoordinates =
+    locationMatchesSavedPlace &&
+    current?.payload.schedule?.coordinate_system === "gcj02" &&
+    Number.isFinite(current.payload.schedule.latitude) &&
+    Number.isFinite(current.payload.schedule.longitude)
+      ? {
+          latitude: current.payload.schedule.latitude as number,
+          longitude: current.payload.schedule.longitude as number,
+        }
+      : null;
+  const mappablePlaceCandidates = placeCandidates.filter(
+    (candidate) =>
+      candidate.coordinate_system === "gcj02" &&
+      Number.isFinite(candidate.latitude) &&
+      Number.isFinite(candidate.longitude),
+  );
+  const placeMapPoints: AmapPoint[] = mappablePlaceCandidates.map(
+    (candidate) => ({
+      id: candidate.provider_place_id,
+      label: candidate.name,
+      latitude: candidate.latitude,
+      longitude: candidate.longitude,
+      coordinateSystem: candidate.coordinate_system,
+      kind: "candidate",
+      selected: selectedPlaceToken === candidate.selection_token,
+    }),
+  );
+  if (
+    currentPlaceCoordinates &&
+    !placeMapPoints.some(
+      (point) =>
+        point.latitude === currentPlaceCoordinates.latitude &&
+        point.longitude === currentPlaceCoordinates.longitude,
+    )
+  ) {
+    placeMapPoints.push({
+      id: "saved-place",
+      label:
+        current?.payload.schedule?.location_address ||
+        current?.payload.schedule?.location ||
+        "已确认地点",
+      ...currentPlaceCoordinates,
+      coordinateSystem: "gcj02",
+      kind: "saved",
+    });
+  }
+
+  useEffect(() => {
+    if (!open || !candidateIdsKey) {
+      setCandidateDetails({});
+      setUnavailableCandidateIds(new Set());
+      return;
+    }
+    let alive = true;
+    const candidateIds = candidateIdsKey.split("|");
+    void Promise.allSettled(candidateIds.map((candidateId) => getMatter(candidateId)))
+      .then((results) => {
+        if (!alive) return;
+        const details: Record<string, MatterDetail> = {};
+        const unavailable = new Set<string>();
+        results.forEach((result, index) => {
+          if (result.status === "fulfilled") {
+            details[candidateIds[index]] = result.value;
+          } else {
+            unavailable.add(candidateIds[index]);
+          }
+        });
+        setCandidateDetails(details);
+        setUnavailableCandidateIds(unavailable);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [candidateIdsKey, open]);
 
   const markManualEdit = () => {
     const cleared = manualEditSelection();
@@ -295,6 +440,36 @@ export function MatterDraftSheet({
       setMessage("已绑定所选事项，冲突已按服务器结果重新计算。");
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : "选择事项失败");
+      await load();
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  /** Save one future-schedule choice; the server re-checks edit rights and timestamps. */
+  const toggleCancelSchedule = async (scheduleId: string, checked: boolean) => {
+    if (!current || actionBusy || busy || isTerminal) return;
+    const nextIds = checked
+      ? Array.from(new Set([...cancelScheduleIds, scheduleId]))
+      : cancelScheduleIds.filter((value) => value !== scheduleId);
+    setCancelScheduleIds(nextIds);
+    setActionBusy("cancel-schedules");
+    setFieldError(null);
+    try {
+      const next = await patchDraft(current.draft_id, {
+        expected_version: current.version,
+        cancel_schedule_ids: nextIds,
+      });
+      hydrate(next);
+      setMessage("未来日程的取消选择已保存到服务器预览。");
+    } catch (caught) {
+      if (caught instanceof ApiError && isRecordChangedError(caught.code)) {
+        setMessage("记录已发生变化，请刷新后重新选择要取消的未来日程。");
+      } else {
+        setMessage(
+          caught instanceof Error ? caught.message : "服务器没有接受这次日程选择。",
+        );
+      }
       await load();
     } finally {
       setActionBusy(null);
@@ -367,8 +542,11 @@ export function MatterDraftSheet({
       setFieldError("待办标题不能为空。");
       return;
     }
-    const start = fromLocalInput(startsAt);
-    const end = fromLocalInput(endsAt);
+    // Preserve seconds/offset when only title or notes change.
+    const start = startsAt === toLocalInput(current.payload.schedule?.starts_at)
+      ? current.payload.schedule?.starts_at ?? null : fromLocalInput(startsAt);
+    const end = endsAt === toLocalInput(current.payload.schedule?.ends_at)
+      ? current.payload.schedule?.ends_at ?? null : fromLocalInput(endsAt);
     if (start && end && new Date(end) <= new Date(start)) {
       setFieldError("日程结束时间必须晚于开始时间。");
       return;
@@ -451,21 +629,115 @@ export function MatterDraftSheet({
     setPlaceSearching(true);
     setPlaceError(null);
     setSelectedPlaceToken(null);
+    setPlaceMapOpen(false);
+    clearPlaceMapSelection();
+    const requestId = ++placeSearchRequestId.current;
     try {
       const result = await searchPlaces(
         query,
         placeCity.trim() || null,
         placeSearchType,
+        current?.draft_id,
       );
+      if (requestId !== placeSearchRequestId.current) return;
       setPlaceCandidates(result.candidates);
       if (result.candidates.length === 0) {
         setPlaceError("没有找到可用候选，请补充城市或更详细的地址后再试。");
       }
     } catch (caught) {
+      if (requestId !== placeSearchRequestId.current) return;
       setPlaceCandidates([]);
       setPlaceError(caught instanceof Error ? caught.message : "地点查询失败。");
     } finally {
-      setPlaceSearching(false);
+      if (requestId === placeSearchRequestId.current) {
+        setPlaceSearching(false);
+      }
+    }
+  };
+
+  /** Toggle the inline map and center it on an explicit existing coordinate. */
+  const openPlaceMap = () => {
+    if (placeMapOpen) {
+      setPlaceMapOpen(false);
+      clearPlaceMapSelection();
+      return;
+    }
+    const selectedCandidate = mappablePlaceCandidates.find(
+      (candidate) => candidate.selection_token === selectedPlaceToken,
+    );
+    const center = selectedCandidate
+      ? ([selectedCandidate.longitude, selectedCandidate.latitude] as [
+          number,
+          number,
+        ])
+      : currentPlaceCoordinates
+        ? ([
+            currentPlaceCoordinates.longitude,
+            currentPlaceCoordinates.latitude,
+          ] as [number, number])
+        : mappablePlaceCandidates[0]
+          ? ([
+              mappablePlaceCandidates[0].longitude,
+              mappablePlaceCandidates[0].latitude,
+            ] as [number, number])
+          : null;
+    clearPlaceMapSelection();
+    setPlacePickCenter(center);
+    setPlaceMapOpen(true);
+  };
+
+  /** Enter fixed-center mode without changing any server-side location. */
+  const startPlaceMapPick = () => {
+    const selectedCandidate = mappablePlaceCandidates.find(
+      (candidate) => candidate.selection_token === selectedPlaceToken,
+    );
+    const center = selectedCandidate
+      ? ([selectedCandidate.longitude, selectedCandidate.latitude] as [
+          number,
+          number,
+        ])
+      : placePickCenter;
+    setPickedMapLocation(null);
+    setPlacePickNotice(null);
+    setSelectedPlaceToken(null);
+    setPlacePickCenter(center);
+    setPlaceMapMode("pick");
+  };
+
+  /** Resolve the current map center once and keep its result as a draft token. */
+  const usePickedMapLocation = async () => {
+    if (!current || !placePickCenter) return;
+    setPlacePicking(true);
+    setPlacePickNotice(null);
+    setPickedMapLocation(null);
+    const requestId = ++placePickRequestId.current;
+    try {
+      const result = await pickMapLocation(
+        current.draft_id,
+        placePickCenter[1],
+        placePickCenter[0],
+      );
+      if (requestId !== placePickRequestId.current) return;
+      if (result.status !== "available" || !result.location) {
+        setPlacePickNotice(
+          result.reason_code === "map_pick_address_missing"
+            ? "这个位置没有解析出可用地址，请移动地图后重试。"
+            : result.reason_code === "amap_not_configured"
+              ? "服务器尚未配置选点地址解析服务。"
+              : "这个位置暂时无法解析，请移动地图后重试。",
+        );
+        return;
+      }
+      setPickedMapLocation(result.location);
+      setPlacePickNotice(result.address_notice);
+      setSelectedPlaceToken(result.location.selection_token);
+    } catch (caught) {
+      if (requestId !== placePickRequestId.current) return;
+      setPlacePickNotice(
+        caught instanceof Error ? caught.message : "地图选点解析失败。",
+      );
+    } finally {
+      if (requestId === placePickRequestId.current) setPlacePicking(false);
     }
   };
 
@@ -491,8 +763,17 @@ export function MatterDraftSheet({
     }
   };
 
+  const [bundleDirty, setBundleDirty] = useState(false);
   const confirm = async () => {
     if (!current) return;
+    if (current.payload.commute && (bundleDirty || current.payload.commute.status !== "quoted")) {
+      setFieldError("请先确认通勤条件并取得真实路线。");
+      return;
+    }
+    if (directSchedule && current.version === 1 && !dirty && !syncToIos) {
+      setMessage("日程没有变化，已保留原日程与路线，无需提交。");
+      return;
+    }
     if (dirty) {
       setFieldError("请先保存当前修改并重新核对路线与冲突。");
       return;
@@ -588,11 +869,11 @@ export function MatterDraftSheet({
   };
 
   return (
-    <Sheet title={sheetTitle(mode)} open={open} onClose={requestClose}>
+    <Sheet title={sheetTitle(effectiveMode)} open={open} onClose={requestClose}>
       <div className="m-stack-12">
         <div className="draft-kind">
-          <span className="draft-kind__label">待确认 · {primarySummary(mode)}</span>
-          <span className="micro">确认前不会写入正式日程、待办或提醒</span>
+          <span className="draft-kind__label">待确认 · {primarySummary(effectiveMode)}</span>
+          <span className="micro">确认前不会写入正式日程、待办、提醒或归档状态</span>
         </div>
         {loading ? <p className="caption">正在读取服务器最新草稿…</p> : null}
         {loadError ? <p className="danger-text">{loadError}</p> : null}
@@ -604,6 +885,8 @@ export function MatterDraftSheet({
               </div>
             ) : null}
 
+            <DraftImpactSummary draft={current} matter={baseMatter} />
+
             {needsChoice ? (
               <div className="notice notice--amber">
                 <strong>请选择这条整理要接续哪件事项</strong>
@@ -612,6 +895,18 @@ export function MatterDraftSheet({
                 </p>
                 {candidates.map((candidate) => {
                   const value = String(candidate.matter_id ?? "");
+                  const detail = candidateDetails[value];
+                  const candidateSchedules = detail?.schedules
+                    .filter((schedule) => !schedule.deleted_at)
+                    .sort(
+                      (left, right) =>
+                        new Date(left.starts_at).getTime() -
+                        new Date(right.starts_at).getTime(),
+                    );
+                  const relevantSchedule =
+                    candidateSchedules?.find(
+                      (schedule) => new Date(schedule.starts_at).getTime() >= Date.now(),
+                    ) ?? candidateSchedules?.[0];
                   return (
                     <button
                       key={value}
@@ -627,6 +922,18 @@ export function MatterDraftSheet({
                         <span className="choice-card__title">
                           {String(candidate.title ?? "未命名事项")}
                         </span>
+                        <span className="choice-card__detail">
+                          {relevantSchedule
+                            ? `相关安排：${relevantSchedule.title} · ${dateTimeLabel(
+                                relevantSchedule.starts_at,
+                              )}${relevantSchedule.location ? ` · ${relevantSchedule.location}` : ""}`
+                            : unavailableCandidateIds.has(value)
+                              ? "暂时无法读取这条候选的安排；选择时服务器会再次校验。"
+                              : "服务器未返回相关日程。"}
+                        </span>
+                        <span className="choice-card__detail">
+                          选择只用于接续事项，不等于确认保存修改。
+                        </span>
                       </span>
                     </button>
                   );
@@ -634,6 +941,7 @@ export function MatterDraftSheet({
               </div>
             ) : null}
 
+            {current.payload.commute ? <CommuteBundlePanel draft={current} onDirty={() => setBundleDirty(true)} onChanged={(next) => { hydrate(next); setBundleDirty(false); }} /> : null}
             {matterFieldsVisible ? (
               <div className="card card--tight">
                 <p className="micro" style={{ margin: "0 0 10px" }}>
@@ -674,6 +982,62 @@ export function MatterDraftSheet({
                     }}
                   />
                 </label>
+              </div>
+            ) : isArchiveDraft ? (
+              <div className="m-stack-10">
+                <div className="notice">
+                  此确认只执行服务器列出的归档、提醒和未来日程取消，不改写日程时间或地点。
+                </div>
+                {archiveSchedules.length > 0 ? (
+                  <div className="card card--tight">
+                    <p className="micro" style={{ margin: 0 }}>
+                      未来日程
+                    </p>
+                    <p className="caption" style={{ margin: "4px 0 8px" }}>
+                      勾选后确认时会一并取消；过去安排不在此列，手机导入的只读日程不能由网页取消。
+                    </p>
+                    <div className="m-stack-10">
+                      {archiveSchedules.map((item) => (
+                        <label key={item.schedule_id} className="flex items-start gap-8">
+                          <input
+                            type="checkbox"
+                            checked={cancelScheduleIds.includes(item.schedule_id)}
+                            disabled={
+                              !item.cancellable ||
+                              isTerminal ||
+                              busy ||
+                              actionBusy !== null
+                            }
+                            onChange={(event) =>
+                              void toggleCancelSchedule(item.schedule_id, event.target.checked)
+                            }
+                            style={{ marginTop: 3 }}
+                          />
+                          <span className="grow">
+                            <span style={{ display: "block" }}>
+                              {item.title} · {dateTimeLabel(item.starts_at)}
+                            </span>
+                            {item.location ? (
+                              <span className="micro" style={{ display: "block" }}>
+                                {item.location}
+                              </span>
+                            ) : null}
+                            {!item.cancellable ? (
+                              <span className="micro" style={{ display: "block" }}>
+                                {item.reason || "只读日程不能由网页取消。"}
+                              </span>
+                            ) : null}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {actionBusy === "cancel-schedules" ? (
+                      <p className="micro" style={{ margin: "8px 0 0" }}>
+                        正在把选择保存到服务器…
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="notice">
@@ -750,8 +1114,12 @@ export function MatterDraftSheet({
                         onChange={(event) => {
                           markManualEdit();
                           setLocation(event.target.value);
+                          placeSearchRequestId.current += 1;
                           setPlaceCandidates([]);
                           setSelectedPlaceToken(null);
+                          setPlaceMapOpen(false);
+                          setPlaceSearching(false);
+                          clearPlaceMapSelection();
                         }}
                         placeholder="可留空"
                       />
@@ -770,7 +1138,16 @@ export function MatterDraftSheet({
                           <input
                             className="input"
                             value={placeQuery}
-                            onChange={(event) => setPlaceQuery(event.target.value)}
+                            onChange={(event) => {
+                              setPlaceQuery(event.target.value);
+                              placeSearchRequestId.current += 1;
+                              setPlaceCandidates([]);
+                              setSelectedPlaceToken(null);
+                              setPlaceError(null);
+                              setPlaceMapOpen(false);
+                              setPlaceSearching(false);
+                              clearPlaceMapSelection();
+                            }}
                             placeholder="例如：静安寺"
                           />
                         </label>
@@ -779,7 +1156,16 @@ export function MatterDraftSheet({
                           <input
                             className="input"
                             value={placeCity}
-                            onChange={(event) => setPlaceCity(event.target.value)}
+                            onChange={(event) => {
+                              setPlaceCity(event.target.value);
+                              placeSearchRequestId.current += 1;
+                              setPlaceCandidates([]);
+                              setSelectedPlaceToken(null);
+                              setPlaceError(null);
+                              setPlaceMapOpen(false);
+                              setPlaceSearching(false);
+                              clearPlaceMapSelection();
+                            }}
                             placeholder="例如：上海"
                           />
                         </label>
@@ -793,8 +1179,12 @@ export function MatterDraftSheet({
                             aria-pressed={placeSearchType === type}
                             onClick={() => {
                               setPlaceSearchType(type);
+                              placeSearchRequestId.current += 1;
                               setPlaceCandidates([]);
                               setSelectedPlaceToken(null);
+                              setPlaceMapOpen(false);
+                              setPlaceSearching(false);
+                              clearPlaceMapSelection();
                             }}
                           >
                             {type === "place" ? "地点" : "地址"}
@@ -818,7 +1208,16 @@ export function MatterDraftSheet({
                               role="radio"
                               aria-checked={selectedPlaceToken === candidate.selection_token}
                               className={`choice-card${selectedPlaceToken === candidate.selection_token ? " choice-card--selected" : ""}`}
-                              onClick={() => setSelectedPlaceToken(candidate.selection_token)}
+                              onClick={() => {
+                                setSelectedPlaceToken(candidate.selection_token);
+                                setPickedMapLocation(null);
+                                setPlacePickNotice(null);
+                                setPlacePickCenter([
+                                  candidate.longitude,
+                                  candidate.latitude,
+                                ]);
+                                setPlaceMapMode("candidates");
+                              }}
                             >
                               <span className="choice-card__dot">
                                 {selectedPlaceToken === candidate.selection_token ? <Check size={12} /> : null}
@@ -839,6 +1238,153 @@ export function MatterDraftSheet({
                           ))}
                         </div>
                       ) : null}
+                      <div className="place-map-trigger">
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--small"
+                          onClick={openPlaceMap}
+                          disabled={
+                            mappablePlaceCandidates.length === 0 &&
+                            !currentPlaceCoordinates
+                          }
+                          aria-expanded={placeMapOpen}
+                        >
+                          <Map size={14} />
+                          {placeMapOpen
+                            ? "关闭地图"
+                            : placeCandidates.length > 0
+                              ? "在地图上查看候选"
+                              : "在地图上查看"}
+                        </button>
+                        {placeCandidates.length > 0 &&
+                        mappablePlaceCandidates.length === 0 ? (
+                          <span className="micro">
+                            候选坐标不是高德 GCJ-02，不能直接标在高德地图上。
+                          </span>
+                        ) : placeCandidates.length === 0 &&
+                          !currentPlaceCoordinates ? (
+                          <span className="micro">
+                            先查找候选并取得 GCJ-02 坐标，才能在地图上标记。
+                          </span>
+                        ) : null}
+                      </div>
+                      {placeMapOpen ? (
+                        <>
+                          <div
+                            className="place-map-mode"
+                            role="group"
+                            aria-label="地图操作方式"
+                          >
+                            <button
+                              type="button"
+                              className="chip chip--sm"
+                              aria-pressed={placeMapMode === "candidates"}
+                              onClick={() => {
+                                setPlaceMapMode("candidates");
+                                setPickedMapLocation(null);
+                                setPlacePickNotice(null);
+                                setSelectedPlaceToken(null);
+                              }}
+                            >
+                              查看候选
+                            </button>
+                            <button
+                              type="button"
+                              className="chip chip--sm"
+                              aria-pressed={placeMapMode === "pick"}
+                              onClick={startPlaceMapPick}
+                            >
+                              拖动选点
+                            </button>
+                          </div>
+                          <AmapMapCanvas
+                            points={placeMapPoints}
+                            purpose="candidate"
+                            pickMode={placeMapMode === "pick"}
+                            focusCenter={placePickCenter}
+                            onStatusChange={setPlaceMapStatus}
+                            onCenterChange={(latitude, longitude) => {
+                              setPlacePickCenter([longitude, latitude]);
+                              placePickRequestId.current += 1;
+                              setPlacePicking(false);
+                              setPickedMapLocation(null);
+                              setPlacePickNotice(null);
+                              if (placeMapMode === "pick") {
+                                setSelectedPlaceToken(null);
+                              }
+                            }}
+                            onPointSelect={(point) => {
+                              if (point.kind !== "candidate") return;
+                              const candidate = placeCandidates.find(
+                                (item) =>
+                                  item.provider_place_id === point.id,
+                              );
+                              if (candidate) {
+                                setSelectedPlaceToken(
+                                  candidate.selection_token,
+                                );
+                                setPickedMapLocation(null);
+                                setPlacePickNotice(null);
+                                setPlaceMapMode("candidates");
+                              }
+                            }}
+                          />
+                          <p className="micro place-map-dependency">
+                            {placeMapMode === "pick"
+                              ? "移动地图，中心图钉固定在地图中央。拖动过程只更新临时坐标；点击“使用这个位置”后才向服务器请求一次地址解析。"
+                              : "编号标记对应搜索结果，绿点是当前已确认地点。选出候选后仍需点击下方按钮才会写入服务器草稿。"}
+                          </p>
+                          {placeMapMode === "pick" ? (
+                            <button
+                              type="button"
+                              className="btn btn--secondary btn--small mt-8"
+                              onClick={() => void usePickedMapLocation()}
+                              disabled={
+                                placePicking ||
+                                !placePickCenter ||
+                                actionBusy !== null ||
+                                placeMapStatus !== "ready"
+                              }
+                            >
+                              {placePicking
+                                ? "正在解析这个位置…"
+                                : "使用这个位置"}
+                            </button>
+                          ) : null}
+                          {pickedMapLocation ? (
+                            <div className="place-map-pick-result mt-8">
+                              <p className="card-title" style={{ fontSize: 14 }}>
+                                {pickedMapLocation.name}
+                              </p>
+                              <p className="caption" style={{ margin: "3px 0 0" }}>
+                                {[
+                                  pickedMapLocation.city,
+                                  pickedMapLocation.address,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </p>
+                              <p className="micro" style={{ margin: "5px 0 0" }}>
+                                坐标 {pickedMapLocation.latitude.toFixed(5)},{" "}
+                                {pickedMapLocation.longitude.toFixed(5)} ·
+                                高德 GCJ-02
+                              </p>
+                            </div>
+                          ) : null}
+                          {placePickNotice ? (
+                            <p
+                              className={
+                                pickedMapLocation
+                                  ? "micro"
+                                  : "danger-text"
+                              }
+                              style={{ margin: "6px 0 0" }}
+                            >
+                              {placePickNotice}
+                            </p>
+                          ) : null}
+                        </>
+                      ) : null}
                       {selectedPlaceToken ? (
                         <button
                           type="button"
@@ -846,7 +1392,11 @@ export function MatterDraftSheet({
                           onClick={() => void selectPlaceCandidate()}
                           disabled={actionBusy !== null || busy}
                         >
-                          {actionBusy === "place" ? "正在保存地点…" : "使用这个地点并重新计算路线"}
+                          {actionBusy === "place"
+                            ? "正在保存地点…"
+                            : pickedMapLocation
+                              ? "确认地图位置并重新计算路线"
+                              : "使用这个地点并重新计算路线"}
                         </button>
                       ) : null}
                       {placeError ? (
@@ -1095,16 +1645,18 @@ export function MatterDraftSheet({
               </div>
             ) : null}
 
-            <label className="flex items-center gap-8">
-              <input
-                type="checkbox"
-                checked={syncToIos}
-                onChange={(event) => setSyncToIos(event.target.checked)}
-              />
-              <span className="caption" style={{ margin: 0 }}>
-                同时加入 iOS 待同步（不等于已写入苹果日历或提醒）
-              </span>
-            </label>
+            {!isArchiveDraft ? (
+              <label className="flex items-center gap-8">
+                <input
+                  type="checkbox"
+                  checked={syncToIos}
+                  onChange={(event) => setSyncToIos(event.target.checked)}
+                />
+                <span className="caption" style={{ margin: 0 }}>
+                  同时加入 iOS 待同步（不等于已写入苹果日历或提醒）
+                </span>
+              </label>
+            ) : null}
 
             {fieldError ? <p className="danger-text" style={{ margin: 0 }}>{fieldError}</p> : null}
             {message ? <p className="caption" style={{ margin: 0 }}>{message}</p> : null}
@@ -1138,7 +1690,13 @@ export function MatterDraftSheet({
                 (hasConflictOptions && !selectedOption)
               }
             >
-              {busy ? "正在确认…" : outcome === "unknown" ? "重试同一次确认" : "确认更新"}
+              {busy
+                ? "正在确认…"
+                : outcome === "unknown"
+                  ? "重试同一次确认"
+                  : isArchiveDraft
+                    ? "确认归档并停止后续提醒"
+                    : "确认更新"}
             </button>
             <button
               type="button"

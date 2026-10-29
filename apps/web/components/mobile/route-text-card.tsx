@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Clock3, Copy, Map, MapPin } from "lucide-react";
+import { Clock3, Copy, ExternalLink, Map, MapPin } from "lucide-react";
 
 import { formatDateTime, formatDuration } from "@/lib/mobile/format";
 
@@ -16,7 +16,7 @@ export interface RouteMapTarget {
   city?: string | null;
 }
 
-/** Text-only route evidence. Missing server fields remain explicitly unknown. */
+/** Text-first route evidence with an optional on-demand map action. */
 export function RouteTextCard({
   originLabel,
   destinationLabel,
@@ -29,6 +29,7 @@ export function RouteTextCard({
   transferCount,
   transfersSummary,
   fareCny,
+  fareKind,
   fareNotice,
   instruction,
   state,
@@ -38,6 +39,9 @@ export function RouteTextCard({
   timingBasis,
   accuracyNotice,
   onPlanRoute,
+  onViewRoute,
+  replanHref,
+  arrivalLabel = "到达",
   embedded = false,
 }: {
   originLabel?: string | null;
@@ -51,6 +55,7 @@ export function RouteTextCard({
   transferCount?: number | null;
   transfersSummary?: string | null;
   fareCny?: number | null;
+  fareKind?: string | null;
   fareNotice?: string | null;
   instruction?: string | null;
   state: RouteState;
@@ -60,6 +65,9 @@ export function RouteTextCard({
   timingBasis?: string | null;
   accuracyNotice?: string | null;
   onPlanRoute?: () => void;
+  onViewRoute?: () => void;
+  replanHref?: string;
+  arrivalLabel?: string;
   embedded?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
@@ -81,6 +89,18 @@ export function RouteTextCard({
         : state === "unverified"
           ? "路程未核实"
           : "路线不可用";
+  const fareLabel =
+    mode === "transit" || fareKind === "amap_transit_fare"
+      ? "公交票价"
+      : fareKind === "amap_taxi_cost_estimate"
+        ? "打车费用估计"
+        : "费用估计";
+  const timingNotice =
+    timingBasis === "planned_time_not_live_forecast"
+      ? "按计划时间估算，不等同于实时路况预测。"
+      : timingBasis === "provider_departure_time"
+        ? "按当前条件估算，实际到达时间会随路况变化。"
+        : null;
   const address = [mapTarget?.city, mapTarget?.address, mapTarget?.label]
     .filter(Boolean)
     .join(" ");
@@ -136,10 +156,16 @@ export function RouteTextCard({
 
       <div className="route-text-card__facts">
         <span><Clock3 size={13} /> {modeLabel}</span>
-        <span>{departureAt ? `出发 ${formatDateTime(departureAt)}` : "出发时间未提供"}</span>
-        <span>{arrivalAt ? `到达 ${formatDateTime(arrivalAt)}` : "到达时间未提供"}</span>
+        {departureAt ? <span>出发 {formatDateTime(departureAt)}</span> : null}
+        <span>
+          {arrivalAt
+            ? `${arrivalLabel} ${formatDateTime(arrivalAt)}`
+            : `${arrivalLabel}时间未提供`}
+        </span>
         <span>{durationSeconds !== null && durationSeconds !== undefined ? formatDuration(durationSeconds) : "预计耗时未返回"}</span>
-        {distanceMeters !== null && distanceMeters !== undefined ? (
+        {mode !== "transit" &&
+        distanceMeters !== null &&
+        distanceMeters !== undefined ? (
           <span>{distanceMeters >= 1000 ? `约 ${(distanceMeters / 1000).toFixed(1)} 公里` : `约 ${distanceMeters} 米`}</span>
         ) : null}
         {walkingDistanceMeters !== null && walkingDistanceMeters !== undefined ? (
@@ -148,24 +174,46 @@ export function RouteTextCard({
         {transferCount !== null && transferCount !== undefined ? (
           <span>{transferCount === 0 ? "无需换乘" : `换乘 ${transferCount} 次`}</span>
         ) : null}
-        {fareCny !== null && fareCny !== undefined ? (
-          <span>费用估计 ¥{fareCny.toFixed(2)}</span>
-        ) : null}
       </div>
 
-      {instruction || transfersSummary || fareNotice || timingBasis || accuracyNotice ? (
+      {instruction ||
+      transfersSummary ||
+      (distanceMeters !== null && distanceMeters !== undefined) ||
+      (walkingDistanceMeters !== null && walkingDistanceMeters !== undefined) ||
+      (fareCny !== null && fareCny !== undefined) ||
+      fareNotice ||
+      timingNotice ||
+      accuracyNotice ||
+      (state === "verified" && notice) ? (
         <details className="route-text-card__details">
-          <summary>查看换乘与判断说明</summary>
+          <summary>查看费用与判断说明</summary>
           {instruction ? <p>{instruction}</p> : null}
           {transfersSummary ? <p>换乘：{transfersSummary}</p> : null}
-          {fareNotice ? <p>{fareNotice}</p> : null}
-          {timingBasis === "planned_time_not_live_forecast" ? (
-            <p>这是按计划时间估算，不等同于实时路况预测。</p>
+          {mode === "transit" &&
+          distanceMeters !== null &&
+          distanceMeters !== undefined ? (
+            <p>
+              路线距离约{" "}
+              {distanceMeters >= 1000
+                ? `${(distanceMeters / 1000).toFixed(1)} 公里`
+                : `${distanceMeters} 米`}
+            </p>
           ) : null}
+          {fareCny !== null && fareCny !== undefined ? (
+            <p>{fareLabel} ¥{fareCny.toFixed(2)}</p>
+          ) : null}
+          {fareNotice ? <p>{fareNotice}</p> : null}
+          {timingNotice ? <p>{timingNotice}</p> : null}
           {accuracyNotice ? <p>{accuracyNotice}</p> : null}
+          {state === "verified" ? (
+            <p>路线为服务器测算结果，不代表实际到达时间。</p>
+          ) : null}
+          {state === "verified" && notice ? <p>{notice}</p> : null}
         </details>
       ) : null}
-      {notice ? <p className="route-text-card__notice">{notice}</p> : null}
+      {state !== "verified" && notice ? (
+        <p className="route-text-card__notice">{notice}</p>
+      ) : null}
       {(!originLabel || originLabel === "出发地未提供") &&
       (state === "unverified" || state === "unavailable") ? (
         <p className="route-text-card__notice">
@@ -177,8 +225,19 @@ export function RouteTextCard({
       <div className="route-text-card__actions">
         {onPlanRoute ? (
           <button type="button" className="link-button" onClick={onPlanRoute}>
-            <Clock3 size={13} /> 补充起点并测算路线
+            <Clock3 size={13} />{" "}
+            {state === "verified" ? "重新测算路线" : "补充起点并测算路线"}
           </button>
+        ) : null}
+        {onViewRoute ? (
+          <button type="button" className="link-button" onClick={onViewRoute}>
+            <Map size={13} /> 查看路线
+          </button>
+        ) : null}
+        {replanHref && (state === "unverified" || state === "unavailable") ? (
+          <a className="link-button" href={replanHref}>
+            <Clock3 size={13} /> 打开事项重新测算
+          </a>
         ) : null}
         {mapUrl ? (
           <a
@@ -187,7 +246,7 @@ export function RouteTextCard({
             target="_blank"
             rel="noreferrer"
           >
-            <Map size={13} /> 在地图中打开
+            <ExternalLink size={13} /> 在外部地图打开
           </a>
         ) : null}
         {address || mapTarget?.label ? (

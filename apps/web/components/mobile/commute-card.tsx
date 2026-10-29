@@ -153,7 +153,7 @@ export function TodayCommuteCard() {
               还没有通勤计划
             </p>
             <p className="caption mt-4" style={{ marginBottom: 0 }}>
-              可以在浏览器里手动填写起终点坐标与时间；地图选点和路线快照仍需要原生能力。
+              可在“问助手”发起通勤安排，确认地点后比较真实驾车与公交路线，也可手动填写计划。
             </p>
             <Link href="/me/commute" className="link-button mt-6">
               新建通勤计划 <ArrowUpRight size={13} />
@@ -170,7 +170,7 @@ export function TodayCommuteCard() {
             <div className="mt-4" style={{ display: "grid", gap: 3 }}>
               <span className="caption" style={{ margin: 0 }}>
                 {weekdayText(plan.weekdays)} · {plan.arrival_local_time} 到达 ·{" "}
-                {plan.transport_mode === "driving" ? "驾车" : "步行"} · 检查{" "}
+                {plan.transport_mode === "driving" ? "驾车" : plan.transport_mode === "transit" ? "公交" : "步行"} · 检查{" "}
                 {plan.check_local_time}
               </span>
               <span className="micro flex items-center gap-6" style={{ margin: 0 }}>

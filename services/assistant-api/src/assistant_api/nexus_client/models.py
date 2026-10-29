@@ -106,6 +106,10 @@ class MemoryHit(UpstreamModel):
     content: str
     source_reference: str | None = None
     score: float | None = None
+    status: str | None = None
+    version: int | None = None
+    sensitive: bool = False
+    app_data: dict | None = None
 
 
 class MemoryQueryResponse(UpstreamModel):

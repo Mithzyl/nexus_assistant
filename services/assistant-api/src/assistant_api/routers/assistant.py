@@ -39,6 +39,15 @@ TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "unknown"}
 RunStatus = Literal["pending", "running", "succeeded", "failed", "cancelled", "unknown"]
 
 
+class MemoryDisclosure(BaseModel):
+    """Explicit permission for one memory entry in this new conversation only."""
+
+    model_config = ConfigDict(extra="forbid")
+    entry_id: str = Field(min_length=36, max_length=36)
+    expected_version: int = Field(ge=1)
+    confirmed_sensitive: Literal[True]
+
+
 class AskRequest(BaseModel):
     """Submit one natural-language request; the owner comes from the session."""
 
@@ -46,6 +55,7 @@ class AskRequest(BaseModel):
 
     text: str = Field(min_length=1, max_length=4_000)
     idempotency_key: str = Field(min_length=8, max_length=128)
+    memory_disclosures: list[MemoryDisclosure] = Field(default_factory=list, max_length=10)
 
 
 class AskResponse(BaseModel):
@@ -88,6 +98,8 @@ class MemorySearchRequest(BaseModel):
     memory_types: list[str] = Field(default_factory=list, max_length=5)
     limit: int = Field(default=10, ge=1, le=50)
     idempotency_key: str = Field(min_length=8, max_length=128)
+    offset: int = Field(default=0, ge=0, le=10000)
+    local_run_id: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 # A local record may only be classified as "chat" when the server can prove it
@@ -133,6 +145,7 @@ async def create_ask(
         user=user,
         request_text=payload.text,
         idempotency_key=payload.idempotency_key,
+        memory_disclosures=[item.model_dump() for item in payload.memory_disclosures],
     )
     return AskResponse(
         local_run_id=row.local_run_id,
@@ -323,17 +336,20 @@ async def stream_ask_events(
 
 @router.post("/memory/search")
 async def memory_search(
-    payload: MemorySearchRequest, client: NexusClient, user: CurrentUser
+    payload: MemorySearchRequest, client: NexusClient, user: CurrentUser, db: DatabaseSession
 ):
     """Return bounded memory hits for the caller, or an upstream error."""
 
     result = await search_memory(
         client,
+        db=db,
         external_user_id=user.user_id,
         query_text=payload.query_text,
         idempotency_key=payload.idempotency_key,
         memory_types=payload.memory_types,
         limit=payload.limit,
+        offset=payload.offset,
+        local_run_id=payload.local_run_id,
     )
     return result.model_dump(mode="json")
 

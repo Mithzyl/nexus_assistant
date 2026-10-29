@@ -31,6 +31,9 @@ from assistant_api.models import (
 def plan_read(plan: CommutePlan) -> CommutePlanRead:
     return CommutePlanRead(
         id=plan.plan_id,
+        effective_from=plan.effective_from,
+        matter_id=plan.matter_id,
+        first_schedule_id=plan.first_schedule_id,
         revision=plan.revision,
         created_at=plan.created_at,
         updated_at=plan.updated_at,

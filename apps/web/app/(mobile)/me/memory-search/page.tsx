@@ -19,7 +19,7 @@ export default function MemorySearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<MemoryResults | null>(null);
 
-  const search = async () => {
+  const search = async (offset = 0) => {
     const trimmed = query.trim();
     if (!trimmed) {
       setError("先写一句要检索的内容。");
@@ -36,6 +36,7 @@ export default function MemorySearchPage() {
           memory_types: [],
           limit: 10,
           idempotency_key: uuid(),
+          offset,
         },
       });
       setResults(data);
@@ -59,7 +60,7 @@ export default function MemorySearchPage() {
   return (
     <PageShell
       title="记忆检索"
-      subtitle="遗留只读代理；结果可能不可用，且不能用来证明“从来没有记录”。"
+      subtitle="检索当前账号的 Nexus 个人记忆，区分待确认内容与已生效记忆。"
     >
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录后才能检索" body="检索使用当前 PA 账号，不会跨账号查询。">
@@ -109,6 +110,7 @@ export default function MemorySearchPage() {
                   <div className="card" key={hit.memory_id}>
                     <div className="flex items-center gap-8" style={{ flexWrap: "wrap" }}>
                       <Pill tone="fog">{hit.memory_type || "记忆"}</Pill>
+                      <Pill tone="fog">{hit.status === "active" ? "已生效" : hit.status === "candidate" ? "待确认" : hit.status || "状态未知"}</Pill>
                       {typeof hit.score === "number" ? (
                         <span className="micro">相关度 {hit.score.toFixed(2)}</span>
                       ) : null}
@@ -121,15 +123,19 @@ export default function MemorySearchPage() {
                         来源：{hit.source_reference}
                       </p>
                     ) : null}
+                    {hit.app_data ? (
+                      <details className="mt-8"><summary>查看保存的数据</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(hit.app_data.fields, null, 2)}</pre></details>
+                    ) : null}
                   </div>
                 ))}
               </div>
             )
           ) : null}
 
-          <Notice tone="amber" title="这是遗留代理">
-            当前 App Run 契约不包含记忆接口；这个端点把请求转发给上游记忆服务，只有上游可用时才有结果。
-            这里不提供新增、编辑、停用或自动学习。
+          {results?.next_cursor ? <PrimaryButton onClick={() => void search(Number(results.next_cursor))} disabled={busy}>继续检索下一页</PrimaryButton> : null}
+          <Notice tone="amber" title="记忆状态">
+            此页按关键词匹配记忆正文，每次读取一页。待确认内容不等于已生效偏好；接口不可用时会明确显示错误。
+            日程、历史对话和长期记忆分别保存，未确认的出行方式不会自动成为偏好。
           </Notice>
           <Link href="/me/memories" className="link-button mt-6">
             查看本地演示经验

@@ -287,12 +287,20 @@ class DraftRead(BaseModel):
     updated_at: UtcDateTime
 
 
+class MemoryDisclosure(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entry_id: str = Field(min_length=36, max_length=36)
+    expected_version: int = Field(ge=1)
+    confirmed_sensitive: Literal[True]
+
+
 class IntakeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str = Field(min_length=1, max_length=4000)
     idempotency_key: str = Field(min_length=8, max_length=128)
     continuation_run_id: str | None = Field(default=None, min_length=8, max_length=36)
+    memory_disclosures: list[MemoryDisclosure] = Field(default_factory=list, max_length=10)
 
 
 class IntakeResponse(BaseModel):

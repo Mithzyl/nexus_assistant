@@ -50,6 +50,7 @@ def parse_if_match(header: str | None) -> int:
 def _values(payload: CommutePlanInput) -> dict:
     return {
         "name": payload.name,
+        "effective_from": payload.effective_from,
         "enabled": payload.enabled,
         "timezone": payload.timezone,
         "weekdays_json": payload.weekdays,
@@ -111,6 +112,8 @@ async def update_plan(
     expected = parse_if_match(if_match)
     now = datetime.now(UTC)
     values = _values(payload)
+    if "effective_from" not in payload.model_fields_set:
+        values.pop("effective_from", None)
     values.update({"revision": expected + 1, "updated_at": now})
     result = await db.execute(
         update(CommutePlan)

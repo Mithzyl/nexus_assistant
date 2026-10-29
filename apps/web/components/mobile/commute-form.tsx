@@ -209,6 +209,7 @@ export function CommuteForm({
             }
           >
             <option value="driving">驾车</option>
+            <option value="transit">公交</option>
             <option value="walking">步行</option>
           </select>
         </label>

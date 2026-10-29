@@ -1566,6 +1566,7 @@ async def intake(
     idempotency_key: str,
     matter_id: str | None = None,
     continuation_run_id: str | None = None,
+    memory_disclosures: list[dict] | None = None,
 ) -> dict:
     pinned = await _get_matter(db, user, matter_id) if matter_id else None
     if pinned is not None and pinned.status in ("archived", "deleted"):
@@ -1595,6 +1596,8 @@ async def intake(
             raise ConflictError(
                 "idempotency_key_reused", "该幂等键已用于另一句话或另一事项。"
             )
+        if stored.get("memory_disclosures", []) != (memory_disclosures or []):
+            raise ConflictError("idempotency_conflict", "不能更改同一请求的记忆授权。")
         context = stored
         continuation = stored.get("continuation_context")
         run = existing_run
@@ -1610,6 +1613,7 @@ async def intake(
         context, _ = await _extraction_context(
             db, user, text=text, timezone=timezone, pinned=pinned
         )
+        context["memory_disclosures"] = memory_disclosures or []
         if continuation is not None:
             context["parent_run_id"] = continuation["parent_run_id"]
             context["continuation_context"] = _model_continuation_context(
@@ -1704,6 +1708,13 @@ async def intake(
         raise InvalidRequestError(
             "matter_extraction_invalid", f"整理结果未通过校验：{exc.reason}"
         ) from None
+
+    if parsed.get("commute"):
+        from assistant_api.services import commute_bundle
+        draft = await commute_bundle.create_draft(db, runtime, settings, user, run, parsed, text)
+        _store_intake_resolution(run, outcome="draft", draft_id=draft.draft_id)
+        await db.commit()
+        return await get_intake_result(db, user, run.local_run_id)
 
     if parsed.get("requires_clarification"):
         _store_intake_resolution(
@@ -2757,6 +2768,11 @@ async def confirm_draft(
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
     now = datetime.now(UTC)
 
+    from assistant_api.services import commute_bundle
+    commute_bundle.validate_quote(payload)
+    if payload.get("commute") and not body.create_schedule:
+        raise InvalidRequestError("commute_schedule_required", "组合通勤必须同时保存首日日程。")
+
     claim = await db.execute(
         update(MatterDraft)
         .where(
@@ -3073,12 +3089,13 @@ async def confirm_draft(
                 if result.rowcount == 0:
                     raise ConflictError("schedule_changed", "关联日程已变化，请重新整理。")
                 await db.refresh(schedule_row)
-            await db.execute(
-                delete(ScheduleRouteResult).where(
-                    ScheduleRouteResult.user_id == user.user_id,
-                    ScheduleRouteResult.schedule_id == schedule_row.schedule_id,
-                )
-            )
+            # Keep the measurement. validation_for_schedule compares route-relevant
+            # fields against the saved fingerprint and reports unverified only
+            # when those fields change; title/notes/no-op edits remain verified.
+
+        commute_plan_id = None
+        if payload.get("commute"):
+            commute_plan_id = await commute_bundle.attach_records(db, user, draft, matter, schedule_row)
 
         cancelled_schedule_after: list[dict] = []
         for schedule in schedule_cancellations.values():
@@ -3280,6 +3297,7 @@ async def confirm_draft(
         await db.flush()
         draft.confirm_key = idempotency_key
         draft.result_json = {
+            "commute_plan_id": commute_plan_id,
             "matter_id": matter.matter_id,
             "schedule_id": schedule_row.schedule_id
             if (body.create_schedule and schedule_row)
@@ -3500,12 +3518,8 @@ async def revert_change(
         )
         if result.rowcount == 0:
             raise ConflictError("schedule_changed", "关联日程已被修改，不能覆盖撤回。")
-        await db.execute(
-            delete(ScheduleRouteResult).where(
-                ScheduleRouteResult.user_id == user.user_id,
-                ScheduleRouteResult.schedule_id == current.schedule_id,
-            )
-        )
+        # The saved route fingerprint determines whether the restored fields
+        # still match. A title-only undo must not discard a valid measurement.
 
     after_schedule = after.get("schedule")
     before_schedule = before.get("schedule")

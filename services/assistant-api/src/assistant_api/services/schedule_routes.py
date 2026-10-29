@@ -55,6 +55,7 @@ async def save_for_schedule(
     *,
     schedule_id: str,
     result: dict,
+    commit: bool = True,
 ) -> dict:
     """Persist one successful result for the schedule's current fingerprint."""
 
@@ -84,9 +85,12 @@ async def save_for_schedule(
         )
         db.add(row)
     row.schedule_fingerprint = fingerprint
-    row.result_json = _jsonable(result)
+    row.result_json = {**_jsonable(result), "_destination_address": schedule.location_address}
     row.calculated_at = datetime.now(UTC)
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return row.result_json
 
 
@@ -119,6 +123,8 @@ async def validation_for_schedule(
     if row.schedule_fingerprint != schedule_fingerprint(schedule):
         return None, "route_result_stale"
     result = dict(row.result_json or {})
+    if "_destination_address" in result and result["_destination_address"] != schedule.location_address:
+        return None, "route_result_stale"
     max_age = (
         PLANNED_RESULT_MAX_AGE
         if result.get("timing_basis") == "planned_time_not_live_forecast"

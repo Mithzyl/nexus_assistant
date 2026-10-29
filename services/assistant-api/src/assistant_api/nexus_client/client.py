@@ -214,6 +214,26 @@ class NexusPilotClient:
         )
         return MemoryQueryResponse.model_validate(body)
 
+    async def list_product_memory(self, external_user_id: str, run_id: str, *, offset: int = 0, limit: int = 20) -> dict:
+        """Read current App memory under a server-resolved Run."""
+        return await self._get(
+            f"{APPLICATION_PREFIX}/runs/{run_id}/user-memories?scope=personal&offset={offset}&limit={limit}",
+            external_user_id=external_user_id,
+        )
+
+    async def product_memory_settings(self, external_user_id: str, run_id: str) -> dict:
+        return await self._get(
+            f"{APPLICATION_PREFIX}/runs/{run_id}/memory-settings?scope=personal",
+            external_user_id=external_user_id,
+        )
+
+    async def mutate_product_memory(self, external_user_id: str, run_id: str, command: dict) -> dict:
+        return await self._post(
+            f"{APPLICATION_PREFIX}/runs/{run_id}/user-memories",
+            command,
+            external_user_id=external_user_id,
+        )
+
     async def stream_events(
         self, external_user_id: str, workflow_id: str, last_event_id: str | None = None
     ) -> AsyncIterator[SseEvent]:

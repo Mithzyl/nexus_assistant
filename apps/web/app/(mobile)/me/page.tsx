@@ -260,7 +260,7 @@ export default function MePage() {
             detail={
               demo.enabled
                 ? `${enabledMemories} 条生效 · ${demo.memories.length} 条保存（演示）`
-                : "服务器暂无记忆管理接口"
+                : "查看已保存记忆与待确认提取"
             }
           />
           <Row
@@ -272,8 +272,8 @@ export default function MePage() {
           <Row
             href="/me/memory-search"
             icon={<CircleHelp size={14} />}
-            title="记忆检索（遗留接口）"
-            detail="只读代理；可用性取决于上游服务"
+            title="记忆检索"
+            detail="按关键词读取 Nexus 账号记忆"
           />
         </div>
       </section>

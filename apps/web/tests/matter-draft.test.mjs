@@ -12,6 +12,7 @@ import {
   manualEditSelection,
   mergeIntakeHistory,
   optionConsequences,
+  selectedCancelScheduleIds,
   summarizeMatterChange,
   todayChangeSummary,
 } from "../lib/mobile/matter-draft.mjs";
@@ -115,7 +116,11 @@ test("record changed errors trigger reread and creation revert remains unsupport
   assert.equal(isRecordChangedError("todo_changed"), true);
   assert.equal(isRecordChangedError("schedule_changed"), true);
   assert.equal(isRecordChangedError("option_not_executable"), false);
-  assert.equal(changeReasonText("creation_revert_unsupported"), "暂不支持撤回新建事项。");
+  assert.match(changeReasonText("creation_revert_unsupported"), /删除操作/);
+  assert.match(
+    changeReasonText("incomplete_change_snapshot"),
+    /无法恢复修改前状态/,
+  );
 });
 
 test("affected history summary uses the source matter instead of raw payload", () => {
@@ -187,4 +192,23 @@ test("unified history keeps server rows and only non-duplicate local fallback", 
   assert.equal(merged.length, 2);
   assert.equal(merged[0].local_run_id, "run-1");
   assert.equal(merged[1].id, "old-2");
+});
+
+test("stop-following selection only starts from server-selected editable schedules", () => {
+  const ids = selectedCancelScheduleIds({
+    schedule_cancellations: [
+      { schedule_id: "schedule-1", selected: true, cancellable: true },
+      { schedule_id: "schedule-2", selected: false, cancellable: true },
+      { schedule_id: "schedule-3", selected: true, cancellable: false },
+    ],
+  });
+  assert.deepEqual(ids, ["schedule-1"]);
+  assert.deepEqual(selectedCancelScheduleIds(null), []);
+});
+
+test("stop-following conflicts trigger a reread instead of fake success", () => {
+  assert.equal(isRecordChangedError("schedule_started"), true);
+  assert.equal(isRecordChangedError("progress_added"), true);
+  assert.equal(isRecordChangedError("schedule_changed"), true);
+  assert.equal(isRecordChangedError("not_initial_create"), true);
 });

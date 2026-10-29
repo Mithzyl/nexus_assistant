@@ -54,6 +54,9 @@ class CommutePlan(TimestampMixin, Base):
     destination_latitude: Mapped[float] = mapped_column(Float)
     destination_longitude: Mapped[float] = mapped_column(Float)
 
+    effective_from: Mapped[date | None] = mapped_column(Date)
+    matter_id: Mapped[str | None] = mapped_column(ForeignKey("matters.matter_id"))
+    first_schedule_id: Mapped[str | None] = mapped_column(ForeignKey("schedules.schedule_id"))
     revision: Mapped[int] = mapped_column(Integer, default=1)
 
 

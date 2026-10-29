@@ -6,6 +6,7 @@ import {
   type DraftConfirmInput,
   type DraftConfirmResponse,
   type DraftPatchInput,
+  type InitialDeleteResponse,
   type MatterDetail,
   type MatterChange,
   type MatterDraft,
@@ -14,13 +15,16 @@ import {
   type MatterIntakeResponse,
   type MatterIntakeResult,
   type MatterListResponse,
+  type MatterReminder,
   type MatterSummary,
   type MatterTodo,
   type MatterUpdateInput,
   type MatterVersionInput,
+  type MapPickResponse,
   type RevertResponse,
   type PlaceSearchResponse,
   type RouteEstimate,
+  type ScheduledRoute,
   type TodayView,
 } from "./api";
 
@@ -83,6 +87,20 @@ export function reopenMatter(matterId: string, input: MatterVersionInput): Promi
 
 export function deleteMatter(matterId: string): Promise<unknown> {
   return apiRequest<unknown>(pa(`/matters/${id(matterId)}`), { method: "DELETE" });
+}
+
+/** Delete one untouched initial create; the server re-checks eligibility and rolls back on conflict. */
+export function initialDeleteMatter(matterId: string): Promise<InitialDeleteResponse> {
+  return apiRequest<InitialDeleteResponse>(pa(`/matters/${id(matterId)}/initial`), {
+    method: "DELETE",
+  });
+}
+
+/** Mark one due reminder as seen; repeated calls return the same acknowledged state. */
+export function acknowledgeReminder(reminderId: string): Promise<MatterReminder> {
+  return apiRequest<MatterReminder>(pa(`/reminders/${id(reminderId)}/acknowledge`), {
+    method: "POST",
+  });
 }
 
 export function completeMatterTodo(matterId: string, todoId: string): Promise<MatterTodo> {
@@ -165,12 +183,14 @@ export function intakeMatter(
   text: string,
   idempotencyKey: string,
   continuationRunId?: string | null,
+  memoryDisclosures: import("@/components/mobile/account-memory").SelectedMemory[] = [],
 ): Promise<MatterIntakeResponse> {
   return apiRequest<MatterIntakeResponse>(pa("/matters/intake"), {
     method: "POST",
     body: {
       text,
       idempotency_key: idempotencyKey,
+      memory_disclosures: memoryDisclosures,
       ...(continuationRunId ? { continuation_run_id: continuationRunId } : {}),
     },
   });
@@ -191,6 +211,7 @@ export function searchPlaces(
   query: string,
   city: string | null,
   searchType: "place" | "address" = "place",
+  draftId?: string | null,
 ): Promise<PlaceSearchResponse> {
   return apiRequest<PlaceSearchResponse>(pa("/commute/places/search"), {
     method: "POST",
@@ -199,6 +220,24 @@ export function searchPlaces(
       ...(city?.trim() ? { city: city.trim() } : {}),
       search_type: searchType,
       limit: 5,
+      ...(draftId ? { draft_id: draftId } : {}),
+    },
+  });
+}
+
+/** Reverse geocode one explicit map center for the current server draft. */
+export function pickMapLocation(
+  draftId: string,
+  latitude: number,
+  longitude: number,
+): Promise<MapPickResponse> {
+  return apiRequest<MapPickResponse>(pa("/commute/places/map-pick"), {
+    method: "POST",
+    body: {
+      draft_id: draftId,
+      latitude,
+      longitude,
+      coordinate_system: "gcj02",
     },
   });
 }
@@ -229,14 +268,30 @@ export function estimateRoute(input: {
   });
 }
 
+/** Read one persisted route shape without triggering a new route estimate. */
+export function getScheduleRoute(
+  scheduleId: string,
+  signal?: AbortSignal,
+): Promise<ScheduledRoute> {
+  return apiRequest<ScheduledRoute>(
+    pa(`/commute/routes/${id(scheduleId)}`),
+    { signal },
+  );
+}
+
 export function intakeMatterProgress(
   matterId: string,
   text: string,
   idempotencyKey: string,
+  continuationRunId?: string | null,
 ): Promise<MatterIntakeResponse> {
   return apiRequest<MatterIntakeResponse>(pa(`/matters/${id(matterId)}/intake`), {
     method: "POST",
-    body: { text, idempotency_key: idempotencyKey },
+    body: {
+      text,
+      idempotency_key: idempotencyKey,
+      ...(continuationRunId ? { continuation_run_id: continuationRunId } : {}),
+    },
   });
 }
 
@@ -256,8 +311,21 @@ export function confirmSummary(response: DraftConfirmResponse): string {
   const parts: string[] = [];
   if (response.schedule) parts.push(`日程「${response.schedule.title}」已更新`);
   if (response.reminders.length > 0) parts.push(`${response.reminders.length} 个提醒已保存`);
+  if (response.cancelled_reminder_ids.length > 0) {
+    parts.push(`${response.cancelled_reminder_ids.length} 个未触发提醒已取消`);
+  }
+  if (response.cancelled_schedule_ids.length > 0) {
+    parts.push(`${response.cancelled_schedule_ids.length} 项未来日程已取消`);
+  }
   if (response.conflict?.has_conflict) parts.push("仍有一处时间冲突需要留意");
   if (response.change) parts.push("变更已写入历史");
+  if (
+    (response.cancelled_reminder_ids.length > 0 ||
+      response.cancelled_schedule_ids.length > 0) &&
+    !response.notifications_retracted
+  ) {
+    parts.push("手机上已显示的通知需手动清除");
+  }
   return parts.length > 0 ? parts.join("；") : "事项已更新";
 }
 

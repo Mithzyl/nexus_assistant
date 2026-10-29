@@ -4,8 +4,9 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { Brain, Pencil, Trash2 } from "lucide-react";
 
+import { MemoryPicker, MemoryCandidates } from "@/components/mobile/account-memory";
 import { useDemo } from "@/components/mobile/providers";
-import { ConfirmDialog, EmptyState, PageShell, SwitchRow } from "@/components/mobile/ui";
+import { ConfirmDialog, PageShell, SwitchRow } from "@/components/mobile/ui";
 
 export default function MemoriesPage() {
   const demo = useDemo();
@@ -18,7 +19,7 @@ export default function MemoriesPage() {
   return (
     <PageShell
       title="个人记忆"
-      subtitle="演示模式下可以查看、修改和停用本地经验；服务器暂无记忆管理接口。"
+      subtitle="查看 Nexus 账号记忆；提取的候选内容需确认后保存。"
       action={
         <Link href="/me/lesson" className="page-bar__action">
           记一条
@@ -27,29 +28,9 @@ export default function MemoriesPage() {
     >
       {!demo.enabled ? (
         <>
-          <EmptyState
-            title="没有可管理的记忆接口"
-            body="当前 PA 后端没有新增、编辑、停用或自动学习记忆的接口，因此正常模式不展示示例经验，也不会假装已同步到 AI 平台。"
-          >
-            <div style={{ display: "grid", gap: 8 }}>
-              <Link href="/me/memory-search" className="btn btn--secondary">
-                只读检索（遗留接口）
-              </Link>
-              <button
-                type="button"
-                className="btn btn--quiet"
-                onClick={() => demo.setEnabled(true)}
-              >
-                显式开启演示模式查看本地经验
-              </button>
-            </div>
-          </EmptyState>
-          <div className="notice mt-16">
-            <strong>记忆和原文是两件事</strong>
-            <p style={{ margin: "4px 0 0" }}>
-              原文用于追溯事实，个人经验是你主动留下的判断。这里不能编辑设备原文，也不能把经验写回 AI 平台。
-            </p>
-          </div>
+          <MemoryCandidates />
+          <MemoryPicker selected={[]} onChange={() => {}} viewOnly />
+          <Link href="/ask">前往问助手，为本次对话选择授权记忆</Link>
         </>
       ) : (
         <>

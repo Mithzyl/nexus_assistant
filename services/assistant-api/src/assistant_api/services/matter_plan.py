@@ -40,6 +40,7 @@ PROMPT = """你是个人事项整理助手。请把用户这句话整理成一�
 - complete_todo_ids: 本次明确办妥的待办 id（只能来自已选事项的待办）。
 - matter_action: "none" 或 "archive"。只有用户明确说暂停/归档/停止跟进时才用 archive。
 - cancel_reminders: 用户明确说暂停/不做了/停止跟进/不用再提醒/不用催时为 true；只说“归档”而没有停止跟进意图时不要推断。
+- commute: 仅用户要求新建/安排通勤时输出 {{origin_query,destination_query,city,arrival_local_time,buffer_minutes,effective_from,weekdays}}。起终点保留用户地名，city用明确城市。arrival_local_time为HH:mm；未指定首日/星期范围/余量时对应字段为null，不能猜测。通勤场景 intent= matter、kind=create、schedule=null，真实地点候选与驾车/公交比较由后端生成，用户在组合草稿确认日期/周期/方式。仅询问已有记忆时不输出commute、不创建安排。
 - confidence: 0~1。
 时间必须用 ISO 8601；能确定时区就带偏移（用户时区：{timezone}）。
 不要编造不存在的路线耗时、门牌号或人物；信息不足时省略字段。
@@ -50,6 +51,8 @@ PROMPT = """你是个人事项整理助手。请把用户这句话整理成一�
 列表未出现不能证明记录已删除；没有覆盖某个时间范围的完整数据时，不得回答“该时段没有任何安排”，应说明资料范围不足。
 聊天历史里出现过的旧事项不能自动当成当前有效事实；只使用本次输入里标为有效的事项、待办和日程。
 你只能提出待确认建议；不得输出“已完成”“已保存”“已取消”等已执行结论，也不得编造路线结果或“时间充裕”。
+用户询问自己的通勤去向、建议出发时间或已保存习惯时，先查询个人记忆工具；事项上下文不能代替长期记忆授权。工具返回 disclosure_required 表示已有记忆但本次未授权，应请用户通过网页选择授权。记忆回答只依据本次工具实际返回的授权内容，直接自然作答；不要复述内部校验、自我纠错或使用文件来源标记。未授权不是没有记忆，应明确请用户通过页面授权。
+query_memory 的 query 是字面子串，不是语义检索；不要把多个关键词用空格串联成查询。只使用个人 scope=personal，本场景没有项目记忆。若输入 authorized_memory_entry_ids 非空，先 query_memory(scope=personal, query="", limit=20) 读取本次明确授权的条目，按 entry_id 匹配后回答；只有用户主动授权时才使用此无关键词读取。否则使用一个最短主题词（例如“通勤”）。
 输入：
 {payload}
 """
@@ -112,7 +115,9 @@ def _restrict_unverified_absence_answer(
 
     if answer is None or context.get("schedule_coverage_complete") is True:
         return answer
-    if re.search(r"(?:没有|没有任何|暂无|无).{0,8}(?:安排|事项|日程)", answer):
+    # Only guard an explicit absence-of-schedules assertion, never a negated
+    # mutation ("没有创建或修改任何事项") or a memory availability answer.
+    if re.search(r"(?:没有(?:任何)?|暂无|无)\s*(?:(?:其他|新的)\s*)?(?:安排|日程)(?:[，。！？；、\s]|$)", answer):
         return "当前提供的资料没有覆盖完整的时间范围，不能确认该时段完全没有安排。"
     return answer
 
@@ -127,6 +132,7 @@ def prepare_input(context: dict[str, Any]) -> str:
         "now": context["now"],
         "timezone": context["timezone"],
         "pinned_matter_id": context.get("pinned_matter_id"),
+        "authorized_memory_entry_ids": [d["entry_id"] for d in context.get("memory_disclosures", [])],
         "continuation_context": context.get("continuation_context"),
         "matters": context.get("matters", []),
         "todos": context.get("todos", {}),
@@ -274,6 +280,32 @@ def validate_result(text: str | None, context: dict[str, Any]) -> dict:
     intent = value.get("intent") or "matter"
     if intent not in ("matter", "question", "unclear"):
         _reject("intent_invalid")
+    if intent == "matter" and isinstance(value.get("commute"), dict):
+        from assistant_api.services.commute_bundle import CommuteIntent
+        try:
+            commute = CommuteIntent.model_validate(value["commute"]).model_dump(mode="json")
+        except ValueError:
+            _reject("commute_parameters_invalid")
+        return {"intent": "matter", "commute": commute}
+    # An arrival-only proposal is incomplete, not a runnable schedule. Keep the
+    # user's objective for continuation without promoting a guessed date or
+    # treating arrival as departure. Replaying the stored output needs no model.
+    proposed_schedule = value.get("schedule")
+    if intent == "matter" and isinstance(proposed_schedule, dict) and not proposed_schedule.get("starts_at"):
+        missing = (
+            ["首次通勤日期", "通勤日是否包含周末", "出行方式（驾车或公交）", "到达前提前余量"]
+            if "通勤" in context["text"]
+            else ["安排的开始日期与时间"]
+        )
+        value = {
+            "intent": "unclear",
+            "clarify": "已有到达要求，但还不能形成可保存安排。请确认：" + "、".join(missing) + "。",
+            "clarification": {
+                "missing_information": missing,
+                "pending": {"title": value.get("title"), "goal": value.get("goal")},
+            },
+        }
+        intent = "unclear"
     if intent != "matter":
         clarification = value.get("clarification")
         clarification = clarification if isinstance(clarification, dict) else {}

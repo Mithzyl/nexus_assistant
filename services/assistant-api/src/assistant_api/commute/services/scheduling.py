@@ -57,6 +57,8 @@ async def ensure_instance(
     if not plan.enabled:
         return None
     day = local_today(now, plan.timezone)
+    if plan.effective_from and day < plan.effective_from:
+        return None
     if not allow_non_scheduled_day and iso_weekday(day) not in (plan.weekdays_json or []):
         return None
     target = target_arrival_for(day, plan.arrival_local_time, plan.timezone)
