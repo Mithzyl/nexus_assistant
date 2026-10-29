@@ -265,6 +265,7 @@ async def read_feed(db: AsyncSession, token: str) -> tuple[str, str]:
             alarm.add(
                 "trigger",
                 ensure_aware(reminder.trigger_at).astimezone(UTC),
+                parameters={"VALUE": "DATE-TIME"},
             )
             event.add_component(alarm)
         calendar.add_component(event)

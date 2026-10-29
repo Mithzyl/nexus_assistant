@@ -1068,7 +1068,7 @@ export function MatterRealDetail({ id }: { id: string }) {
           });
         }}
       />
-      <Sheet title="停止跟进这件事？" open={archiveOpen} onClose={() => setArchiveOpen(false)}>
+      <Sheet title={`确认暂停「${matter.title}」？`} open={archiveOpen} onClose={() => setArchiveOpen(false)}>
         <div className="m-stack-12">
           <div className="notice notice--amber">
             <strong>事项将归档，不会删除</strong>
@@ -1123,7 +1123,7 @@ export function MatterRealDetail({ id }: { id: string }) {
             ) : null}
           </div>
           <p className="caption" style={{ margin: 0 }}>
-            确认后将不再发送服务器中的后续提醒；已经显示在手机上的通知需要在手机端手动清除。
+            关联的重复通勤计划将停止自动生成。注：若此前已有通知发送到手机锁屏，需在手机上手动清除；你单独保存在「个人记忆」中的习惯仍为你留存，如需移除可前往「个人记忆」管理。
           </p>
           <button
             type="button"
@@ -1139,7 +1139,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                 toast(
                   archiveCancelReminders && pendingReminders.length > 0
                     ? "已归档并取消后续提醒；手机已显示的通知需手动清除"
-                    : "已归档；未触发的服务器提醒未被取消",
+                    : pendingReminders.length > 0 ? "已归档；你选择保留的提醒仍会生效" : "已归档收起；当前没有需要取消的提醒",
                 );
                 router.push("/matters");
               });

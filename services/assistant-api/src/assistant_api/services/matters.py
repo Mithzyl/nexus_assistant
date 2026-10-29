@@ -1373,20 +1373,44 @@ async def get_intake_result(
     draft = await _visible_intake_draft(db, user, run.local_run_id)
     resolution = _intake_resolution(run)
     outcome = _resolved_outcome(run, resolution, draft)
+    historical = await _intake_draft(db, user, run.local_run_id)
+    confirm_status = ("confirmed" if historical.status == "confirmed" else "unconfirmed") if historical else "unknown"
+    target_id = (historical.matter_id or (historical.result_json or {}).get("matter_id")) if historical else None
+    target = await db.scalar(select(Matter).where(Matter.matter_id == target_id, Matter.user_id == user.user_id)) if target_id else None
+    lifecycle = None
+    title = None
+    if target_id:
+        lifecycle = "deleted" if not target or target.deleted_at or target.status == "deleted" else "archived" if target.status == "archived" else "active"
+        title = target.title if lifecycle in ("active", "archived") else None
+    if historical:
+        schedule_id = historical.base_schedule_id or (historical.result_json or {}).get("schedule_id")
+        schedule = await db.scalar(select(ScheduleEvent).where(ScheduleEvent.schedule_id == schedule_id, ScheduleEvent.user_id == user.user_id)) if schedule_id else None
+        if schedule and schedule.data_source_id:
+            source = await db.scalar(select(ContentSource).where(ContentSource.source_id == schedule.data_source_id, ContentSource.user_id == user.user_id))
+            if not source or not source.assistant_enabled:
+                lifecycle, title = "source_revoked", None
     inaccessible_draft = resolution.get("outcome") == "draft" and draft is None
-    if inaccessible_draft:
+    # Historical confirmation survives lifecycle changes; never serialize a
+    # revoked/deleted draft's body merely to prove that it was confirmed.
+    if historical:
+        outcome = "draft"
+    elif inaccessible_draft:
         outcome = "unknown"
     context = run.context_json or {}
     return {
         "local_run_id": run.local_run_id,
         "parent_run_id": context.get("parent_run_id"),
-        "request_text": context.get("text") or "",
+        "request_text": "历史操作" if lifecycle in ("deleted", "source_revoked") else context.get("text") or "",
+        "confirm_status": confirm_status,
+        "target_lifecycle": lifecycle,
+        "target_title": title,
+        "history_target_id": target_id if lifecycle in ("active", "archived") else None,
         "intent": resolution.get("intent") or "matter",
         "outcome": outcome,
         "status": run.status,
         "answer": resolution.get("answer") if outcome == "answer" else None,
         "clarify": (
-            "原预览关联的事项已删除或资料来源已撤权，不能继续读取。"
+            None
             if inaccessible_draft
             else resolution.get("clarify")
             if outcome == "needs_clarification"
@@ -3195,6 +3219,17 @@ async def confirm_draft(
                     pending.reminder_id, _reminder_snapshot(pending)
                 )
                 affected_reminders[pending.reminder_id] = pending
+            # Rescheduling an acknowledged reminder must preserve its existing
+            # calendar association, but never infer one from an unrelated event.
+            inherited_schedule_id = await db.scalar(
+                select(Reminder.schedule_id).join(ScheduleEvent, ScheduleEvent.schedule_id == Reminder.schedule_id)
+                .where(Reminder.user_id == user.user_id, Reminder.todo_id == todo.todo_id,
+                       ScheduleEvent.user_id == user.user_id, ScheduleEvent.matter_id == matter.matter_id,
+                       ScheduleEvent.deleted_at.is_(None), ScheduleEvent.status == "scheduled")
+                .order_by(Reminder.created_at.desc()).limit(1)
+            )
+            if pending is not None and pending.schedule_id is None and inherited_schedule_id:
+                pending.schedule_id = inherited_schedule_id
             if todo.reminder_at is None:
                 if pending is not None:
                     pending.status = "cancelled"
@@ -3207,7 +3242,7 @@ async def confirm_draft(
                     schedule_id=(
                         schedule_row.schedule_id
                         if body.create_schedule and schedule_row is not None
-                        else None
+                        else inherited_schedule_id
                     ),
                     title=f"提醒：{todo.title}",
                     trigger_at=todo.reminder_at,

@@ -14,9 +14,16 @@ export function useToday(enabled: boolean, date?: string) {
   const refresh = useCallback(() => setToken((value) => value + 1), []);
 
   useEffect(() => {
+    if (!enabled) return;
+    const timer = window.setInterval(refresh, 15000);
     window.addEventListener(TODAY_REFRESH_EVENT, refresh);
-    return () => window.removeEventListener(TODAY_REFRESH_EVENT, refresh);
-  }, [refresh]);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(TODAY_REFRESH_EVENT, refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [enabled, refresh]);
 
   useEffect(() => {
     if (!enabled) {

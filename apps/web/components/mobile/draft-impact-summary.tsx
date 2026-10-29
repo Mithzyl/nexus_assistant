@@ -259,7 +259,7 @@ export function DraftImpactSummary({
             </p>
           ) : null}
           <p className="micro">
-            确认后将取消服务器返回的未触发提醒；已经显示在手机上的通知需要在手机端手动清除。
+            注：若此前已有通知发送到手机锁屏，需在手机上手动清除；你单独保存在「个人记忆」中的习惯仍为你留存，如需移除可前往「个人记忆」管理。
           </p>
         </section>
       ) : null}

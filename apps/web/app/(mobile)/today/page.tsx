@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, ChevronRight, FileText, MapPin, RefreshCw, Trash2 } from "lucide-react";
 
@@ -27,7 +27,7 @@ import type {
 } from "@/lib/mobile/api";
 import { relativeTime } from "@/lib/mobile/format";
 import { deadlineTiming, todayChangeSummary } from "@/lib/mobile/matter-draft.mjs";
-import { confirmSummary, acknowledgeReminder, getDraft } from "@/lib/mobile/matters-api";
+import { confirmSummary, acknowledgeReminder, completeMatterTodo, getDraft } from "@/lib/mobile/matters-api";
 import { useToday } from "@/lib/mobile/use-today";
 
 function localDay(): string {
@@ -66,7 +66,7 @@ function reminderNote(item: MatterReminder): string {
   if (item.status === "due") return "应用内提醒已到点 · 等待你确认知晓";
   if (item.sync_status === "pending_ios") return "应用内提醒 · 等待 iOS 同步";
   if (item.sync_status === "ios_synced") return "应用内提醒 · iOS 已有副本";
-  return "应用内提醒已保存 · 到点后可在网页确认，不能视为已经送达";
+  return "提醒已设好 · 本页面保持打开时，到点将在页面内提醒你";
 }
 
 function routeState(schedule: TodaySchedule): {
@@ -127,10 +127,34 @@ export default function TodayPage() {
     [todayData.data],
   );
 
-  const acknowledge = async (reminder: MatterReminder) => {
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
+  const notified = useRef(new Set<string>());
+  useEffect(() => {
+    setNotificationPermission("Notification" in window ? Notification.permission : "unsupported");
+  }, []);
+  useEffect(() => {
+    if (!signedIn || notificationPermission !== "granted") return;
+    for (const reminder of dueReminders) {
+      const deliveryKey = `${reminder.reminder_id}:${reminder.trigger_at}`;
+      if (notified.current.has(deliveryKey)) continue;
+      try {
+        const notice = new Notification(`到点提醒 · ${reminder.title}`, {
+          body: `来自「${reminder.matter_title || "事项"}」`, tag: reminder.reminder_id,
+        });
+        notice.onclick = () => { window.focus(); notice.close(); };
+        notified.current.add(deliveryKey);
+      } catch { setNotificationPermission("unsupported"); }
+    }
+  }, [dueReminders, signedIn, notificationPermission]);
+  const enableNotifications = async () => {
+    if ("Notification" in window) setNotificationPermission(await Notification.requestPermission());
+  };
+
+  const acknowledge = async (reminder: MatterReminder, complete = false) => {
     setAcknowledgingId(reminder.reminder_id);
     setAcknowledgeError(null);
     try {
+      if (complete && reminder.matter_id && reminder.todo_id) await completeMatterTodo(reminder.matter_id, reminder.todo_id);
       await acknowledgeReminder(reminder.reminder_id);
       todayData.refresh();
     } catch (caught) {
@@ -277,9 +301,17 @@ export default function TodayPage() {
         </div>
       ) : todayData.data ? (
         <>
+          <section style={{ padding: "0 var(--m-gutter)", marginBottom: 12 }} aria-label="提醒送达方式">
+            <p className="micro">{notificationPermission === "granted"
+              ? "已开启系统通知 · 本页面保持打开时，可在后台发送浏览器通知"
+              : "仅页面内提醒 · 本页面保持打开时，每15秒自动核对到点提醒"}</p>
+            <p className="micro">关闭网页后不会由此页面发送通知；日历订阅的提醒由日历应用自行处理。</p>
+            {notificationPermission === "default" ? <button className="btn btn--secondary btn--small" onClick={() => void enableNotifications()}>开启浏览器系统通知</button> : null}
+            {notificationPermission === "denied" ? <p className="micro">浏览器通知未获允许，页面内提醒仍可使用。</p> : null}
+          </section>
           {dueReminders.length > 0 ? (
             <section style={{ padding: "0 var(--m-gutter)" }}>
-              <SectionHeading title="已经到点" trailing="需要确认知晓" />
+              <SectionHeading title="到点提醒" trailing="需要确认知晓" />
               <div className="m-stack-10">
                 {dueReminders.map((reminder) => (
                   <div key={reminder.reminder_id} className="deadline-card deadline-card--overdue">
@@ -287,10 +319,9 @@ export default function TodayPage() {
                       <Bell size={15} />
                     </span>
                     <span className="grow">
-                      <span className="deadline-card__title">{reminder.title}</span>
+                      <span className="deadline-card__title">到点提醒 · {reminder.title}</span>
                       <span className="deadline-card__meta">
-                        {reminder.matter_title || "所属事项"} ·{" "}
-                        {dateTime(reminder.trigger_at, todayData.data?.timezone)}
+                        原定 {dateTime(reminder.trigger_at, todayData.data?.timezone)} 提醒 · 来自「{reminder.matter_title || "所属事项"}」
                       </span>
                     </span>
                     <button
@@ -301,6 +332,7 @@ export default function TodayPage() {
                     >
                       {acknowledgingId === reminder.reminder_id ? "确认中…" : "知道了"}
                     </button>
+                    {reminder.todo_id && reminder.matter_id ? <button type="button" className="btn btn--secondary btn--small" disabled={acknowledgingId !== null} onClick={() => void acknowledge(reminder, true)}>已办完，一并完成待办</button> : null}
                   </div>
                 ))}
               </div>

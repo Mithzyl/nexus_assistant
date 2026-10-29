@@ -24,7 +24,7 @@ from assistant_api.commute.services.leases import acquire_lease
 from assistant_api.commute.services.scheduling import enqueue_due_checks
 from assistant_api.core.config import Settings, get_settings
 from assistant_api.infrastructure.database import create_engine_and_factory
-from assistant_api.models import Base, CommuteInstance, NotificationOutbox, CommutePlan, User
+from assistant_api.models import Base, CommuteInstance, NotificationOutbox, CommutePlan, User, Matter
 
 logger = logging.getLogger("commute.scheduler")
 LEASE_NAME = "commute-scheduler"
@@ -51,6 +51,7 @@ async def scheduler_tick(
     auto_analysis_mode: str = "full",
     enqueue_enabled: bool = True,
     runtime=None,
+    user_id: str | None = None,
 ) -> int:
     now = now or datetime.now(UTC)
     acquired = await acquire_lease(
@@ -66,6 +67,7 @@ async def scheduler_tick(
     await db.execute(
         update(CommuteInstance)
         .where(
+            CommuteInstance.user_id == user_id if user_id else True,
             CommuteInstance.status == "active",
             CommuteInstance.target_arrival_at <= now,
         )
@@ -74,6 +76,7 @@ async def scheduler_tick(
     await db.execute(
         update(NotificationOutbox)
         .where(
+            NotificationOutbox.user_id == user_id if user_id else True,
             NotificationOutbox.status.in_(("pending", "sending")),
             NotificationOutbox.expires_at <= now,
         )
@@ -86,18 +89,21 @@ async def scheduler_tick(
         from assistant_api.services.commute_lifecycle import generate_day
         from assistant_api.commute.timeutil import local_today, target_arrival_for
         from assistant_api.core.errors import AssistantError
-        plans = list(await db.scalars(select(CommutePlan).where(CommutePlan.enabled.is_(True), CommutePlan.matter_id.is_not(None))))
+        plans = list(await db.scalars(select(CommutePlan).join(Matter, Matter.matter_id == CommutePlan.matter_id).where(CommutePlan.enabled.is_(True), Matter.deleted_at.is_(None), Matter.status.in_(("active", "waiting")), CommutePlan.user_id == user_id if user_id else True)))
         for plan in plans:
             day = local_today(now, plan.timezone)
             if (plan.effective_from and day < plan.effective_from) or day.isoweekday() not in plan.weekdays_json or target_arrival_for(day, plan.arrival_local_time, plan.timezone) <= now:
                 continue
             try:
-                await generate_day(db, runtime, await db.get(User, plan.user_id), plan.plan_id, day)
+                result = await generate_day(db, runtime, await db.get(User, plan.user_id), plan.plan_id, day)
+                logger.info("materialization plan=%s date=%s schedule=%s replayed=%s", plan.plan_id, day, result["schedule_id"], result["replayed"])
             except AssistantError:
                 await db.rollback()
                 logger.warning("commute day not materialized; inspect scoped instance status")
     created = []
-    if enqueue_enabled:
+    # Account-scoped verification runs only the materializer, never the global
+    # weather/advisory/push enqueue scan.
+    if enqueue_enabled and user_id is None:
         created = await enqueue_due_checks(
             db,
             now=now,
@@ -106,10 +112,11 @@ async def scheduler_tick(
         )
     if created:
         logger.info("enqueued %s commute checks", len(created))
+    await db.commit()
     return len(created)
 
 
-async def run_forever(settings: Settings) -> None:
+async def run_forever(settings: Settings, *, user_id: str | None = None) -> None:
     validate_commute_configuration(settings)
     runtime = build_runtime(settings)
     engine, factory = create_engine_and_factory(settings.database_url)
@@ -139,7 +146,7 @@ async def run_forever(settings: Settings) -> None:
             try:
                 async with factory() as db:
                     await scheduler_tick(
-                        db, settings, owner=owner, runtime=runtime,
+                        db, settings, owner=owner, runtime=runtime, user_id=user_id,
                         auto_analysis_mode=scheduled_analysis_mode(settings, runtime),
                         enqueue_enabled=(
                             settings.commute_auto_weather_enabled
@@ -157,6 +164,9 @@ async def run_forever(settings: Settings) -> None:
     finally:
         stop.set()
         await heartbeat
+        from assistant_api.commute.services.leases import release_lease
+        async with factory() as db:
+            await release_lease(db, name=LEASE_NAME, owner=owner)
         await runtime.aclose()
         await engine.dispose()
         logger.info("scheduler stopped")
@@ -167,17 +177,20 @@ def main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true", help="run one tick and exit")
+    parser.add_argument("--user-id", help="Limit materialization to this account; skip global advisory enqueue")
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
+    # Provider URLs can contain service credentials; never log HTTP request URLs.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if args.once:
-        asyncio.run(_run_once(get_settings()))
+        asyncio.run(_run_once(get_settings(), user_id=args.user_id))
     else:
-        asyncio.run(run_forever(get_settings()))
+        asyncio.run(run_forever(get_settings(), user_id=args.user_id))
 
 
-async def _run_once(settings: Settings) -> None:
+async def _run_once(settings: Settings, *, user_id: str | None = None) -> None:
     validate_commute_configuration(settings)
     runtime = build_runtime(settings)
     engine, factory = create_engine_and_factory(settings.database_url)
@@ -187,7 +200,7 @@ async def _run_once(settings: Settings) -> None:
     try:
         async with factory() as db:
             count = await scheduler_tick(
-                db, settings, owner=worker_identity("once"),
+                db, settings, owner=worker_identity("once"), runtime=runtime, user_id=user_id,
                 auto_analysis_mode=scheduled_analysis_mode(settings, runtime),
                 enqueue_enabled=(
                     settings.commute_auto_weather_enabled

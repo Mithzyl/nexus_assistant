@@ -564,7 +564,7 @@ export default function AskPage() {
 
   const timeline = [...ask.items].reverse();
   const unifiedHistory = mergeIntakeHistory(
-    serverIntakeResults.filter((item) => item.outcome !== "draft"),
+    serverIntakeResults.filter((item) => item.outcome !== "draft" || item.confirm_status === "confirmed" || (item.target_lifecycle && item.target_lifecycle !== "active")),
     intakeAnswers,
   );
 
@@ -671,6 +671,16 @@ export default function AskPage() {
                 )
               : false;
             const outcome = serverItem ? item.outcome : "answer";
+            const lifecycle = serverItem ? item.target_lifecycle : null;
+            const confirmed = serverItem && item.confirm_status === "confirmed";
+            const inactivePreview = serverItem && item.confirm_status === "unconfirmed" && lifecycle && lifecycle !== "active";
+            const historyLabel = confirmed ? (lifecycle === "active" ? "已确认并生效" : "当时已确认生效") : inactivePreview ? "未执行" : null;
+            const historyNote = confirmed
+              ? lifecycle === "archived" ? `所属事项「${item.target_title}」现已归档收起`
+                : lifecycle === "deleted" ? "所属事项后来已被删除，相关安排不再保留"
+                : lifecycle === "source_revoked" ? "相关资料来源已取消授权，当前不再展示详情"
+                : `已更新至「${item.target_title ?? "事项"}」`
+              : inactivePreview ? `该调整当时未确认，且${lifecycle === "source_revoked" ? "相关资料来源已取消授权" : `所属事项现已${lifecycle === "archived" ? "归档" : "删除"}`}` : null;
             const createdAt = serverItem ? item.created_at : item.createdAt;
             const key = serverItem ? item.local_run_id : item.id;
             return (
@@ -678,22 +688,25 @@ export default function AskPage() {
               <div className="bubble-user">{question}</div>
               <div className="card mt-10">
                 <div className="flex items-center justify-between gap-10">
-                  <span className="micro">
-                    {outcome === "needs_clarification"
+                  <span className="micro" style={{ color: confirmed ? (lifecycle === "active" ? "#52766b" : lifecycle === "archived" ? "#455c6b" : "#7e919d") : outcome === "unknown" ? "#956920" : undefined }}>
+                    {confirmed && lifecycle === "active" ? "● " : ""}{historyLabel ?? (outcome === "needs_clarification"
                       ? "还需要补充信息"
                       : outcome === "processing"
                         ? "正在核实结果"
                         : outcome === "unknown"
-                          ? "结果暂不确定"
+                          ? "状态待核对"
                           : outcome === "failed"
                             ? "处理失败"
                             : outcome === "cancelled"
                               ? "已取消"
-                              : "服务器直接回答"}
+                              : "服务器直接回答")}
                   </span>
                   <span className="micro">{formatDateTime(createdAt)}</span>
                 </div>
                 <div className="mt-8">
+                  {historyNote ? <p className="body-text" style={{ margin: 0 }}>{historyNote}</p> : null}
+                  {historyNote && serverItem && item.history_target_id ? <Link href={`/matters/${item.history_target_id}`} className="micro">{lifecycle === "archived" ? "查看归档记录" : "查看事项"}</Link> : null}
+                  {outcome === "unknown" && !historyLabel ? <><p>未能确认这次调整是否保存，请前往「今天」或「事项」页核对最新安排</p><Link href="/today">去核对</Link></> : null}
                   {answer ? <Markdown source={answer} /> : null}
                   {clarify ? <p className="body-text" style={{ margin: 0 }}>{clarify}</p> : null}
                   {pendingContext?.missing_information?.length ? (
@@ -703,7 +716,7 @@ export default function AskPage() {
                       ))}
                     </div>
                   ) : null}
-                  {!answer && !clarify ? (
+                  {!answer && !clarify && !historyNote && outcome !== "unknown" ? (
                     <p className="caption" style={{ margin: 0 }}>
                       {outcome === "processing" || outcome === "unknown"
                         ? "服务器尚未返回确定结果，可保留原输入后继续查询。"

@@ -850,6 +850,10 @@ export interface MatterIntakeResponse {
 }
 
 export interface MatterIntakeResult {
+  confirm_status: "confirmed" | "unconfirmed" | "unknown";
+  target_lifecycle: "active" | "archived" | "deleted" | "source_revoked" | null;
+  target_title: string | null;
+  history_target_id: string | null;
   local_run_id: string;
   parent_run_id: string | null;
   request_text: string;

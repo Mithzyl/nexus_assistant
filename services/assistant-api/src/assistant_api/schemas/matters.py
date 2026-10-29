@@ -319,6 +319,10 @@ class IntakeResponse(BaseModel):
 
 
 class IntakeResultRead(BaseModel):
+    confirm_status: Literal["confirmed", "unconfirmed", "unknown"] = "unknown"
+    target_lifecycle: Literal["active", "archived", "deleted", "source_revoked"] | None = None
+    target_title: str | None = None
+    history_target_id: str | None = None
     local_run_id: str
     parent_run_id: str | None = None
     request_text: str

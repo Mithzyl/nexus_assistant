@@ -564,3 +564,5 @@ async def test_calendar_feed_adds_alarm_only_for_schedule_linked_reminder(harnes
     alarms = [item for item in events[0].walk() if item.name == "VALARM"]
     assert len(alarms) == 1
     assert str(alarms[0]["DESCRIPTION"]) == "会前提醒"
+    assert alarms[0]["TRIGGER"].params["VALUE"] == "DATE-TIME"
+    assert b"TRIGGER;VALUE=DATE-TIME:" in feed.content

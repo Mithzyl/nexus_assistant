@@ -869,7 +869,7 @@ export function MatterDraftSheet({
   };
 
   return (
-    <Sheet title={sheetTitle(effectiveMode)} open={open} onClose={requestClose}>
+    <Sheet title={isArchiveDraft ? `确认暂停「${current?.payload.title || "这件事"}」？` : sheetTitle(effectiveMode)} open={open} onClose={requestClose}>
       <div className="m-stack-12">
         <div className="draft-kind">
           <span className="draft-kind__label">待确认 · {primarySummary(effectiveMode)}</span>
