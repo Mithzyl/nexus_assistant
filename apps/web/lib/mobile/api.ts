@@ -1103,3 +1103,11 @@ export interface RevertResponse {
   change_id: string;
   reverted_at: string;
 }
+
+export interface RegistrationInput { email: string; display_name: string; password: string; invite_code?: string }
+export function register(input: RegistrationInput) {
+  return apiRequest<LoginResult>("/api/auth/register", { method: "POST", body: input });
+}
+export function registrationOptions() {
+  return apiRequest<{ enabled: boolean; invite_required: boolean }>("/api/auth/register");
+}

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
+    register_enabled: bool = True
+    register_invite_code: SecretStr = SecretStr("")
+
     environment: str = "development"
     database_url: str = "sqlite+aiosqlite:///./assistant-dev.db"
 

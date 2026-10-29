@@ -13,7 +13,7 @@ import os
 from sqlalchemy import select
 
 from assistant_api.core.config import get_settings
-from assistant_api.core.security import hash_password
+from assistant_api.services.accounts import create_empty_account
 from assistant_api.infrastructure.database import create_engine_and_factory
 from assistant_api.models import Base, BusinessRecord, Note, ScheduleEvent, TaskItem, User
 from assistant_api.models.base import utc_now
@@ -35,13 +35,8 @@ async def provision(*, email: str, display_name: str, password: str, sample: boo
             normalized = email.strip().lower()
             user = await session.scalar(select(User).where(User.email == normalized))
             if user is None:
-                user = User(
-                    email=normalized,
-                    display_name=display_name,
-                    password_verifier=hash_password(password),
-                    status="active",
-                )
-                session.add(user)
+                user = await create_empty_account(session, email=normalized,
+                                                  display_name=display_name, password=password)
                 await session.commit()
                 await session.refresh(user)
                 print(f"created user {user.user_id} <{normalized}>")

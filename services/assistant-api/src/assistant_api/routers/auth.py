@@ -5,6 +5,10 @@ created, or referenced anywhere in this flow.
 """
 
 from datetime import UTC, datetime, timedelta
+import hmac
+import re
+from sqlalchemy.exc import IntegrityError
+from assistant_api.services.accounts import create_empty_account
 
 from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -59,6 +63,69 @@ class RenewResponse(BaseModel):
     token_rotated: bool = False
 
 
+class RegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(min_length=1, max_length=120)
+    password: str = Field(max_length=256)
+    invite_code: str = Field(default="", max_length=256)
+
+
+class RegisterResponse(LoginResponse):
+    user: MeResponse
+
+
+class RegistrationOptions(BaseModel):
+    enabled: bool
+    invite_required: bool
+
+
+@router.get("/register", response_model=RegistrationOptions)
+async def registration_options(settings: SettingsDependency) -> RegistrationOptions:
+    return RegistrationOptions(enabled=settings.register_enabled,
+        invite_required=bool(settings.register_invite_code.get_secret_value()))
+
+
+@router.post("/register", response_model=RegisterResponse, status_code=201)
+async def register(payload: RegisterRequest, db: DatabaseSession,
+                   settings: SettingsDependency) -> RegisterResponse:
+    if not settings.register_enabled:
+        raise AssistantError("registration_disabled", "暂未开放注册，请联系管理员。", 403)
+    required_code = settings.register_invite_code.get_secret_value()
+    if required_code and not hmac.compare_digest(payload.invite_code.encode(), required_code.encode()):
+        raise AssistantError("invalid_invite_code", "注册邀请码不正确，请核对后重试。", 403)
+    email = payload.email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise AssistantError("invalid_email", "请填写有效的邮箱地址。", 422)
+    if len(payload.password) < 8:
+        raise AssistantError("password_too_short", "密码至少需要8个字符。", 422)
+    if not payload.display_name.strip():
+        raise AssistantError("invalid_display_name", "请填写你的称呼。", 422)
+    if await db.scalar(select(User.user_id).where(User.email == email)):
+        raise AssistantError("email_registered", "这个邮箱已注册，请返回登录。", 409)
+    try:
+        user = await create_empty_account(db, email=email, display_name=payload.display_name,
+                                          password=payload.password)
+        session = _issue_session(db, user, settings)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        # The unique email constraint also protects concurrent registration.
+        if await db.scalar(select(User.user_id).where(User.email == email)):
+            raise AssistantError("email_registered", "这个邮箱已注册，请返回登录。", 409)
+        raise
+    return RegisterResponse(**session.model_dump(), user=MeResponse(
+        user_id=user.user_id, email=user.email, display_name=user.display_name))
+
+
+def _issue_session(db, user, settings) -> LoginResponse:
+    token = new_session_token()
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(seconds=settings.session_token_ttl_seconds)
+    db.add(UserSession(user_id=user.user_id, token_digest=digest_token(token), expires_at=expires_at))
+    return LoginResponse(token=token, expires_at=expires_at, server_time=now, user_id=user.user_id)
+
+
 @router.post("/login", response_model=LoginResponse)
 async def login(
     payload: LoginRequest,
@@ -78,18 +145,9 @@ async def login(
     if user.status != "active":
         raise UnauthenticatedError()
 
-    token = new_session_token()
-    now = datetime.now(UTC)
-    expires_at = now + timedelta(seconds=settings.session_token_ttl_seconds)
-    db.add(
-        UserSession(
-            user_id=user.user_id,
-            token_digest=digest_token(token),
-            expires_at=expires_at,
-        )
-    )
+    session = _issue_session(db, user, settings)
     await db.commit()
-    return LoginResponse(token=token, expires_at=expires_at, server_time=now, user_id=user.user_id)
+    return session
 
 
 @router.post("/session/renew", response_model=RenewResponse)

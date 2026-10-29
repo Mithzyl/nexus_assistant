@@ -175,3 +175,13 @@ NexusPilot 应用 API 的服务，并断言 9 次上游调用里没有任何请�
 当前 Nexus Run 上执行既有 `disclose`，再启动模型；失败时不启动模型。默认不披露，
 授权只适用于该次对话，幂等重放不能改变授权列表。Nexus 继续核验归属和版本。
 网页当前只有记忆检索展示，尚未提供选择记忆并授权本次 AI 对话的交互。
+
+### 网页注册
+
+登录页可切换“创建新账号”，成功后自动进入今天页。仅创建本地账号和会话，
+不种入样例事项、日程或记忆；Nexus 身份仍沿用既有的首次访问映射流程。
+
+- `ASSISTANT_REGISTER_ENABLED=true`：默认开放；设为 `false` 时网页隐藏入口且后端拒绝注册。
+- `ASSISTANT_REGISTER_INVITE_CODE`：默认空，本机免邀请码；非空时后端恒定时间校验且网页显示必填邀请码。
+- 公网部署前明确关闭注册或配置私有邀请码；共享邀请码是注册门槛，不替代网关限流和账户额度管理。不要放入前端公开环境变量。
+- `GET /api/v1/auth/register` 仅返回 enabled/invite_required；POST 接收 email、display_name、password（8–256字符）、invite_code，成功返回会话。网页代理只设置 httpOnly Cookie，不把 token 返回页面脚本。
