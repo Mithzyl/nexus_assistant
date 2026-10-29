@@ -159,6 +159,7 @@ class ReminderRead(BaseModel):
 
 
 class MatterRead(BaseModel):
+    archive_effect: dict[str, int] | None = None
     matter_id: str
     title: str
     goal: str
@@ -207,6 +208,7 @@ class MatterVersionRequest(BaseModel):
 
     expected_version: int = Field(ge=1)
     cancel_reminders: bool = False
+    cancel_future_schedules: bool = True
 
 
 class ConflictOptionRead(BaseModel):

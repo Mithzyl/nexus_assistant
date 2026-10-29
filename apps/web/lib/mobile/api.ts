@@ -475,6 +475,7 @@ export type MatterTodoStatus = "open" | "done";
 export type MatterReminderStatus = "scheduled" | "due" | "acknowledged" | "cancelled";
 
 export interface MatterSummary {
+  archive_effect?: { cancelled_schedules: number; retained_schedules: number; readonly_schedules: number } | null;
   matter_id: string;
   title: string;
   goal: string;
@@ -625,6 +626,7 @@ export interface MatterUpdateInput {
 }
 
 export interface MatterVersionInput {
+  cancel_future_schedules?: boolean;
   expected_version: number;
   cancel_reminders?: boolean;
 }

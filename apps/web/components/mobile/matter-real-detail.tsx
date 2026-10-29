@@ -164,6 +164,7 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [progressAnswer, setProgressAnswer] = useState<{ question: string; answer: string } | null>(null);
   const [editingDraft, setEditingDraft] = useState<Awaited<ReturnType<typeof intakeMatterProgress>>["draft"] | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveCancelSchedules, setArchiveCancelSchedules] = useState(true);
   const [archiveCancelReminders, setArchiveCancelReminders] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
@@ -539,7 +540,7 @@ export function MatterRealDetail({ id }: { id: string }) {
   );
   const futureSchedules = matter.schedules.filter(
     (schedule) =>
-      !schedule.deleted_at &&
+      !schedule.deleted_at && schedule.status === "scheduled" &&
       new Date(schedule.starts_at).getTime() > Date.now(),
   );
   return (
@@ -850,6 +851,7 @@ export function MatterRealDetail({ id }: { id: string }) {
           {matter.status !== "archived" ? (
             <button type="button" className="btn btn--secondary" onClick={() => {
               setArchiveCancelReminders(true);
+              setArchiveCancelSchedules(true);
               setArchiveOpen(true);
             }} disabled={Boolean(busy)}>
               停止跟进
@@ -1073,7 +1075,7 @@ export function MatterRealDetail({ id }: { id: string }) {
           <div className="notice notice--amber">
             <strong>事项将归档，不会删除</strong>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              「{matter.title}」会从正在推进中移到归档；事项和已有日程记录仍会保留。
+              「{matter.title}」会从正在推进中移到归档；过去安排仍会保留，未发生的未来日程默认一并取消。
             </p>
           </div>
           <div className="card card--tight">
@@ -1108,9 +1110,11 @@ export function MatterRealDetail({ id }: { id: string }) {
           <div className="card card--tight">
             <p className="micro" style={{ margin: 0 }}>日程范围</p>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              过去安排会保留。这里的归档只处理事项状态和未触发提醒，不会一并取消未来日程；
-              如需取消，请在助手中说明“停止跟进并取消未来日程”，由服务器生成可勾选的预览后再确认。
+              取消未来日程时，其尚未触发的提醒也会停止。手机导入的只读日程需在原设备处理。
             </p>
+            {futureSchedules.length > 0 ? (
+              <label className="flex items-start gap-8 mt-10"><input type="checkbox" checked={archiveCancelSchedules} onChange={(event) => setArchiveCancelSchedules(event.target.checked)} /><span className="caption">同时取消以下未发生的应用内日程（共 {futureSchedules.filter((s) => !s.source || s.source === "web_native").length} 项）</span></label>
+            ) : null}
             {futureSchedules.length > 0 ? (
               <ul className="compact-list">
                 {futureSchedules.map((schedule) => (
@@ -1132,15 +1136,13 @@ export function MatterRealDetail({ id }: { id: string }) {
             onClick={() => {
               setArchiveOpen(false);
               void run("archive", async () => {
-                await archiveMatter(matter.matter_id, {
+                const result = await archiveMatter(matter.matter_id, {
                   expected_version: matter.version,
                   cancel_reminders: archiveCancelReminders,
+                  cancel_future_schedules: archiveCancelSchedules,
                 });
-                toast(
-                  archiveCancelReminders && pendingReminders.length > 0
-                    ? "已归档并取消后续提醒；手机已显示的通知需手动清除"
-                    : pendingReminders.length > 0 ? "已归档；你选择保留的提醒仍会生效" : "已归档收起；当前没有需要取消的提醒",
-                );
+                const effect = result.archive_effect;
+                toast(`已归档并停止后续自动生成；${effect?.cancelled_schedules ? `已取消 ${effect.cancelled_schedules} 项未来日程；` : ""}${effect?.retained_schedules ? `你选择保留的 ${effect.retained_schedules} 项未来日程仍在日程表中；` : ""}${effect?.readonly_schedules ? `${effect.readonly_schedules} 项只读日程需在原设备处理；` : ""}${archiveCancelReminders ? "未到期提醒已取消" : "你选择保留的独立提醒仍会生效"}`);
                 router.push("/matters");
               });
             }}

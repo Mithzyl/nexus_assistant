@@ -351,6 +351,7 @@ async def archive_matter(
         status="archived",
         expected_version=payload.expected_version,
         cancel_reminders=payload.cancel_reminders,
+        cancel_future_schedules=payload.cancel_future_schedules,
     )
 
 

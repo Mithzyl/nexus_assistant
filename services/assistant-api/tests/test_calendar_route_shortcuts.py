@@ -342,14 +342,14 @@ async def test_place_candidates_and_linked_route_invalidate_after_schedule_edit(
         if row["schedule_id"] == schedule_id
     )
     assert item_after["route"]["status"] == "unverified"
-    assert item_after["route"]["reason_code"] == "no_linked_route_result"
+    assert item_after["route"]["reason_code"] == "route_result_stale"
     stale_detail = await h.client.get(
         f"/api/v1/commute/routes/{schedule_id}",
         headers=auth(h.token_a),
     )
     assert stale_detail.status_code == 200
     assert stale_detail.json()["status"] == "unverified"
-    assert stale_detail.json()["reason_code"] == "no_linked_route_result"
+    assert stale_detail.json()["reason_code"] == "route_result_stale"
 
 
 @pytest.mark.asyncio

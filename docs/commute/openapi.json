@@ -494,6 +494,35 @@
         "title": "AiAnalysisRead",
         "type": "object"
       },
+      "AppMemoryData": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "namespace": {
+            "const": "personal_assistant",
+            "default": "personal_assistant",
+            "title": "Namespace",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fields"
+        ],
+        "title": "AppMemoryData",
+        "type": "object"
+      },
       "AskRead": {
         "description": "Add the projection fields a history list and refresh need.",
         "properties": {
@@ -614,6 +643,14 @@
             "minLength": 8,
             "title": "Idempotency Key",
             "type": "string"
+          },
+          "memory_disclosures": {
+            "items": {
+              "$ref": "#/components/schemas/assistant_api__routers__assistant__MemoryDisclosure"
+            },
+            "maxItems": 10,
+            "title": "Memory Disclosures",
+            "type": "array"
           },
           "text": {
             "maxLength": 4000,
@@ -884,6 +921,20 @@
           "confirm_send"
         ],
         "title": "BarkTestRequest",
+        "type": "object"
+      },
+      "Body_generate_commute_day_api_v1_commute_plans__plan_id__generate_day_post": {
+        "properties": {
+          "service_date": {
+            "format": "date",
+            "title": "Service Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_date"
+        ],
+        "title": "Body_generate_commute_day_api_v1_commute_plans__plan_id__generate_day_post",
         "type": "object"
       },
       "CalendarSubscriptionCreate": {
@@ -1496,6 +1547,18 @@
           "destination": {
             "$ref": "#/components/schemas/CommuteLocation"
           },
+          "effective_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective From"
+          },
           "enabled": {
             "default": true,
             "title": "Enabled",
@@ -1538,7 +1601,8 @@
           "transport_mode": {
             "enum": [
               "driving",
-              "walking"
+              "walking",
+              "transit"
             ],
             "title": "Transport Mode",
             "type": "string"
@@ -1568,7 +1632,6 @@
       },
       "CommutePlanRead": {
         "additionalProperties": false,
-        "description": "A plan plus server-owned revision and timestamps.",
         "properties": {
           "arrival_local_time": {
             "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
@@ -1594,14 +1657,48 @@
           "destination": {
             "$ref": "#/components/schemas/CommuteLocation"
           },
+          "effective_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective From"
+          },
           "enabled": {
             "default": true,
             "title": "Enabled",
             "type": "boolean"
           },
+          "first_schedule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Schedule Id"
+          },
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "matter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matter Id"
           },
           "name": {
             "maxLength": 120,
@@ -1644,7 +1741,8 @@
           "transport_mode": {
             "enum": [
               "driving",
-              "walking"
+              "walking",
+              "transit"
             ],
             "title": "Transport Mode",
             "type": "string"
@@ -1678,6 +1776,20 @@
           "updated_at"
         ],
         "title": "CommutePlanRead",
+        "type": "object"
+      },
+      "ConfirmMemoryBody": {
+        "properties": {
+          "confirmed_sensitive": {
+            "const": true,
+            "title": "Confirmed Sensitive",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirmed_sensitive"
+        ],
+        "title": "ConfirmMemoryBody",
         "type": "object"
       },
       "ConfirmRequest": {
@@ -3405,6 +3517,14 @@
             "title": "Idempotency Key",
             "type": "string"
           },
+          "memory_disclosures": {
+            "items": {
+              "$ref": "#/components/schemas/assistant_api__schemas__matters__MemoryDisclosure"
+            },
+            "maxItems": 10,
+            "title": "Memory Disclosures",
+            "type": "array"
+          },
           "text": {
             "maxLength": 4000,
             "minLength": 1,
@@ -3556,6 +3676,16 @@
             ],
             "title": "Completed At"
           },
+          "confirm_status": {
+            "default": "unknown",
+            "enum": [
+              "confirmed",
+              "unconfirmed",
+              "unknown"
+            ],
+            "title": "Confirm Status",
+            "type": "string"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -3580,6 +3710,17 @@
               }
             ],
             "title": "Draft Id"
+          },
+          "history_target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Target Id"
           },
           "intent": {
             "default": "matter",
@@ -3641,6 +3782,34 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "target_lifecycle": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "archived",
+                  "deleted",
+                  "source_revoked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Lifecycle"
+          },
+          "target_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Title"
           }
         },
         "required": [
@@ -3874,6 +4043,7 @@
         "title": "IosSnapshotResponse",
         "type": "object"
       },
+      "JsonValue": {},
       "LoginRequest": {
         "additionalProperties": false,
         "description": "Accept only a local account; there is no provider or application id here.",
@@ -4125,6 +4295,20 @@
       },
       "MatterDetailRead": {
         "properties": {
+          "archive_effect": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Effect"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -4306,6 +4490,20 @@
       },
       "MatterRead": {
         "properties": {
+          "archive_effect": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Effect"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -4461,6 +4659,11 @@
       "MatterVersionRequest": {
         "additionalProperties": false,
         "properties": {
+          "cancel_future_schedules": {
+            "default": true,
+            "title": "Cancel Future Schedules",
+            "type": "boolean"
+          },
           "cancel_reminders": {
             "default": false,
             "title": "Cancel Reminders",
@@ -4502,6 +4705,113 @@
         "title": "MeResponse",
         "type": "object"
       },
+      "MemoryCommand": {
+        "additionalProperties": false,
+        "description": "Only an explicit authenticated user action can confirm sensitive content.",
+        "properties": {
+          "action": {
+            "enum": [
+              "save",
+              "propose",
+              "correct",
+              "forget",
+              "confirm",
+              "disclose",
+              "settings"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "app_data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppMemoryData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirmed_sensitive": {
+            "default": false,
+            "title": "Confirmed Sensitive",
+            "type": "boolean"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "entry_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 36,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Id"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "local_run_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Local Run Id",
+            "type": "string"
+          },
+          "sensitive": {
+            "default": false,
+            "title": "Sensitive",
+            "type": "boolean"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "local_run_id",
+          "action",
+          "key"
+        ],
+        "title": "MemoryCommand",
+        "type": "object"
+      },
       "MemorySearchRequest": {
         "additionalProperties": false,
         "description": "Search only the caller's own memory scope.",
@@ -4519,6 +4829,19 @@
             "title": "Limit",
             "type": "integer"
           },
+          "local_run_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 36,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Run Id"
+          },
           "memory_types": {
             "items": {
               "type": "string"
@@ -4526,6 +4849,13 @@
             "maxItems": 5,
             "title": "Memory Types",
             "type": "array"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
           },
           "query_text": {
             "maxLength": 2000,
@@ -5053,6 +5383,68 @@
           "updated_at"
         ],
         "title": "PushDeviceRead",
+        "type": "object"
+      },
+      "QuoteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "buffer_minutes": {
+            "maximum": 120.0,
+            "minimum": 0.0,
+            "title": "Buffer Minutes",
+            "type": "integer"
+          },
+          "destination_token": {
+            "title": "Destination Token",
+            "type": "string"
+          },
+          "effective_from": {
+            "format": "date",
+            "title": "Effective From",
+            "type": "string"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "driving",
+            "enum": [
+              "driving",
+              "transit"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "origin_token": {
+            "title": "Origin Token",
+            "type": "string"
+          },
+          "test_only": {
+            "default": false,
+            "title": "Test Only",
+            "type": "boolean"
+          },
+          "weekdays": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 7,
+            "minItems": 1,
+            "title": "Weekdays",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_version",
+          "origin_token",
+          "destination_token",
+          "effective_from",
+          "weekdays",
+          "buffer_minutes"
+        ],
+        "title": "QuoteRequest",
         "type": "object"
       },
       "ReminderRead": {
@@ -5687,7 +6079,8 @@
           "transport_mode": {
             "enum": [
               "driving",
-              "walking"
+              "walking",
+              "transit"
             ],
             "title": "Transport Mode",
             "type": "string"
@@ -7825,6 +8218,63 @@
           "coverage"
         ],
         "title": "WeatherSummary",
+        "type": "object"
+      },
+      "assistant_api__routers__assistant__MemoryDisclosure": {
+        "additionalProperties": false,
+        "description": "Explicit permission for one memory entry in this new conversation only.",
+        "properties": {
+          "confirmed_sensitive": {
+            "const": true,
+            "title": "Confirmed Sensitive",
+            "type": "boolean"
+          },
+          "entry_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entry_id",
+          "expected_version",
+          "confirmed_sensitive"
+        ],
+        "title": "MemoryDisclosure",
+        "type": "object"
+      },
+      "assistant_api__schemas__matters__MemoryDisclosure": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_sensitive": {
+            "const": true,
+            "title": "Confirmed Sensitive",
+            "type": "boolean"
+          },
+          "entry_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entry_id",
+          "expected_version",
+          "confirmed_sensitive"
+        ],
+        "title": "MemoryDisclosure",
         "type": "object"
       }
     }
@@ -11028,6 +11478,136 @@
           }
         },
         "summary": "Create Check",
+        "tags": [
+          "commute"
+        ]
+      }
+    },
+    "/api/v1/commute-plans/{plan_id}/generate-day": {
+      "post": {
+        "operationId": "generate_commute_day_api_v1_commute_plans__plan_id__generate_day_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_generate_commute_day_api_v1_commute_plans__plan_id__generate_day_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Generate Commute Day",
         "tags": [
           "commute"
         ]
@@ -14576,6 +15156,138 @@
         ]
       }
     },
+    "/api/v1/matters/drafts/{draft_id}/commute-quote": {
+      "post": {
+        "operationId": "quote_commute_api_v1_matters_drafts__draft_id__commute_quote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Quote Commute",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
     "/api/v1/matters/drafts/{draft_id}/confirm": {
       "post": {
         "operationId": "confirm_draft_api_v1_matters_drafts__draft_id__confirm_post",
@@ -14714,6 +15426,256 @@
           }
         },
         "summary": "Confirm Draft",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
+    "/api/v1/matters/drafts/{draft_id}/memory-candidate": {
+      "get": {
+        "operationId": "memory_candidate_api_v1_matters_drafts__draft_id__memory_candidate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Memory Candidate",
+        "tags": [
+          "matters"
+        ]
+      }
+    },
+    "/api/v1/matters/drafts/{draft_id}/memory-candidate/confirm": {
+      "post": {
+        "operationId": "confirm_memory_candidate_api_v1_matters_drafts__draft_id__memory_candidate_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmMemoryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Confirm Memory Candidate",
         "tags": [
           "matters"
         ]
@@ -16787,6 +17749,278 @@
         ]
       }
     },
+    "/api/v1/memory": {
+      "get": {
+        "operationId": "list_memory_api_v1_memory_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "local_run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Local Run Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "List Memory",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/memory/commands": {
+      "post": {
+        "operationId": "memory_command_api_v1_memory_commands_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Memory Command",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
     "/api/v1/memory/search": {
       "post": {
         "description": "Return bounded memory hits for the caller, or an upstream error.",
@@ -16904,6 +18138,135 @@
         "summary": "Memory Search",
         "tags": [
           "assistant"
+        ]
+      }
+    },
+    "/api/v1/memory/settings": {
+      "get": {
+        "operationId": "memory_settings_api_v1_memory_settings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "local_run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Local Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Memory Settings",
+        "tags": [
+          "memory"
         ]
       }
     },

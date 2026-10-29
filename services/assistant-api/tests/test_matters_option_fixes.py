@@ -480,7 +480,8 @@ async def test_create_change_is_not_claimed_revertable(harness):
         await h.client.get(f"/api/v1/matters/{matter_id}/changes", headers=auth(h.token_a))
     ).json()
     assert listing[0]["revertable"] is False
-    assert listing[0]["reason_code"] == "creation_revert_unsupported"
+    assert listing[0]["reason_code"] == "initial_delete_available"
+    assert listing[0]["initial_delete_allowed"] is True
     response = await h.client.post(
         f"/api/v1/matters/{matter_id}/changes/{confirmed['change_id']}/revert",
         json={"expected_version": confirmed["matter"]["version"]},

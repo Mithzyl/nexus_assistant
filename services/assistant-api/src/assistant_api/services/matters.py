@@ -955,16 +955,47 @@ async def set_status(
     status: str,
     expected_version: int,
     cancel_reminders: bool = False,
+    cancel_future_schedules: bool = True,
 ) -> dict:
     matter = await _get_matter(db, user, matter_id)
     if matter.version != expected_version:
         raise ConflictError("matter_changed", "事项已被其他操作修改，请刷新后再试。")
+    now = datetime.now(UTC)
+    effect = {"cancelled_schedules": 0, "retained_schedules": 0, "readonly_schedules": 0}
     matter.status = status
     matter.version += 1
     matter.archived_at = datetime.now(UTC) if status == "archived" else None
     if status == "archived":
         from assistant_api.services import commute_lifecycle
         await commute_lifecycle.stop_plans(db, user, matter_id)
+        future = list(await db.scalars(select(ScheduleEvent).where(
+            ScheduleEvent.user_id == user.user_id,
+            ScheduleEvent.matter_id == matter_id,
+            ScheduleEvent.status == "scheduled",
+            ScheduleEvent.deleted_at.is_(None),
+            ScheduleEvent.starts_at > now,
+        )))
+        for schedule in future:
+            if not can_edit_schedule(schedule.source, schedule.data_source_id):
+                effect["readonly_schedules"] += 1
+            elif not cancel_future_schedules:
+                effect["retained_schedules"] += 1
+            else:
+                schedule.status = "cancelled"
+                schedule.deleted_at = now
+                schedule.sync_status = "local_only"
+                effect["cancelled_schedules"] += 1
+                await db.execute(delete(ScheduleRouteResult).where(
+                    ScheduleRouteResult.user_id == user.user_id,
+                    ScheduleRouteResult.schedule_id == schedule.schedule_id,
+                ))
+                await db.execute(update(Reminder).where(
+                    Reminder.user_id == user.user_id,
+                    Reminder.schedule_id == schedule.schedule_id,
+                    Reminder.status == "pending",
+                    Reminder.trigger_at > now,
+                    Reminder.deleted_at.is_(None),
+                ).values(status="cancelled", cancelled_at=now))
     if cancel_reminders:
         now = datetime.now(UTC)
         await db.execute(
@@ -979,7 +1010,10 @@ async def set_status(
         )
     await db.commit()
     await db.refresh(matter)
-    return (await _serialize_matters(db, [matter]))[0]
+    result = (await _serialize_matters(db, [matter]))[0]
+    if status == "archived":
+        result["archive_effect"] = effect
+    return result
 
 
 async def delete_matter(db: AsyncSession, user: User, matter_id: str) -> dict:

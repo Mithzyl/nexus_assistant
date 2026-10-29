@@ -97,3 +97,39 @@ async def test_genuinely_unknown_request_remains_unknown(harness):
         result=await matters.get_intake_result(db,user,run.local_run_id)
         assert result['confirm_status']=='unknown' and result['outcome']=='unknown'
         assert result['target_lifecycle'] is None and result['history_target_id'] is None
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('preserve', [False, True])
+async def test_quick_archive_future_schedules_and_isolation(harness, preserve):
+    from datetime import timedelta
+    from assistant_api.models import ScheduleEvent, Reminder
+    from conftest import auth
+    h = harness
+    now = datetime.now(UTC)
+    async with h.app.state.session_factory() as db:
+        matter = Matter(user_id=h.user_a, title='归档入口', status='active', version=1)
+        db.add(matter)
+        await db.flush()
+        future = ScheduleEvent(user_id=h.user_a, matter_id=matter.matter_id, title='未来', starts_at=now + timedelta(days=1), status='scheduled', source='web_native')
+        past = ScheduleEvent(user_id=h.user_a, matter_id=matter.matter_id, title='过去', starts_at=now - timedelta(days=1), status='scheduled', source='web_native')
+        imported = ScheduleEvent(user_id=h.user_a, matter_id=matter.matter_id, title='只读', starts_at=now + timedelta(days=1), status='scheduled', source='ios_eventkit')
+        unrelated = ScheduleEvent(user_id=h.user_b, title='他人', starts_at=now + timedelta(days=1), status='scheduled', source='web_native')
+        db.add_all([future, past, imported, unrelated])
+        await db.flush()
+        reminder = Reminder(user_id=h.user_a, matter_id=matter.matter_id, schedule_id=future.schedule_id, title='未来提醒', trigger_at=now + timedelta(hours=1), status='pending')
+        db.add(reminder)
+        await db.commit()
+        mid = matter.matter_id
+        ids = [x.schedule_id for x in [future, past, imported, unrelated]]
+        rid = reminder.reminder_id
+    payload = {'expected_version': 1, 'cancel_reminders': False}
+    if preserve:
+        payload['cancel_future_schedules'] = False
+    response = await h.client.post(f'/api/v1/matters/{mid}/archive', headers=auth(h.token_a), json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()['archive_effect'] == {'cancelled_schedules': int(not preserve), 'retained_schedules': int(preserve), 'readonly_schedules': 1}
+    async with h.app.state.session_factory() as db:
+        rows = [await db.get(ScheduleEvent, sid) for sid in ids]
+        assert rows[0].status == ('scheduled' if preserve else 'cancelled')
+        assert all(row.status == 'scheduled' for row in rows[1:])
+        assert (await db.get(Reminder, rid)).status == ('pending' if preserve else 'cancelled')

@@ -129,7 +129,9 @@ async def test_initial_delete_removes_only_untouched_created_records(harness):
     )
     assert hidden_history.status_code == 200
     assert hidden_history.json()["draft"] is None
-    assert hidden_history.json()["outcome"] == "unknown"
+    assert hidden_history.json()["outcome"] == "draft"
+    assert hidden_history.json()["confirm_status"] == "confirmed"
+    assert hidden_history.json()["target_lifecycle"] == "deleted"
 
     async with h.app.state.session_factory() as db:
         matter = await db.get(Matter, matter_id)
