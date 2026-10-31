@@ -102,7 +102,7 @@ export function forgetLastAccount(): void {
 /**
  * Drop UI caches that belong to one account on logout or confirmed expiry.
  *
- * Locally saved user content ("收下内容/记一句") is intentionally kept; it is
+ * Locally saved user content ("交给助手整理/随手记一条") is intentionally kept; it is
  * user data, not account/session cache, and remains keyed by account.
  */
 export function clearAccountCaches(accountId: string | null): void {

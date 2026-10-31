@@ -3,7 +3,7 @@
 /** Today's commute summary; only server-provided advice is shown as fact. */
 
 import Link from "next/link";
-import { ArrowUpRight, CloudSun, MapPin, RefreshCw } from "lucide-react";
+import { ArrowRight, CloudSun, MapPin, RefreshCw } from "lucide-react";
 
 import type { Advisory, CommuteCheck, CommutePlan, PlanWeather } from "@/lib/mobile/api";
 import { ApiError } from "@/lib/mobile/api";
@@ -101,7 +101,7 @@ export function TodayCommuteCard() {
 
         {state === "loading" ? (
           <p className="caption mt-10" style={{ marginBottom: 0 }}>
-            正在确认登录状态…
+            正在同步账号状态…
           </p>
         ) : null}
 
@@ -111,10 +111,10 @@ export function TodayCommuteCard() {
               登录后查看通勤建议
             </p>
             <p className="caption mt-4" style={{ marginBottom: 0 }}>
-              通勤计划、天气与出发建议由服务器生成；未登录时这里不会显示示例。
+              登录账号后，这里会显示常用路线、天气与出发建议。
             </p>
-            <Link href="/login" className="link-button mt-6">
-              登录 PA 账号 <ArrowUpRight size={13} />
+            <Link href="/login" className="btn btn--primary btn--small mt-10">
+              登录账号
             </Link>
           </>
         ) : null}
@@ -156,7 +156,7 @@ export function TodayCommuteCard() {
               可在“问助手”发起通勤安排，确认地点后比较真实驾车与公交路线，也可手动填写计划。
             </p>
             <Link href="/me/commute" className="link-button mt-6">
-              新建通勤计划 <ArrowUpRight size={13} />
+              新建通勤计划 <ArrowRight size={14} strokeWidth={1.5} />
             </Link>
           </>
         ) : null}
@@ -184,7 +184,7 @@ export function TodayCommuteCard() {
                 上次重新分析：{CHECK_STATUS_LABEL[checkStatus]}
                 {check.data?.phase ? ` · ${CHECK_PHASE_LABEL[check.data.phase]}` : ""}
                 {check.data?.finished_at
-                  ? ` · 服务器完成于 ${formatDateTime(check.data.finished_at)}`
+                  ? ` · 完成于 ${formatDateTime(check.data.finished_at)}`
                   : ""}
                 {" · "}
                 <Link href={`/me/commute/${plan.id}`} className="link-button link-button--inline">
@@ -204,16 +204,16 @@ export function TodayCommuteCard() {
                       latestWeather.data.summary.precipitation_probability_max * 100,
                     )}%`
                   : " · 降雨概率未知"}
-                {" · 取得于 "}
+                {" · 获取于 "}
                 {formatDateTime(latestWeather.data.fetched_at) || "时间未记录"}
                 {latestWeather.data.is_stale ? " · 已过期" : ""}
-                {latestWeather.data.matches_current_plan ? "" : " · 旧计划版本"}
+                {latestWeather.data.matches_current_plan ? "" : " · 较早的设置"}
               </p>
             ) : null}
 
             {advisory.loading ? (
               <p className="caption mt-10" style={{ marginBottom: 0 }}>
-                正在读取今天的建议…
+                正在更新通勤建议…
               </p>
             ) : null}
 
@@ -237,7 +237,7 @@ export function TodayCommuteCard() {
                   </div>
                 ) : null}
                 <p className="micro mt-6" style={{ marginBottom: 0 }}>
-                  结果：{applicability?.label} · 服务器更新于{" "}
+                  结果：{applicability?.label} · 更新于{" "}
                   {formatDateTime(current.generated_at)} · 有效至{" "}
                   {formatDateTime(current.expires_at)}
                 </p>
@@ -247,7 +247,7 @@ export function TodayCommuteCard() {
             {!advisory.loading && !current && applicability ? (
               <div className="mt-10">
                 <p className="caption" style={{ margin: 0 }}>
-                  服务器已保存一条建议，但{applicability.label === "已过期" ? "已经过期" : applicability.label === "修改前结果" ? "属于修改前的计划版本" : applicability.label === "历史建议" ? "是历史建议" : "当前没有可用结果"}，不能作为今天的出发时间。
+                  有一条较早的通勤建议，但{applicability.label === "已过期" ? "已经过期" : applicability.label === "修改前结果" ? "属于修改前的设置" : applicability.label === "历史建议" ? "是历史建议" : "当前没有可用结果"}，暂时不能作为今天的出发时间。
                 </p>
                 <p className="micro" style={{ margin: "4px 0 0" }}>
                   {applicability.detail}
@@ -266,7 +266,7 @@ export function TodayCommuteCard() {
             ) : null}
             {!advisory.loading && noAdvisory ? (
               <p className="caption mt-8" style={{ marginBottom: 0 }}>
-                今天还没有生成建议。可以打开详情主动重新分析；刷新不会创建检查。
+                今天还没有生成建议。可以打开详情重新分析。
               </p>
             ) : null}
             {!advisory.loading && advisory.error && !noAdvisory ? (
@@ -278,13 +278,13 @@ export function TodayCommuteCard() {
             {routeIssue ? (
               <p className="micro amber" style={{ margin: "7px 0 0" }}>
                 {unconfigured
-                  ? "路线服务尚未配置：当前无法查询新路线；已有或历史建议仍可在详情中查看。"
+                  ? "路线服务尚未开通；已有或历史建议仍可查看。"
                   : "当前无法查询新路线；已有或历史建议仍可在详情中查看。"}
               </p>
             ) : null}
             {mocks.length > 0 ? (
               <p className="micro amber" style={{ margin: "4px 0 0" }}>
-                开发/测试数据（{mocks.join(" / ")}），不是真实路况
+                当前为示例数据，不是实时路况
               </p>
             ) : null}
 

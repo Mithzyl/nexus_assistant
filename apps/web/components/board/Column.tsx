@@ -20,14 +20,13 @@ export function Column({ title, count }: ColumnProps) {
         </span>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-2">
-        {/* Card area — empty in Phase 1 */}
-        <div className="flex-1 min-h-[200px] rounded-md border border-dashed border-muted-foreground/25 flex items-center justify-center text-sm text-muted-foreground">
-          暂无卡片
+        <div className="flex-1 min-h-[160px] rounded-md border border-dashed border-muted-foreground/25 flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+          <span>暂无卡片</span>
+          <Button variant="ghost" size="sm">
+            <Plus className="h-4 w-4 mr-1" />
+            添加卡片
+          </Button>
         </div>
-        <Button variant="ghost" size="sm" className="w-full justify-start">
-          <Plus className="h-4 w-4 mr-1" />
-          添加卡片
-        </Button>
       </CardContent>
     </Card>
   );

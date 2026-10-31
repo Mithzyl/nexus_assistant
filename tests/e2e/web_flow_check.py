@@ -246,7 +246,7 @@ def main() -> int:
         check("internal JSON is not displayed", '"task":"commute_analysis"' not in body)
         check("unknown body is not displayed", FIXTURE["questions"]["unknown"] not in body)
         check("unknown answer is not displayed", "UNKNOWN_SECRET_ANSWER" not in body)
-        check("unknown is labelled pending", "这条本机记录尚未确认" in body)
+        check("unknown is labelled pending", "这条记录暂未确认" in body)
         check("unsent local question remains visible", FIXTURE["questions"]["unsent"] in body)
         check("unsent can still retry", "重试同一次提交" in body)
         check(
@@ -337,7 +337,7 @@ def main() -> int:
             "weather update does not claim reanalysis",
             "出发建议仍来自上一次分析" in body,
         )
-        check("old plan revision is labelled", "修改前结果" in body)
+        check("old plan revision is labelled", "设置已更新" in body)
         check("expired advice is labelled", "已过期" in body)
         check("no stale old-label copy", "旧计划版本" not in body)
         history_count = page.locator(".history-advice").count()
@@ -376,7 +376,7 @@ def main() -> int:
         check_posts.clear()
         go(page, f"/me/commute/{plan_b}", 1200)
         body = text(page)
-        check("running phase is shown", "更新天气" in body)
+        check("running phase is shown", "核对通勤时段天气" in body)
         check("missing worker is explained", "尚未收到执行程序的响应" in body)
         check("task is described as saved", "任务已保存" in body)
         check("manual reconcile action exists", "继续核对" in body or "继续等待" in body)
@@ -448,7 +448,7 @@ def main() -> int:
         )
         go(page, f"/me/commute/{plan_e}", 1000)
         body = text(page)
-        check("unknown result is labelled", "服务器尚未确认本次结果" in body)
+        check("unknown result is labelled", "尚未确认本次结果" in body)
         check("unknown keeps a reconcile action", "继续核对" in body)
         check("unknown is not shown as failure", "这次重新分析没有完成" not in body)
 
@@ -468,7 +468,7 @@ def main() -> int:
         go(page, f"/me/commute/{plan_h}", 1300)
         body = text(page)
         check("old revision operation is retired", "计划已更新" in body)
-        check("old revision advice is labelled", "修改前结果" in body)
+        check("old revision advice is labelled", "设置已更新" in body)
         check("retired operation does not create a check", len(check_posts) == 0, check_posts)
         retired = page.evaluate(
             "([key]) => JSON.parse(localStorage.getItem(key) || 'null')", [check_key_h]
@@ -506,10 +506,10 @@ def main() -> int:
         # 10. Route provider unconfigured is explicit; weather/history remain readable.
         go(page, f"/me/commute/{plan_c}", 1500)
         body = text(page)
-        check("route unconfigured is explicit", "路线服务尚未配置" in body)
-        check("weather missing is honest", "今天还没有服务器保存的天气记录" in body)
+        check("route unconfigured is explicit", "路线服务尚未开通" in body)
+        check("weather missing is honest", "今天还没有天气记录" in body)
         check("historical advice still readable", FIXTURE["titles"]["unconfigured"] in body)
-        check("no fabricated route source", "服务器路线查询" not in body, body[:400])
+        check("no fabricated route source", "实时路线查询" not in body, body[:400])
         page.screenshot(path=str(SHOTS / "commute-unconfigured.png"), full_page=True)
 
         # 11. Narrow width and long chat are checked on account A before switching.
@@ -525,15 +525,15 @@ def main() -> int:
 
         # 12. Session renewal, logout, and account switching.
         go(page, "/me", 500)
-        page.get_by_role("button", name="立即续期").click()
+        page.get_by_role("button", name="延长登录").click()
         wait(page, 1000)
-        check("renewal is server-confirmed", "已向服务器确认续期。" in text(page))
+        check("renewal is server-confirmed", "已延长登录。" in text(page))
         page.get_by_role("button", name="退出登录").click()
         wait(page, 300)
         page.locator('[role="alertdialog"]').get_by_role("button", name="退出登录").click()
         page.wait_for_url("**/today", timeout=10000)
         wait(page, 600)
-        check("logout returns to guest", "未登录时" in text(page), text(page)[:200])
+        check("logout returns to guest", "登录后同步今日安排" in text(page), text(page)[:200])
         login(page, FIXTURE["email_b"], FIXTURE["password"])
         go(page, "/ask", 1800)
         body = text(page)

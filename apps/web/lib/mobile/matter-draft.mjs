@@ -115,7 +115,9 @@ export function mergeIntakeHistory(serverRows, localRows) {
       if (item.localRunId && runIds.has(item.localRunId)) return false;
       return !fingerprints.has(`${item.question}\u0000${item.answer}`);
     }),
-  ];
+  ].sort((a, b) =>
+    (Date.parse(a.created_at || a.createdAt || "") || 0) -
+    (Date.parse(b.created_at || b.createdAt || "") || 0));
 }
 
 function formatInstant(value) {

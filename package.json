@@ -10,7 +10,8 @@
     "build:desktop": "pnpm build:web && pnpm --filter @superapp/desktop build",
     "db:migrate": "pnpm --filter @superapp/web db:migrate",
     "db:generate": "pnpm --filter @superapp/web db:generate",
-    "db:studio": "pnpm --filter @superapp/web db:studio"
+    "db:studio": "pnpm --filter @superapp/web db:studio",
+    "start:backend": "services/assistant-api/.venv/bin/python services/assistant-api/scripts/run_backend.py"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

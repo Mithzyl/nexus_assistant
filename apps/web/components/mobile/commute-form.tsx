@@ -106,7 +106,9 @@ export function CommuteForm({
         setDraft((current) => ({
           ...current,
           [key]: {
-            label: current[key].label.trim() || "当前位置",
+            city: null,
+            coordinate_system: "wgs84",
+            label: "当前位置",
             latitude: Number(position.coords.latitude.toFixed(6)),
             longitude: Number(position.coords.longitude.toFixed(6)),
           },
@@ -300,10 +302,15 @@ export function CommuteForm({
             </div>
           ) : (
             <p className="field__hint" style={{ marginTop: 4 }}>
-              还没有已保存地点；PA 没有地点搜索/地址解析接口，请手动填写或使用当前位置。
+              还没有已保存地点；请手动填写，或使用当前位置。
             </p>
           )}
 
+          <label className="field">
+            <span className="field__label">城市（公交使用；留空时按坐标查询）</span>
+            <input className="input" value={draft[key].city ?? ""}
+              onChange={(event) => set(key, { ...draft[key], city: event.target.value.trim() || null })} />
+          </label>
           <label className="field" htmlFor={`${key}-label`}>
             <input
               id={`${key}-label`}
@@ -366,17 +373,16 @@ export function CommuteForm({
             到达前提醒
           </span>
           <span className="caption" style={{ display: "block", marginTop: 2 }}>
-            由服务器调度检查；浏览器关闭后仍可经 Bark 送达（需先绑定）。
+            由云端调度检查；浏览器关闭后仍可经 Bark 送达（需先绑定）。
           </span>
         </span>
         <span className="switch" aria-checked={draft.notify_enabled} role="switch" />
       </button>
 
       <div className="notice mt-12">
-        <strong>浏览器不能生成路线快照</strong>
+        <strong>路线与出发时间</strong>
         <p style={{ margin: "4px 0 0" }}>
-          这里需要手动填写起终点与坐标。浏览器没有地图选点、路线几何和交通 ETA；
-          建议到时只使用服务器返回的天气与 ETA，不显示虚构的距离或路线。
+          填写起终点与坐标后，路线和出发时间会由服务计算；也可以直接手动填写常用地点。
         </p>
       </div>
 

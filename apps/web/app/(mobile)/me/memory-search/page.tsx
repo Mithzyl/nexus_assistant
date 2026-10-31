@@ -60,10 +60,10 @@ export default function MemorySearchPage() {
   return (
     <PageShell
       title="记忆检索"
-      subtitle="检索当前账号的 Nexus 个人记忆，区分待确认内容与已生效记忆。"
+      subtitle="检索当前账号下的个人记忆，待确认内容会单独标记。"
     >
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后才能检索" body="检索使用当前 PA 账号，不会跨账号查询。">
+        <EmptyState title="登录后检索个人记忆" body="只检索当前账号下的个人记忆。">
           <Link href="/login" className="btn btn--primary">登录</Link>
         </EmptyState>
       ) : null}
@@ -133,12 +133,11 @@ export default function MemorySearchPage() {
           ) : null}
 
           {results?.next_cursor ? <PrimaryButton onClick={() => void search(Number(results.next_cursor))} disabled={busy}>继续检索下一页</PrimaryButton> : null}
-          <Notice tone="amber" title="记忆状态">
-            此页按关键词匹配记忆正文，每次读取一页。待确认内容不等于已生效偏好；接口不可用时会明确显示错误。
-            日程、历史对话和长期记忆分别保存，未确认的出行方式不会自动成为偏好。
+          <Notice title="关于检索">
+            按关键词匹配记忆正文；待确认内容在你确认后，才会参与后续建议。
           </Notice>
           <Link href="/me/memories" className="link-button mt-6">
-            查看本地演示经验
+            查看个人记忆
           </Link>
         </>
       ) : null}

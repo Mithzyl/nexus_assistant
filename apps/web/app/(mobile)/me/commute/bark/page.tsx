@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Bell, KeyRound } from "lucide-react";
+import { Bell, ChevronRight, KeyRound } from "lucide-react";
 
 import type { BarkStatus, BarkTest } from "@/lib/mobile/api";
 import { ApiError, apiRequest } from "@/lib/mobile/api";
@@ -114,9 +114,9 @@ export default function BarkPage() {
   };
 
   return (
-    <PageShell title="Bark 提醒" subtitle="Bark 是服务器侧的第三方推送通道，不是 Web Push。">
+    <PageShell title="Bark 提醒" subtitle="在 Bark 客户端接收通勤提醒。">
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后才能绑定 Bark" body="绑定作用在当前 PA 账号上。">
+        <EmptyState title="登录后绑定 Bark" body="绑定账号后，通勤提醒会发送到你的 Bark。">
           <Link href="/login" className="btn btn--primary">登录</Link>
         </EmptyState>
       ) : null}
@@ -134,7 +134,7 @@ export default function BarkPage() {
                   ? "还没有绑定 Bark"
                   : auto
                     ? "已开启自动提醒"
-                    : "Key 已绑定，自动提醒关闭"}
+                    : "已绑定 Bark，自动提醒关闭"}
               </strong>
               <span className="grow" />
               <Pill tone={configured && auto ? "green" : configured ? "amber" : "neutral"}>
@@ -147,12 +147,12 @@ export default function BarkPage() {
             </div>
             <p className="caption" style={{ margin: "8px 0 0" }}>
               {configured
-                ? `服务器会通过 ${data.base_url_host} 发送通勤检查结果。Key 只保存在服务器，接口不会返回它。`
-                : "绑定后，通勤检查完成时可以发一条提醒到你的 Bark 客户端。"}
+                ? `通勤检查完成后，会通过 ${data.base_url_host} 发送提醒。密钥只保存在账号中，不会再次显示。`
+                : "绑定后，通勤检查完成时会发一条提醒到你的 Bark 客户端。"}
             </p>
             {configured && data.available === false ? (
               <p className="caption amber" style={{ margin: "6px 0 0" }}>
-                服务器当前无法派发 Bark 请求，请稍后再试。
+                暂时无法发送 Bark 提醒，请稍后再试。
               </p>
             ) : null}
             {data.last_test_at ? (
@@ -167,7 +167,7 @@ export default function BarkPage() {
               title="通勤自动提醒"
               detail={
                 configured
-                  ? "每天最多两条自动提醒，由服务器调度；关闭只停止后续自动提醒。"
+                  ? "每天最多两条自动提醒；关闭后只停止后续提醒。"
                   : "先绑定 Key 才能开启自动提醒。"
               }
               checked={auto}
@@ -191,7 +191,7 @@ export default function BarkPage() {
                   需要你明确确认；不会因为打开这个页面就自动发送
                 </span>
               </span>
-              <span className="chevron">›</span>
+              <ChevronRight size={16} className="chevron" aria-hidden="true" />
             </button>
           </div>
 
@@ -228,7 +228,7 @@ export default function BarkPage() {
               {configured ? "替换 device key" : "绑定 Bark"}
             </p>
             <p className="caption" style={{ margin: "4px 0 10px" }}>
-              Key 只会提交给服务器；页面不会回显已保存的 Key。
+              密钥只会提交到账号，不会在页面回显。
             </p>
             <label className="field" htmlFor="bark-key">
               <input
@@ -263,7 +263,7 @@ export default function BarkPage() {
           </div>
 
           <Notice tone="amber" title="不要把这当成送达回执">
-            服务器只保存最后一次测试状态，没有通知历史接口。Bark 接受请求、服务器投递成功和手机实际收到是三件事，不能互相替代。
+            这里只保留最近一次测试结果，实际送达以手机通知为准。
           </Notice>
         </>
       ) : null}

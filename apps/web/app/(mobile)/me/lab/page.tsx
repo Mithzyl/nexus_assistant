@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, FlaskConical, RotateCcw } from "lucide-react";
+import { Archive, ArrowRight, ChevronRight, FlaskConical, RotateCcw } from "lucide-react";
 
 import { useDemo, useUI } from "@/components/mobile/providers";
 import { useWorkPlan } from "@/components/mobile/work-plan-store";
@@ -33,7 +33,7 @@ export default function LabPage() {
     <PageShell title="实验室" subtitle="概念预览与旧版演示，不进入正式时间线" fallbackHref="/me">
       <div className="m-stack-18" style={{ padding: "0 var(--m-gutter)" }}>
         <Notice title="概念预览" tone="amber">
-          这里的内容只在本浏览器演示，不写入 PA 服务器，不进入正式“今天”或“事项”，也不代表 iOS 日历已同步。
+          这里的内容只在本机演示，不会同步到账号，也不会进入正式的今天或事项。
         </Notice>
 
         <section>
@@ -41,7 +41,7 @@ export default function LabPage() {
           <div className="card">
             <p className="card-title" style={{ fontSize: 16 }}>事项、日程与冲突调整</p>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              用本机示例检查分组、详情、补充进展、停止、删除和冲突方案；正式事项请回到“事项”页。
+              用本机示例试试分组、详情、补充进展和冲突调整；正式事项请回到“事项”页。
             </p>
             <div className="m-stack-8 mt-12">
               <button type="button" className="btn btn--primary" onClick={() => {
@@ -58,15 +58,15 @@ export default function LabPage() {
               </button>
               <button type="button" className="btn btn--quiet" onClick={() => {
                 plan.resetPreview();
-                toast("已重置本机预览示例");
+                toast("已重置当前设备预览示例");
               }}>
                 <RotateCcw size={14} /> 重置预览数据
               </button>
             </div>
             <p className="micro" style={{ margin: "10px 0 0" }}>
               {demo.enabled
-                ? `当前本机预览有 ${plan.matters.length} 条记录。删除或停止后，重置可恢复示例。`
-                : "开启预览后会生成三条本机示例；不会写入服务器。"}
+                ? `本机预览有 ${plan.matters.length} 条记录。删除或停止后，重置可恢复示例。`
+                : "开启预览后会生成三条本机示例；不会同步到账号。"}
             </p>
           </div>
         </section>
@@ -81,25 +81,39 @@ export default function LabPage() {
                   <span className="row__title" style={{ display: "block" }}>{item.title}</span>
                   <span className="row__detail" style={{ display: "block" }}>{item.detail}</span>
                 </span>
-                <span className="chevron">›</span>
+                <ChevronRight size={16} className="chevron" aria-hidden="true" />
               </button>
             ))}
           </div>
           <p className="micro" style={{ margin: "8px 0 0" }}>
-            这些入口只从实验室打开；当前“事项”列表不再混入消费金额、退款阶段等旧演示信息。
+            这些示例只在这里出现，不会混入正式事项。
           </p>
         </section>
 
         <section className="card card--tight">
           <SwitchRow
             title="演示模式"
-            detail="关闭后，“今天”和“事项”回到真实空状态；本机预览数据保留但不再展示。"
+            detail="关闭后，“今天”和“事项”回到真实空状态；当前设备预览数据保留但不再展示。"
             checked={demo.enabled}
             onChange={() => {
               demo.setEnabled(!demo.enabled);
-              toast(demo.enabled ? "已关闭演示模式" : "已开启演示模式，仅使用本机示例");
+              toast(demo.enabled ? "已关闭演示模式" : "已开启演示模式，仅使用当前设备示例");
             }}
           />
+        </section>
+
+        <section>
+          <h2 className="section-title" style={{ marginBottom: 8 }}>高级选项</h2>
+          <div className="group">
+            <Link href="/board" className="row">
+              <span className="tile tile--sm"><Archive size={14} strokeWidth={1.5} /></span>
+              <span className="row__body">
+                <span className="row__title" style={{ display: "block" }}>旧版看板</span>
+                <span className="row__detail" style={{ display: "block" }}>保留的桌面看板</span>
+              </span>
+              <ChevronRight size={16} className="chevron" aria-hidden="true" />
+            </Link>
+          </div>
         </section>
 
         <Link href="/me" className="btn btn--quiet">返回我的</Link>

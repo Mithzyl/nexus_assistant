@@ -54,8 +54,8 @@ export default function MattersPage() {
       {!demo.enabled ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
-            title="实验室只展示本机概念"
-            body="正式事项、日程和提醒已在“事项”页通过服务器草稿确认；实验室不会把本地示例混入正式数据。"
+            title="实验室只展示当前设备概念"
+            body="正式事项、日程和提醒已在“事项”页通过云端草稿确认；实验室不会把本地示例混入正式数据。"
           >
             <div className="m-stack-8">
               <Link href="/me/lab" className="btn btn--secondary">
@@ -69,7 +69,7 @@ export default function MattersPage() {
                 className="btn btn--quiet"
                 onClick={() => {
                   demo.setEnabled(true);
-                  toast("已开启概念预览，仅使用本机示例");
+                  toast("已开启概念预览，仅使用当前设备示例");
                 }}
               >
                 显式开启概念预览
@@ -77,12 +77,12 @@ export default function MattersPage() {
             </div>
           </EmptyState>
           <p className="micro text-center mt-16">
-            需要真实写入时请回到事项页；这里的本机预览与服务器数据保持隔离。
+            需要真实写入时请回到事项页；这里的当前设备预览与云端数据保持隔离。
           </p>
         </div>
       ) : !plan.ready ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
-          <LoadingCard label="正在读取本机预览…" />
+          <LoadingCard label="正在读取当前设备预览…" />
         </div>
       ) : (
         <>
@@ -122,7 +122,7 @@ export default function MattersPage() {
               <ArrowRight size={14} />
             </button>
             <p className="micro text-center mt-8">
-              预览数据只在本浏览器；停止、删除和确认都不会改变服务器。
+              预览数据只在本浏览器；停止、删除和确认都不会改变云端。
             </p>
           </div>
         </>

@@ -90,3 +90,16 @@ def error_for_status(status_code: int, detail: str) -> NexusError:
     """Map an HTTP status to the narrowest error type the caller can act on."""
 
     return STATUS_MAP.get(status_code, NexusProtocolError)(detail)
+
+
+# Only these public codes may become user-facing memory explanations.
+MEMORY_MESSAGES = {
+    "memory_version_conflict": "这条记忆或设置已变更，请刷新后重新确认。",
+    "memory_request_conflict": "此操作标识已用于其他内容，请刷新后重新提交。",
+    "memory_confirmation_required": "此内容包含敏感信息，请核对后勾选敏感信息保存确认。",
+    "memory_type_confirmation_required": "请核对并确认记忆类型和字段。",
+    "memory_disabled": "当前记忆已关闭，请先确认是否开启。",
+    "memory_history_unavailable": "这条记忆没有可恢复的历史版本。",
+    "memory_share_target_unavailable": "目标账号尚未关联或关联已解除，请重新核对关联。",
+    "memory_share_fields_invalid": "共享字段已变化，请刷新后重新选择。",
+}

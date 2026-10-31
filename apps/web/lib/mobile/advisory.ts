@@ -3,10 +3,13 @@
 import type { Advisory } from "./api";
 
 export const AI_REASON_LABEL: Record<string, string> = {
-  route_snapshot_missing: "缺少路线快照",
-  route_provider_unconfigured: "路线服务尚未配置",
-  ai_nexus_not_configured: "服务端未配置 AI 分析",
+  route_snapshot_missing: "本次未进行 AI 分析：尚未取得可用路线和耗时。",
+  route_provider_unavailable: "本次未进行 AI 分析：没有取得可用路线和耗时，暂时无法生成出发建议。",
+  route_snapshot_stale: "本次未进行 AI 分析：路线数据已过期，请更新路线后再分析。",
+  route_provider_unconfigured: "路线服务尚未开通",
+  ai_nexus_not_configured: "云端未配置 AI 分析",
   ai_timeout: "AI 分析超时，结果未确认",
+  agent_workflow_internal_error: "模型服务本次处理失败；路线和天气结果已保留，可查看基础出发建议。",
   ai_workflow_failed: "AI 工作流失败",
   ai_upstream_error: "AI 服务调用异常",
   ai_output_invalid_json: "AI 输出不是严格 JSON",
@@ -36,8 +39,8 @@ export function hasUnavailableRoute(advisory: Advisory): boolean {
 
 export function routeProviderLabel(advisory: Advisory): string {
   const aiSource = advisory.ai_analysis?.route_source;
-  if (aiSource === "server_provider") return "服务器路线查询";
-  if (aiSource === "client_snapshot") return "客户端路线快照";
+  if (aiSource === "server_provider") return "实时路线查询";
+  if (aiSource === "client_snapshot") return "上次路线记录";
   if (aiSource === "none") return "没有可用路线";
   const routes = routeSources(advisory);
   if (routes.length === 0) return "未记录路线来源";
@@ -63,9 +66,6 @@ export function mockProviders(advisory: Advisory): string[] {
   const names = advisory.sources
     .map((source) => source.provider)
     .filter((provider) => /mock|stub/i.test(provider));
-  if (advisory.sources.some((source) => /example\.invalid/i.test(source.attribution?.url ?? ""))) {
-    if (!names.includes("mock")) names.push("mock");
-  }
   return names.filter((value, index, all) => all.indexOf(value) === index);
 }
 
@@ -86,10 +86,13 @@ export function aiStatus(advisory: Advisory): {
     };
   }
   if (ai.status === "available" && advisory.explanation_source === "model") {
-    return { label: "模型分析（服务端校验）", tone: "green", available: true };
+    return { label: "模型分析（云端校验）", tone: "green", available: true };
   }
   if (ai.status === "available") {
     return { label: "分析可用（非模型文案）", tone: "fog", available: true };
+  }
+  if (["route_snapshot_missing", "route_provider_unavailable", "route_provider_unconfigured", "route_snapshot_stale"].includes(ai.reason ?? "")) {
+    return { label: "本次未进行 AI 分析", tone: "neutral", available: false };
   }
   if (ai.status === "rejected") {
     return { label: "模型分析被拒绝", tone: "red", available: false };
@@ -133,16 +136,11 @@ export function advisoryApplicability(
   const planMatches =
     advisory.matches_current_plan ?? advisory.plan_revision === planRevision;
   const currentServiceDate = advisory.is_current_service_date ?? true;
-  const currentRevision = advisory.current_plan_revision ?? planRevision;
-
   if (!planMatches) {
     return {
       applicable: false,
-      label: "修改前结果",
-      detail:
-        `建议属于计划 revision ${advisory.plan_revision}，当前为 revision ${currentRevision}，` +
-        "不能当作当前计划的结果。" +
-        (expired ? " 它同时也已超过有效期。" : ""),
+      label: "设置已更新",
+      detail: "通勤设置已更新，建议重新核对路线。这条建议来自较早的设置，不能作为当前计划的结果。",
       tone: "neutral",
     };
   }
@@ -150,15 +148,19 @@ export function advisoryApplicability(
     return {
       applicable: false,
       label: "已过期",
-      detail: "这是历史建议，已超过服务器给出的有效期，不适用于当前出行；服务器记录仍保留。",
+      detail: "这条建议已过期，出发前请重新核对路线。",
       tone: "neutral",
     };
+  }
+  if (!currentServiceDate && Date.parse(advisory.target_arrival_at) > now && advisory.quality !== "unavailable") {
+    return { applicable: true, label: "下次通勤预估",
+      detail: `面向 ${advisory.local_service_date} 的通勤预估；未来路况和天气可能变化，出发前请更新。`, tone: "neutral" };
   }
   if (!currentServiceDate) {
     return {
       applicable: false,
       label: "历史建议",
-      detail: `这条建议产生于 ${advisory.local_service_date}，不是今天的结果；服务器记录仍保留。`,
+      detail: `这条建议对应 ${advisory.local_service_date} 的通勤，不是今天的结果。`,
       tone: "neutral",
     };
   }
@@ -166,7 +168,7 @@ export function advisoryApplicability(
     return {
       applicable: false,
       label: "没有可用结果",
-      detail: "服务器保存了记录，但这次没有生成可用的路线/天气结论。",
+      detail: "这次没有生成可用的路线或天气结论。",
       tone: "amber",
     };
   }
@@ -174,14 +176,14 @@ export function advisoryApplicability(
     return {
       applicable: true,
       label: "无新路线结论",
-      detail: "服务器未配置路线 Provider；建议只反映服务器保存的旧快照/天气，不代表新的路线查询。",
+      detail: "路线服务尚未开通；建议只反映已有的天气与路线记录。",
       tone: "amber",
     };
   }
   return {
     applicable: true,
     label: "在有效期内",
-    detail: "这是服务器保存、仍在有效期内的建议，可作为出行参考。",
+    detail: "这条建议仍在有效期内，可作为出行参考。",
     tone: "green",
   };
 }

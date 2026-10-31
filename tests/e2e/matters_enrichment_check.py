@@ -44,11 +44,32 @@ def login(page) -> None:
 
 
 def direct_question_response(route) -> None:
+    answer = "服务器在这次整理请求中直接返回了回答。"
+    result = {
+        "outcome": "answer",
+        "answer": answer,
+        "local_run_id": "e2e-direct-answer",
+        "draft": None,
+        "replayed": False,
+        "intent": "question",
+        "message": "这句话更像问题或闲聊，已直接回答，不会创建事项。",
+    }
+    body = (
+        f"event: answer\ndata: {json.dumps({'text': answer}, ensure_ascii=False)}\n\n"
+        f"event: result\ndata: {json.dumps(result, ensure_ascii=False)}\n\n"
+    )
+    route.fulfill(status=200, content_type="text/event-stream", body=body)
+
+
+
+
+def direct_question_json(route) -> None:
     route.fulfill(
         status=200,
         content_type="application/json",
         body=json.dumps(
             {
+                "outcome": "answer",
                 "draft": None,
                 "replayed": False,
                 "intent": "question",
@@ -58,7 +79,6 @@ def direct_question_response(route) -> None:
             ensure_ascii=False,
         ),
     )
-
 
 def main() -> int:
     matter_id = FIXTURE["matters"]["lin"]
@@ -92,7 +112,7 @@ def main() -> int:
         page.locator(".sheet-panel").wait_for(state="visible")
         sheet = page.locator(".sheet-panel")
         check("today opens the existing draft sheet", "确认事项变更" in sheet.inner_text())
-        options = sheet.get_by_role("radio")
+        options = sheet.get_by_role("radiogroup", name="调整方案").get_by_role("radio")
         if options.count() > 0:
             options.first.click()
             page.wait_for_timeout(900)
@@ -122,6 +142,13 @@ def main() -> int:
         sheet.get_by_role("button", name="保存修改并重新核对").click()
         page.wait_for_timeout(1000)
         check("schedule preview can be saved without a matter title", "修改已保存到预览" in sheet.inner_text())
+        options = sheet.get_by_role("radiogroup", name="调整方案").get_by_role("radio")
+        if options.count() > 0:
+            options.first.click()
+            page.wait_for_timeout(900)
+        acknowledge = sheet.get_by_role("checkbox", name=re.compile("我已了解"))
+        if acknowledge.count() > 0 and acknowledge.is_enabled():
+            acknowledge.check()
         page.get_by_role("button", name="确认更新").click()
         page.locator(".sheet-panel").wait_for(state="detached", timeout=15000)
         page.reload(wait_until="networkidle")
@@ -158,6 +185,13 @@ def main() -> int:
         check("clearing reminder explains pending cancellation", "确认后会取消这条待办对应的待发提醒" in sheet.inner_text())
         sheet.get_by_role("button", name="保存修改并重新核对").click()
         page.wait_for_timeout(900)
+        options = sheet.get_by_role("radiogroup", name="调整方案").get_by_role("radio")
+        if options.count() > 0:
+            options.first.click()
+            page.wait_for_timeout(900)
+        acknowledge = sheet.get_by_role("checkbox", name=re.compile("我已了解"))
+        if acknowledge.count() > 0 and acknowledge.is_enabled():
+            acknowledge.check()
         sheet.get_by_role("button", name="确认更新").click()
         page.locator(".sheet-panel").wait_for(state="detached", timeout=15000)
         page.reload(wait_until="networkidle")
@@ -165,14 +199,15 @@ def main() -> int:
         legal_row = page.locator(".todo-row").filter(has_text="催法务发合同修订版").first
         check("cleared reminder is not restored", "未设提醒" in legal_row.inner_text())
 
-        page.route("**/api/pa/matters/intake", direct_question_response)
-        page.route(re.compile(r".*/api/pa/matters/[^/]+/intake$"), direct_question_response)
+        page.route("**/api/pa/matters/intake/stream", direct_question_response)
+        page.route(re.compile(r".*/api/pa/matters/[^/]+/intake/stream$"), direct_question_response)
+        page.route(re.compile(r".*/api/pa/matters/[^/]+/intake$"), direct_question_json)
 
         before_asks = len(ask_posts)
         page.goto(BASE + "/ask", wait_until="networkidle")
         page.locator(".composer__field").fill("今天天气怎么样？")
-        page.get_by_role("button", name="整理成事项").click()
-        page.wait_for_timeout(700)
+        page.get_by_role("button", name="发送").click()
+        page.wait_for_timeout(1800)
         answer_text = page_text(page)
         check("organize question displays server answer once", answer_text.count("服务器在这次整理请求中直接返回了回答。") == 1)
         check("organize question does not submit a second ask", len(ask_posts) == before_asks)
@@ -180,7 +215,7 @@ def main() -> int:
         page.goto(f"{BASE}/matters/{matter_id}", wait_until="networkidle")
         page.get_by_role("button", name="补充进展").first.click()
         page.get_by_label("这次发生了什么").fill("今天天气怎么样？")
-        page.get_by_role("button", name="交给服务器整理").click()
+        page.get_by_role("button", name="交给助手整理").click()
         page.get_by_text("助手回答", exact=True).wait_for(state="visible", timeout=10000)
         check("matter progress keeps a direct question answer", "服务器在这次整理请求中直接返回了回答。" in page.locator(".sheet-panel").inner_text())
 

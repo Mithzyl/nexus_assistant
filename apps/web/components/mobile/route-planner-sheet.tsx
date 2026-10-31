@@ -169,7 +169,7 @@ export function RoutePlannerSheet({
         (originMode === "previous" &&
           result.origin_schedule_id !== originScheduleId)
       ) {
-        setError("服务器返回的路线关联与当前日程或起点不一致，请刷新后重试。");
+        setError("云端返回的路线关联与当前日程或起点不一致，请刷新后重试。");
         return;
       }
       await onEstimated(schedule.schedule_id, result);
@@ -352,7 +352,7 @@ export function RoutePlannerSheet({
           </button>
           <p className="micro" style={{ margin: 0 }}>
             <MapPin size={12} style={{ display: "inline", verticalAlign: "-2px" }} />{" "}
-            只有你选定的起点会发送给服务器路线服务，不会自动联系外部地图。
+            只有你选定的起点会发送给云端路线服务，不会自动联系外部地图。
           </p>
         </div>
       ) : null}

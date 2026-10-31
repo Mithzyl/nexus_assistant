@@ -35,6 +35,7 @@ async def renew_job_lease(
                 CommuteCheck.check_id == job.job_id,
                 CommuteCheck.status == "running",
                 CommuteCheck.lease_owner == job.owner,
+                CommuteCheck.lease_expires_at > now,
             )
             .values(lease_expires_at=expires)
             .execution_options(synchronize_session=False)
@@ -46,6 +47,7 @@ async def renew_job_lease(
                 NotificationOutbox.outbox_id == job.job_id,
                 NotificationOutbox.status == "sending",
                 NotificationOutbox.lease_owner == job.owner,
+                NotificationOutbox.lease_expires_at > now,
             )
             .values(lease_expires_at=expires)
             .execution_options(synchronize_session=False)

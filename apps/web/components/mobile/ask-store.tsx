@@ -123,7 +123,7 @@ function phaseForStatus(status: RunStatus | null): AskPhase {
 }
 
 function messageForStatus(status: RunStatus): string | null {
-  if (status === "failed") return "服务器未能完成这次处理。";
+  if (status === "failed") return "云端未能完成这次处理。";
   if (status === "unknown") return "处理状态暂不确定，可以稍后刷新核对。";
   if (status === "cancelled") return "这次提问已取消。";
   return null;
@@ -299,12 +299,12 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
         if (accountRef.current !== account) return;
         if (caught instanceof ApiError && caught.status === 401) {
           void refreshAuth();
-          setVerificationError("登录状态已失效，本机旧记录暂时无法核对。");
+          setVerificationError("登录状态已失效，当前设备旧记录暂时无法核对。");
         } else {
           setVerificationError(
             caught instanceof Error
-              ? `本机旧记录暂时无法核对：${caught.message}`
-              : "本机旧记录暂时无法核对。",
+              ? `当前设备旧记录暂时无法核对：${caught.message}`
+              : "当前设备旧记录暂时无法核对。",
           );
         }
       } finally {
@@ -333,7 +333,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
           classification: "chat",
           phase: "submissionUncertain",
           errorMessage:
-            "上次提交结果暂不确定：请求可能已到达服务器，也可能没有。重试会复用同一个请求键。",
+            "上次提交结果暂不确定：请求可能已到达云端，也可能没有。重试会复用同一个请求键。",
         };
       }
       return { ...item, classification };
@@ -423,7 +423,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                         ...item,
                         pollingPaused: true,
                         errorMessage:
-                          "服务器暂时没有返回这条记录；本机记录仍保留，稍后可以再次核对。",
+                          "云端暂时没有返回这条记录；本机暂存仍保留，稍后可以再次核对。",
                       }
                     : item,
                 ),
@@ -456,7 +456,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                       ...item,
                       pollingPaused: true,
                       errorMessage:
-                        "暂时无法读取最新状态；服务器上的执行没有取消，稍后可继续核对。",
+                        "暂时无法读取最新状态；云端上的执行没有取消，稍后可继续核对。",
                     }
                   : item,
               ),
@@ -704,7 +704,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                     phase: "failed",
                     errorMessage:
                       caught.status === 409
-                        ? "服务端拒绝了这次提交，请稍后刷新核对。"
+                        ? "云端拒绝了这次提交，请稍后刷新核对。"
                         : caught.message,
                   }
                 : entry,
@@ -718,7 +718,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                     ...entry,
                     phase: "submissionUncertain",
                     errorMessage:
-                      "提交结果暂不确定：请求可能已经到达服务器，也可能没有。重试会复用同一个请求键，不会创建第二次执行。",
+                      "提交结果暂不确定：请求可能已经到达云端，也可能没有。重试会复用同一个请求键，不会创建第二次执行。",
                   }
                 : entry,
             ),

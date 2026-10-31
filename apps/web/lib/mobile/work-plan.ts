@@ -70,7 +70,7 @@ export const WORK_STATUS_LABEL: Record<WorkMatterStatus, string> = {
 };
 
 export const SYNC_STATUS_LABEL: Record<WorkSyncStatus, string> = {
-  local_only: "应用内预览 · 未写入服务器",
+  local_only: "应用内预览 · 未写入云端",
   pending_ios: "待 iOS 客户端同步",
   ios_synced: "iOS 已同步",
 };
@@ -302,7 +302,7 @@ export function applyConflictOption(
     return {
       ...matter,
       schedules,
-      progress: chosen ? `已按「${chosen.title}」调整本机预览；正式安排仍需确认。` : matter.progress,
+      progress: chosen ? `已按「${chosen.title}」调整当前设备预览；正式安排仍需确认。` : matter.progress,
       history: chosen
         ? [
             {

@@ -87,7 +87,7 @@ export function RouteTextCard({
       : state === "tight"
         ? "可能赶不上"
         : state === "unverified"
-          ? "路程未核实"
+          ? "路线未核实"
           : "路线不可用";
   const fareLabel =
     mode === "transit" || fareKind === "amap_transit_fare"
@@ -206,7 +206,7 @@ export function RouteTextCard({
           {timingNotice ? <p>{timingNotice}</p> : null}
           {accuracyNotice ? <p>{accuracyNotice}</p> : null}
           {state === "verified" ? (
-            <p>路线为服务器测算结果，不代表实际到达时间。</p>
+            <p>路线为云端测算结果，不代表实际到达时间。</p>
           ) : null}
           {state === "verified" && notice ? <p>{notice}</p> : null}
         </details>

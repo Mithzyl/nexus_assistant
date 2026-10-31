@@ -6,6 +6,8 @@ import { readJson, writeJson, commuteCheckKey } from "./storage";
 export type PendingState = "submitting" | "uncertain" | CheckStatus;
 
 export interface PendingCommuteCheck {
+  serviceDate?: string | null;
+  targetArrivalAt?: string | null;
   planId: string;
   planRevision: number;
   idempotencyKey: string;
@@ -40,7 +42,7 @@ export const CHECK_STATUS_LABEL: Record<PendingState, string> = {
   submitting: "请求已提交",
   uncertain: "结果暂不确定",
   queued: "等待处理",
-  running: "处理中",
+  running: "后台智能分析中",
   succeeded: "已完成",
   degraded: "已完成（数据不完整）",
   failed: "失败",
@@ -51,11 +53,11 @@ export const CHECK_STATUS_LABEL: Record<PendingState, string> = {
 /** Keep phase text factual; a missing phase is not "analyzing". */
 export const CHECK_PHASE_LABEL: Record<CheckPhase, string> = {
   queued: "等待后台领取",
-  fetching_route: "查询路线",
-  fetching_weather: "更新天气",
-  analyzing: "分析建议",
+  fetching_route: "正在等待路线结果",
+  fetching_weather: "正在核对通勤时段天气",
+  analyzing: "正在整理出发建议",
   saving: "保存结果",
-  retry_wait: "等待重试",
+  retry_wait: "数据暂未返回，后台正在安排重试",
   done: "已结束",
   failed: "已失败",
   cancelled: "已取消",

@@ -470,7 +470,8 @@
               "available",
               "unavailable",
               "rejected",
-              "unknown"
+              "unknown",
+              "failed"
             ],
             "title": "Status",
             "type": "string"
@@ -492,6 +493,25 @@
           "duration_source"
         ],
         "title": "AiAnalysisRead",
+        "type": "object"
+      },
+      "AnalysisTarget": {
+        "properties": {
+          "local_service_date": {
+            "format": "date",
+            "title": "Local Service Date",
+            "type": "string"
+          },
+          "target_arrival_at": {
+            "title": "Target Arrival At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "local_service_date",
+          "target_arrival_at"
+        ],
+        "title": "AnalysisTarget",
         "type": "object"
       },
       "AppMemoryData": {
@@ -1239,6 +1259,18 @@
             "title": "Check Id",
             "type": "string"
           },
+          "local_service_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Service Date"
+          },
           "status": {
             "enum": [
               "queued",
@@ -1251,6 +1283,17 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "target_arrival_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Arrival At"
           }
         },
         "required": [
@@ -1355,6 +1398,18 @@
             ],
             "title": "Finished At"
           },
+          "local_service_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Service Date"
+          },
           "next_attempt_at": {
             "anyOf": [
               {
@@ -1419,6 +1474,17 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "target_arrival_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Arrival At"
           },
           "trigger": {
             "enum": [
@@ -1496,6 +1562,33 @@
         "additionalProperties": false,
         "description": "A private place the user chose; labels are never used in lock-screen copy.",
         "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "coordinate_system": {
+            "anyOf": [
+              {
+                "enum": [
+                  "gcj02",
+                  "wgs84"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coordinate System"
+          },
           "label": {
             "maxLength": 160,
             "minLength": 1,
@@ -11645,6 +11738,128 @@
           }
         },
         "summary": "Get Latest Advisory",
+        "tags": [
+          "commute"
+        ]
+      }
+    },
+    "/api/v1/commute-plans/{plan_id}/analysis-target": {
+      "get": {
+        "operationId": "get_analysis_target_api_v1_commute_plans__plan_id__analysis_target_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisTarget"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "Get Analysis Target",
         "tags": [
           "commute"
         ]

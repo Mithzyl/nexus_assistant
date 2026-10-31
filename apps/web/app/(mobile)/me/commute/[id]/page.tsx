@@ -12,7 +12,7 @@ import type {
   CommutePlanDraft,
 } from "@/lib/mobile/api";
 import { ApiError, apiRequest } from "@/lib/mobile/api";
-import { formatDateTime, uuid } from "@/lib/mobile/format";
+import { formatDateTime, formatServiceDate, uuid } from "@/lib/mobile/format";
 import { installationId } from "@/lib/mobile/storage";
 import {
   CHECK_PHASE_LABEL,
@@ -90,6 +90,10 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
   const plan = useApiResource<CommutePlan>(
     signedIn ? `/api/pa/commute-plans/${planId}` : null,
     { enabled: signedIn },
+  );
+  const analysisTarget = useApiResource<{local_service_date: string; target_arrival_at: string}>(
+    signedIn && plan.data?.enabled ? `/api/pa/commute-plans/${planId}/analysis-target?revision=${plan.data.revision}` : null,
+    { enabled: signedIn && Boolean(plan.data?.enabled) },
   );
   const allPlans = useApiResource<CommutePlan[]>(
     signedIn ? "/api/pa/commute-plans" : null,
@@ -254,7 +258,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               current = {
                 ...current,
                 status: "unknown",
-                error: "服务器暂时没有返回这次检查；任务记录仍保存在本机。",
+                error: "云端暂时没有返回这次检查；任务记录仍保存在当前设备。",
                 errorCode: "check_not_found",
                 updatedAt: new Date().toISOString(),
               };
@@ -272,6 +276,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
             phase: read.phase,
             analysisMode: read.analysis_mode,
             phaseUpdatedAt: read.phase_updated_at,
+            serviceDate: read.local_service_date,
+            targetArrivalAt: read.target_arrival_at,
             attemptCount: read.attempt_count,
             nextAttemptAt: read.next_attempt_at,
             advisoryId: read.advisory_id,
@@ -293,7 +299,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   : read.status === "failed"
                     ? read.error?.message || "分析失败。"
                     : read.status === "unknown"
-                      ? "服务器尚未确认本次结果；任务已保存，稍后可以继续核对。"
+                      ? "尚未确认本次结果；任务已保存，稍后可以继续核对。"
                       : "这次分析已取消。",
             );
             return;
@@ -301,10 +307,10 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         }
         setMessage(
           current.status === "queued"
-            ? "服务器仍返回等待处理，尚未给出终态。本次分析已保存，稍后回到页面只会继续读取同一个 check。"
+            ? "仍在等待结果。这次分析已保存，稍后回到页面会继续查看。"
             : current.status === "running"
-              ? "服务器仍返回处理中，尚未给出终态。本次分析已保存，稍后回到页面只会继续读取同一个 check。"
-              : "服务器尚未返回终态。本次分析已保存，稍后回到页面只会继续读取同一个 check。",
+              ? "仍在处理中。这次分析已保存，稍后回到页面会继续查看。"
+              : "还没有返回最终结果。这次分析已保存，稍后回到页面会继续查看。",
         );
       } finally {
         pollingRef.current = false;
@@ -335,6 +341,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
           phase: read.phase,
           analysisMode: read.analysis_mode,
           phaseUpdatedAt: read.phase_updated_at,
+            serviceDate: read.local_service_date,
+            targetArrivalAt: read.target_arrival_at,
           attemptCount: read.attempt_count,
           nextAttemptAt: read.next_attempt_at,
           advisoryId: read.advisory_id,
@@ -361,7 +369,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
           const next: PendingCommuteCheck = {
             ...record,
             status: "unknown",
-            error: "服务器暂时没有返回这次检查；任务记录仍保存在本机。",
+            error: "云端暂时没有返回这次检查；任务记录仍保存在当前设备。",
             errorCode: "check_not_found",
             updatedAt: new Date().toISOString(),
           };
@@ -405,7 +413,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         ...stored,
         status: "uncertain",
         error:
-          "上次提交的结果不确定：请求可能已到达服务器。重试会复用同一个幂等键，不会新建第二次分析。",
+          "上次提交的结果不确定：请求可能已经发送。重试不会重复提交。",
         updatedAt: new Date().toISOString(),
       };
       savePendingCheck(accountId, normalized);
@@ -427,7 +435,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       setAdviceError(null);
       setMessage(null);
       try {
-        const created = await apiRequest<{ check_id: string; status: CommuteCheck["status"] }>(
+        const created = await apiRequest<{ check_id: string; status: CommuteCheck["status"]; local_service_date: string; target_arrival_at: string }>(
           `/api/pa/commute-plans/${planId}/checks`,
           {
             method: "POST",
@@ -438,6 +446,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         const next: PendingCommuteCheck = {
           ...record,
           checkId: created.check_id,
+          serviceDate: created.local_service_date,
+          targetArrivalAt: created.target_arrival_at,
           status: created.status,
           phase: created.status === "queued" ? "queued" : null,
           analysisMode: "full",
@@ -484,7 +494,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
             ...record,
             status: "uncertain",
             error:
-              "提交结果暂不确定：请求可能已到达服务器。重试会复用同一个幂等键，不会新建第二次分析。",
+              "提交结果暂不确定：请求可能已经发送。重试不会重复提交。",
             errorCode: "submission_uncertain",
             updatedAt: new Date().toISOString(),
           };
@@ -523,7 +533,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     if (runtime.data?.route_provider_available === false) {
       setViewMode("check");
       setMessage(
-        "路线服务尚未配置，暂时无法生成新的出发建议；最新天气和历史建议仍可查看。",
+        "路线服务尚未开通，暂时无法生成新的出发建议；最新天气和历史建议仍可查看。",
       );
       return;
     }
@@ -718,7 +728,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       }
     >
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后才能查看" body="通勤计划属于服务器上的账号。">
+        <EmptyState title="登录后查看通勤计划" body="登录账号后可以查看已同步的通勤计划。">
           <Link href="/login" className="btn btn--primary">登录</Link>
         </EmptyState>
       ) : null}
@@ -754,7 +764,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               <div className="card card--tight">
                 <div className="flex items-center justify-between gap-10">
                   <span className="micro">计划要求</span>
-                  <span className="micro">服务器保存</span>
+                  <span className="micro">云端保存</span>
                 </div>
                 <div className="mt-8" style={{ display: "grid", gap: 5 }}>
                   <p>首次生效：{plan.data.effective_from ?? "未设置"}</p>
@@ -782,7 +792,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   <div className="flex items-start justify-between gap-12">
                     <span className="micro">提醒</span>
                     <span style={{ fontSize: 13 }}>
-                      {plan.data.notify_enabled ? "开" : "关"} · 计划 revision {plan.data.revision}
+                      {plan.data.notify_enabled ? "已开" : "已关"}
                     </span>
                   </div>
                   <p className="micro" style={{ margin: "4px 0 0" }}>
@@ -796,7 +806,6 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               <LatestWeatherCard
                 key={`${plan.data.revision}-${pending?.finishedAt ?? pending?.status ?? "initial"}`}
                 planId={plan.data.id}
-                planRevision={plan.data.revision}
                 advisory={advisory}
               />
 
@@ -815,6 +824,15 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   ) : null}
                 </div>
 
+                {active && pending?.status === "running" ? (
+                  <p className="caption mt-10" role="status" aria-live="polite">
+                    后台智能分析中。正在核对路线和天气，结果返回后会在这里更新，无需重复提交。
+                  </p>
+                ) : null}
+                <p className="caption mt-10">
+                  {analysisTarget.data ? `下一次可分析：${formatServiceDate(analysisTarget.data.local_service_date)}，目标 ${formatDateTime(analysisTarget.data.target_arrival_at)}。` : "按计划生效日期和星期规则选择下一次通勤。"}
+                  距目标到达不足 30 分钟会顺延；未来路况与天气仅为估算，不保证准点。
+                </p>
                 <div className="flex items-center gap-10 mt-10" style={{ flexWrap: "wrap" }}>
                   <button
                     type="button"
@@ -849,12 +867,13 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                 </div>
 
                 <p className="micro" style={{ margin: "10px 0 0", lineHeight: 1.6 }}>
-                  页面打开与刷新只读取服务器；只有点击“重新分析”才会创建 check。
-                  浏览器不生成路线快照，也不会把定位当成 ETA。
+                  打开页面不会自动重新分析；点击“重新分析”才会开始新分析。
+                  路线与出发时间以最新结果为准。
                 </p>
 
                 {pending ? (
                   <>
+                    {pending.serviceDate ? <p className="caption mt-8">本次分析日期：{pending.serviceDate}{pending.targetArrivalAt ? ` · 目标到达 ${formatDateTime(pending.targetArrivalAt)}` : ""}</p> : null}
                     <div className="mt-8" style={{ display: "grid", gap: 4 }}>
                       <div className="flex items-start justify-between gap-12">
                         <span className="micro">本次操作状态</span>
@@ -872,7 +891,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                         </div>
                       ) : null}
                       <div className="flex items-start justify-between gap-12">
-                        <span className="micro">服务器创建</span>
+                        <span className="micro">云端创建</span>
                         <span style={{ fontSize: 13, textAlign: "right" }}>
                           {pending.serverCreatedAt
                             ? formatDateTime(pending.serverCreatedAt)
@@ -880,21 +899,21 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                         </span>
                       </div>
                       <div className="flex items-start justify-between gap-12">
-                        <span className="micro">{pending.finishedAt ? "服务器完成" : "本机更新"}</span>
+                        <span className="micro">{pending.finishedAt ? "云端完成" : "当前设备更新"}</span>
                         <span style={{ fontSize: 13, textAlign: "right" }}>
                           {formatDateTime(pending.finishedAt || pending.updatedAt)}
                         </span>
                       </div>
                     </div>
                     <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-                      幂等键已保存在本机
-                      {pending.planRevision !== plan.data.revision ? " · 计划版本已变化" : ""}。
-                      页面只显示服务器返回的状态与步骤；没有返回步骤时，不推断正在分析。
+                      这次分析已保存在当前设备
+                      {pending.planRevision !== plan.data.revision ? " · 设置已更新" : ""}。
+                      状态以最新结果为准。
                     </p>
                   </>
                 ) : (
                   <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-                    本次页面只读恢复，没有创建新的 check。服务器记录仍以 PA 为准。
+                    本次页面只读恢复，没有创建新的分析。记录以账号为准。
                   </p>
                 )}
 
@@ -916,18 +935,18 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   tone="amber"
                   title={
                     routeProviderUnavailable || unconfiguredRoute
-                      ? "路线服务尚未配置"
+                      ? "路线服务尚未开通"
                       : "当前无法查询新路线"
                   }
                 >
                   {routeProviderUnavailable
-                    ? "暂时无法生成新的出发建议；服务器仍保存计划，最新天气和历史建议仍可查看。"
+                    ? "暂时无法生成新的出发建议；云端仍保存计划，最新天气和历史建议仍可查看。"
                     : unconfiguredRoute
-                      ? "服务器没有可用的地图路线 Provider，因此不能生成新的 ETA 或路线快照；计划和天气仍可查看。"
-                      : "服务器路线来源当前不可用，因此不能生成新的 ETA 或路线快照；计划和天气仍可查看。"}
+                      ? "路线服务暂时不可用，因此不能生成新的出发时间或路线；计划和天气仍可查看。"
+                      : "路线服务暂时不可用，因此不能生成新的出发时间或路线；计划和天气仍可查看。"}
                   {historyRows.length > 0
                     ? historyHasSnapshot
-                      ? ` 仍可查看此前客户端快照产生的历史建议（${historyRows.length} 条）；它们不是本轮新查询。`
+                      ? ` 仍可查看此前保存的历史建议（${historyRows.length} 条）。`
                       : ` 仍可查看已有历史建议（${historyRows.length} 条）；它们不是本轮新查询。`
                     : " 目前没有可显示的历史建议。"}
                 </Notice>
@@ -943,13 +962,13 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     {applicability.detail}
                   </p>
                   <p className="micro" style={{ margin: "4px 0 0" }}>
-                    服务器更新于 {formatDateTime(advisory!.generated_at)} · 有效至{" "}
+                    更新于 {formatDateTime(advisory!.generated_at)} · 有效至{" "}
                     {formatDateTime(advisory!.expires_at)}
                   </p>
                 </div>
               ) : null}
 
-              {adviceLoading ? <LoadingCard label="正在读取服务器建议…" /> : null}
+              {adviceLoading ? <LoadingCard label="正在读取云端建议…" /> : null}
 
               {noAdviceResult ? (
                 <div className="card card--amber">
@@ -957,7 +976,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     检查完成，但没有关联建议
                   </p>
                   <p className="caption" style={{ margin: "4px 0 0" }}>
-                    服务器返回终态，却没有 advisory_id。页面不会用另一条 latest 冒充本次结果。
+                    这次分析已完成，但还没有返回可用建议。
                   </p>
                   <button
                     type="button"
@@ -972,7 +991,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               {showCheckUnknown ? (
                 <div className="card card--amber">
                   <p className="card-title amber" style={{ fontSize: 15 }}>
-                    服务器尚未确认本次结果
+                    尚未确认本次结果
                   </p>
                   <p className="caption" style={{ margin: "4px 0 0" }}>
                     {pending?.error || "任务记录已保存，但不能把未知当作成功或失败。"}
@@ -1003,12 +1022,12 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     这次重新分析没有完成
                   </p>
                   <p className="caption red" style={{ margin: "4px 0 0" }}>
-                    {pending?.error || "服务器未返回可用建议。"}
+                    {pending?.error || "云端未返回可用建议。"}
                   </p>
                   {pending?.errorCode === "provider_not_configured" ||
                   pending?.errorCode === "eta_not_configured" ? (
                     <p className="micro red" style={{ margin: "6px 0 0" }}>
-                      路线服务尚未配置；本次没有生成 ETA 或假快照。
+                      路线服务尚未开通；本次没有生成新的出发时间。
                     </p>
                   ) : null}
                   <button
@@ -1038,8 +1057,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     skipBusy={skipBusy}
                   />
                   <p className="micro" style={{ margin: 0, lineHeight: 1.6 }}>
-                    建议按 check 关联读取；同时有其他分析在跑时，这里不会改用另一条
-                    latest。过期或属于修改前计划的记录放进下方历史区，服务器记录不删除。
+                    建议只对应这次分析；同时有其他分析在跑时，这里会显示本次结果，不会改用另一条
+                    latest。过期或属于修改前计划的记录放进下方历史区，云端记录不删除。
                   </p>
                 </>
               ) : null}
@@ -1054,7 +1073,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     )}
                     <span style={{ fontSize: 15 }}>
                       任务“{CHECK_STATUS_LABEL[pending.status]}”
-                      {currentPhaseLabel ? `；当前步骤：${currentPhaseLabel}` : "；服务器尚未返回具体步骤"}。
+                      {currentPhaseLabel ? `；当前步骤：${currentPhaseLabel}` : "；云端尚未返回具体步骤"}。
                     </span>
                   </div>
                   <p
@@ -1076,8 +1095,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     {runtimeView.detail}
                   </p>
                   <p className="micro" style={{ margin: "4px 0 0", lineHeight: 1.6 }}>
-                    本次操作已保存在本机；刷新页面只会读取同一个 check，不会新建第二次分析，
-                    也不会取消服务器任务。
+                    这次操作已保存在当前设备；刷新页面会继续查看同一次分析，不会重复提交，
+                    也不会取消云端任务。
                   </p>
                   {!polling ? (
                     <button
@@ -1098,7 +1117,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               {!advisory && !adviceLoading && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !active && !adviceError && !routeNeedsNotice && historyRows.length === 0 ? (
                 <EmptyState
                   title="今天还没有通勤建议"
-                  body="建议由服务器检查生成；浏览器不会自行推算出发时间或天气。可以读取已有建议，或主动重新分析。"
+                  body="建议由云端检查生成；浏览器不会自行推算出发时间或天气。可以读取已有建议，或主动重新分析。"
                 >
                   <button
                     type="button"
@@ -1114,7 +1133,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               {!currentAdvisory && !adviceLoading && !active && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !adviceError && historyRows.length > 0 ? (
                 <EmptyState
                   title="当前没有未过期建议"
-                  body="服务器最新记录已过期或属于修改前的计划版本，已放入下方历史区；服务器记录不会被删除。可以主动重新分析，查看本次结果。"
+                  body="云端最新记录已过期或属于修改前的计划版本，已放入下方历史区；云端记录不会被删除。可以主动重新分析，查看本次结果。"
                 >
                   <button
                     type="button"
@@ -1134,8 +1153,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     <Pill tone="neutral">{historyRows.length} 条</Pill>
                   </div>
                   <p className="micro" style={{ margin: "4px 0 8px", lineHeight: 1.6 }}>
-                    本机已加载过的服务器记录，按服务器字段展示；PA 暂无历史列表接口，
-                    因此这里不是完整历史，也不会删除服务器记录。
+                    这里显示当前设备已加载过的记录，可能不是完整历史；
+                    因此这里不是完整历史，也不会删除云端记录。
                   </p>
                   <div className="m-stack-10">
                     {historyRows.map((item) => (
@@ -1150,8 +1169,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               ) : null}
 
               <Notice>
-                服务器保存计划与检查状态；推送需要先在 Bark 里绑定并使用自动提醒。
-                页面关闭后浏览器不再轮询，服务器端状态仍以 PA 为准。
+                账号会保存计划与分析状态；推送需要先在 Bark 里绑定并使用自动提醒。
+                页面关闭后浏览器不再轮询，推送状态以账号记录为准。
               </Notice>
             </div>
           ) : (
@@ -1184,7 +1203,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       <ConfirmDialog
         open={confirmDelete}
         title="删除这个通勤计划？"
-        body="删除后不再按这个计划生成检查与提醒。已生成的历史记录仍留在服务器上。"
+        body="删除后不再按这个计划生成检查与提醒。已生成的历史记录仍留在云端上。"
         confirmLabel="删除计划"
         danger
         busy={deleting}

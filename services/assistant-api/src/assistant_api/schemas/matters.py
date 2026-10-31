@@ -5,7 +5,10 @@ with an offset; a naive input is interpreted in the user's timezone by the
 service. Nothing here reuses `source_run_id` for a record's origin.
 """
 
+
 from __future__ import annotations
+
+from assistant_api.schemas.memory import SharedMemoryDisclosure
 
 from datetime import datetime
 from typing import Literal
@@ -302,7 +305,7 @@ class IntakeRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     idempotency_key: str = Field(min_length=8, max_length=128)
     continuation_run_id: str | None = Field(default=None, min_length=8, max_length=36)
-    memory_disclosures: list[MemoryDisclosure] = Field(default_factory=list, max_length=10)
+    memory_disclosures: list[MemoryDisclosure | SharedMemoryDisclosure] = Field(default_factory=list, max_length=10)
 
 
 class IntakeResponse(BaseModel):

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, CalendarClock, ChevronRight, FileText, MapPin, RefreshCw, Trash2 } from "lucide-react";
+import { Bell, CalendarClock, ChevronRight, FileText, MapPin, PenLine, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
 import { RouteMapSheet } from "@/components/mobile/route-map-sheet";
@@ -14,6 +14,7 @@ import {
   EmptyState,
   ErrorCard,
   LoadingCard,
+  LoginRequired,
   Pill,
   SectionHeading,
   Sheet,
@@ -25,7 +26,7 @@ import type {
   TodayDraft,
   TodaySchedule,
 } from "@/lib/mobile/api";
-import { relativeTime } from "@/lib/mobile/format";
+import { formatServiceDate, relativeTime, timezoneLabel } from "@/lib/mobile/format";
 import { deadlineTiming, todayChangeSummary } from "@/lib/mobile/matter-draft.mjs";
 import { confirmSummary, acknowledgeReminder, completeMatterTodo, getDraft } from "@/lib/mobile/matters-api";
 import { useToday } from "@/lib/mobile/use-today";
@@ -59,13 +60,13 @@ function dateTime(iso: string, timeZone?: string): string {
 
 function reminderNote(item: MatterReminder): string {
   if (item.source === "ios_eventkit" || item.source === "ios_reminders") {
-    return item.sync_status === "ios_synced" ? "来自苹果端副本" : "来自苹果端";
+    return item.sync_status === "ios_synced" ? "来自 Apple 日历" : "来自 Apple 日历";
   }
   if (item.status === "acknowledged") return "应用内提醒 · 已知晓";
   if (item.status === "cancelled") return "应用内提醒 · 已取消";
   if (item.status === "due") return "应用内提醒已到点 · 等待你确认知晓";
-  if (item.sync_status === "pending_ios") return "应用内提醒 · 等待 iOS 同步";
-  if (item.sync_status === "ios_synced") return "应用内提醒 · iOS 已有副本";
+  if (item.sync_status === "pending_ios") return "应用内提醒 · 等待同步到 Apple 日历";
+  if (item.sync_status === "ios_synced") return "应用内提醒 · Apple 日历已有";
   return "提醒已设好 · 本页面保持打开时，到点将在页面内提醒你";
 }
 
@@ -76,19 +77,19 @@ function routeState(schedule: TodaySchedule): {
 } {
   const message = schedule.route.message || "相关路线尚未核实。";
   if (schedule.route.status === "available") {
-    return { label: "路程已核实", tone: "green", detail: null };
+    return { label: "路线已核实", tone: "green", detail: null };
   }
   if (schedule.route.status === "unavailable") {
-    return { label: "路程不可用", tone: "red", detail: message };
+    return { label: "路线不可用", tone: "red", detail: message };
   }
-  return { label: "路程未核实", tone: "amber", detail: message };
+  return { label: "路线未核实", tone: "amber", detail: "尚无与该日程关联的路线结果。" };
 }
 
 function draftQuestion(draft: TodayDraft): string {
   if (draft.conflict?.has_conflict) {
     return "需要选择调整方案或明确接受行程风险。";
   }
-  return draft.matter_id ? "需要核对服务器生成的变更预览。" : "需要核对新事项和安排。";
+  return draft.matter_id ? "需要核对助手整理出的变更。" : "需要核对新事项和安排。";
 }
 
 interface TimelineRow {
@@ -159,7 +160,7 @@ export default function TodayPage() {
       todayData.refresh();
     } catch (caught) {
       setAcknowledgeError(
-        caught instanceof Error ? caught.message : "服务器没有确认这条提醒已知晓。",
+        caught instanceof Error ? caught.message : "暂时没能更新这条提醒，请稍后再试。",
       );
     } finally {
       setAcknowledgingId(null);
@@ -176,7 +177,7 @@ export default function TodayPage() {
         at: item.starts_at,
         title: item.title,
         matterTitle: item.matter_title,
-        detail: `${item.location || "地点未填"} · ${item.source === "ios_eventkit" ? "苹果端日程副本" : "应用内日程"}`,
+        detail: `${item.location || "地点未填"} · ${item.source === "ios_eventkit" ? "Apple 日历日程" : "应用内日程"}`,
         kind: "schedule",
         matterId: item.matter_id,
         routeDetail: route.detail,
@@ -208,9 +209,9 @@ export default function TodayPage() {
   );
 
   const overview = (() => {
-    if (todayData.loading && !todayData.data) return "正在读取今天的安排…";
-    if (todayData.error) return "暂时无法读取今天的安排；这不是空日程。";
-    if (!todayData.data) return "登录后从服务器读取今天的安排。";
+    if (todayData.loading && !todayData.data) return "正在同步今天的安排…";
+    if (todayData.error) return "暂时无法同步今天的安排，请稍后再试。";
+    if (!todayData.data) return "今天还没有同步的内容。";
     const items =
       deadlines.length + (todayData.data.drafts.length ?? 0) + dueReminders.length;
     if (items > 0) return `先处理 ${items} 项需要确认或跟进的内容。`;
@@ -226,7 +227,7 @@ export default function TodayPage() {
     try {
       setSelectedDraft(await getDraft(item.draft_id));
     } catch (caught) {
-      setDraftError(caught instanceof Error ? caught.message : "无法读取这条待确认草稿。");
+      setDraftError(caught instanceof Error ? caught.message : "暂时无法查看这条待确认草稿。");
     } finally {
       setOpeningDraftId(null);
     }
@@ -238,17 +239,22 @@ export default function TodayPage() {
     todayData.refresh();
   };
 
+  const displayDate = formatServiceDate(todayData.data?.date);
+  const displayTimezone = timezoneLabel(todayData.data?.timezone);
+  const showTimezone = Boolean(displayTimezone && displayTimezone !== "北京时间 (GMT+8)");
+
   return (
     <div className="m-screen m-stack-18" style={{ paddingBottom: 16 }}>
       <header style={{ padding: "8px var(--m-gutter) 0" }}>
         <div className="flex items-center justify-between gap-10">
           <h1 className="screen-title serif-title">今天</h1>
-          {todayData.data ? <Pill tone="fog">{todayData.data.timezone}</Pill> : null}
+          {showTimezone && displayTimezone ? <Pill tone="fog">{displayTimezone}</Pill> : null}
         </div>
         <p className="micro" style={{ margin: "4px 0 0" }}>
-          {todayData.data?.date || localDay()}
+          {displayDate}
+          {!signedIn ? " · 记录与整理今日安排" : ""}
         </p>
-        <p className="today-overview">{overview}</p>
+        {signedIn ? <p className="today-overview">{overview}</p> : null}
         {signedIn ? (
           <button
             type="button"
@@ -256,7 +262,7 @@ export default function TodayPage() {
             onClick={todayData.refresh}
             disabled={todayData.loading}
           >
-            <RefreshCw size={13} /> {todayData.loading ? "正在刷新…" : "重新读取"}
+            <RefreshCw size={13} /> {todayData.loading ? "正在刷新…" : "刷新"}
           </button>
         ) : null}
       </header>
@@ -267,33 +273,28 @@ export default function TodayPage() {
           className="quick-btn quick-btn--primary"
           onClick={() => openCapture("choose")}
         >
-          <span aria-hidden="true">＋</span> 收下内容
+          <span className="quick-btn__title">
+            <Sparkles size={16} strokeWidth={1.5} aria-hidden="true" /> 交给助手整理
+          </span>
+          <span className="quick-btn__hint">粘贴消息、会议或待办</span>
         </button>
         <button
           type="button"
           className="quick-btn quick-btn--glass"
           onClick={() => openCapture("say")}
         >
-          记一句
+          <span className="quick-btn__title">
+            <PenLine size={16} strokeWidth={1.5} aria-hidden="true" /> 随手记一条
+          </span>
+          <span className="quick-btn__hint">记下想法或单条待办</span>
         </button>
       </div>
 
-      <TodayCommuteCard />
+      {signedIn ? <TodayCommuteCard /> : null}
 
-      {!signedIn ? (
+      {!signedIn ? null : todayData.loading && !todayData.data ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
-          <EmptyState
-            title="登录后读取今天的安排"
-            body="未登录时只显示本机记录；不会用示例日程冒充服务器。"
-          >
-            <Link href="/login" className="btn btn--secondary">
-              登录 PA 账号
-            </Link>
-          </EmptyState>
-        </div>
-      ) : todayData.loading && !todayData.data ? (
-        <div style={{ padding: "0 var(--m-gutter)" }}>
-          <LoadingCard label="正在读取今天的安排…" />
+          <LoadingCard label="正在同步今天的安排…" />
         </div>
       ) : todayData.error ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
@@ -304,8 +305,8 @@ export default function TodayPage() {
           <section style={{ padding: "0 var(--m-gutter)", marginBottom: 12 }} aria-label="提醒送达方式">
             <p className="micro">{notificationPermission === "granted"
               ? "已开启系统通知 · 本页面保持打开时，可在后台发送浏览器通知"
-              : "仅页面内提醒 · 本页面保持打开时，每15秒自动核对到点提醒"}</p>
-            <p className="micro">关闭网页后不会由此页面发送通知；日历订阅的提醒由日历应用自行处理。</p>
+              : "仅页面内提醒 · 页面保持打开时，每 15 秒核对一次到点提醒"}</p>
+            <p className="micro">页面关闭后不再发送提醒；日历订阅的提醒由日历应用负责。</p>
             {notificationPermission === "default" ? <button className="btn btn--secondary btn--small" onClick={() => void enableNotifications()}>开启浏览器系统通知</button> : null}
             {notificationPermission === "denied" ? <p className="micro">浏览器通知未获允许，页面内提醒仍可使用。</p> : null}
           </section>
@@ -337,7 +338,7 @@ export default function TodayPage() {
                 ))}
               </div>
               <p className="micro" style={{ margin: "8px 0 0" }}>
-                “知道了”只表示你已在网页确认这条提醒，不代表服务器已送达推送。
+                确认后，这条提醒会标记为已知晓。
               </p>
               {acknowledgeError ? (
                 <p className="danger-text" style={{ margin: "8px 0 0" }} role="alert">
@@ -408,7 +409,7 @@ export default function TodayPage() {
                       <span className="draft-card__question">{draftQuestion(item)}</span>
                     </span>
                     <span className="draft-card__action">
-                      {openingDraftId === item.draft_id ? "读取中" : "查看"}
+                      {openingDraftId === item.draft_id ? "加载中" : "查看"}
                       <ChevronRight size={14} />
                     </span>
                   </button>
@@ -425,7 +426,7 @@ export default function TodayPage() {
           <section style={{ padding: "0 var(--m-gutter)" }}>
             <SectionHeading title="今日时间线" trailing="已确定安排" />
             {rows.length === 0 ? (
-              <EmptyState title="今天没有安排" body="服务器确认没有日程或待处理提醒。" />
+              <EmptyState title="今天没有安排" body="没有已确定的日程或待处理提醒。" />
             ) : (
               <div className="m-stack-8">
                 {rows.map((row) => (
@@ -477,7 +478,7 @@ export default function TodayPage() {
                             row.schedule.route.status === "available"
                               ? row.schedule.route.fetched_at
                                 ? `路线结果取得于 ${dateTime(row.schedule.route.fetched_at, todayData.data?.timezone)}`
-                                : "路线结果由服务器返回。"
+                                : "路线结果已更新。"
                               : row.schedule.route.message || "尚无与该日程关联的路线结果。"
                           }
                           replanHref={
@@ -511,7 +512,7 @@ export default function TodayPage() {
               </div>
             )}
             <p className="micro" style={{ margin: "8px 0 0" }}>
-              提醒只表示服务器保存了待发记录，尚未确认送达。
+              提醒已保存；到点后需要你在这里确认。
             </p>
           </section>
 
@@ -550,16 +551,16 @@ export default function TodayPage() {
 
           <section style={{ padding: "0 var(--m-gutter)" }}>
             <div className="notice">
-              组合通勤草稿确认后，首日日程与重复计划会关联保存；后续日期调度仍需单独核验。
+              组合通勤确认后，首日日程会与固定计划一起保存；后续日期仍可单独调整。
             </div>
           </section>
         </>
       ) : null}
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
-        <SectionHeading title="最近整理" trailing="本机记录" />
+        <SectionHeading title="最近整理" trailing="本机暂存" />
         {records.length === 0 ? (
-          <EmptyState title="还没有整理记录" body="交入第一份内容后，结果会出现在这里。" />
+          <EmptyState title="还没有暂存内容" body="交给助手整理或随手记一条，内容会出现在这里。" />
         ) : (
           <div className="list-card">
             {records.slice(0, 5).map((record, index) => (
@@ -574,28 +575,35 @@ export default function TodayPage() {
                       {record.title}
                     </span>
                     <span className="row__detail" style={{ display: "block" }}>
-                      本机保存 · {relativeTime(record.createdAt)}
+                      仅保存在当前设备 · {relativeTime(record.createdAt)}
                     </span>
                   </span>
-                  <span className="chevron" aria-hidden="true">
-                    ›
-                  </span>
+                  <ChevronRight size={16} className="chevron" aria-hidden="true" />
                 </button>
               </div>
             ))}
           </div>
         )}
         <p className="micro" style={{ margin: "8px 0 0" }}>
-          本机记录不属于服务器日程，不会进入上面的时间线。
+          仅保存在当前设备，可随时删除。
         </p>
       </section>
 
-      <Sheet title="本机记录" open={Boolean(selectedRecord)} onClose={() => setSelectedRecord(null)}>
+      {!signedIn ? (
+        <section style={{ padding: "0 var(--m-gutter)" }}>
+          <LoginRequired
+            title="登录后同步今日安排"
+            body="登录账号后，今天的日程、提醒和通勤建议会同步到这里；暂存内容会留在当前设备。"
+          />
+        </section>
+      ) : null}
+
+      <Sheet title="本机暂存" open={Boolean(selectedRecord)} onClose={() => setSelectedRecord(null)}>
         {selectedRecord ? (
           <>
             <p className="card-title">{selectedRecord.title}</p>
             <p className="micro mt-4">
-              {selectedRecord.kind === "note" ? "记一句" : "收下的内容"} ·{" "}
+              {selectedRecord.kind === "note" ? "随手记一条" : "交给助手整理"} ·{" "}
               {relativeTime(selectedRecord.createdAt)}
             </p>
             <p
@@ -604,13 +612,13 @@ export default function TodayPage() {
             >
               {selectedRecord.text}
             </p>
-            <div className="notice mt-16">这条内容只保存在当前浏览器，没有上传到 PA 服务器。</div>
+            <div className="notice mt-16">这条内容仅保存在当前设备，不会同步到云端。</div>
             <button
               type="button"
               className="btn btn--danger mt-16"
               onClick={() => setConfirmDelete(true)}
             >
-              <Trash2 size={15} /> 删除本机记录
+              <Trash2 size={15} /> 删除这条暂存
             </button>
           </>
         ) : null}
@@ -618,8 +626,8 @@ export default function TodayPage() {
 
       <ConfirmDialog
         open={confirmDelete}
-        title="删除这条本机记录？"
-        body="删除后无法恢复。服务器上没有对应副本需要处理。"
+        title="删除这条暂存？"
+        body="删除后无法恢复，云端没有这份内容。"
         confirmLabel="删除"
         danger
         onCancel={() => setConfirmDelete(false)}

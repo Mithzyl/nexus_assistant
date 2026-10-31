@@ -24,7 +24,7 @@ export default function PreparePage() {
       <PageShell title="出门准备">
         <EmptyState
           title="出门清单只在演示模式中提供"
-          body="服务器当前没有出行准备接口；正常模式不展示示例清单。"
+          body="出门清单在演示模式中提供；开启演示模式后可以查看示例清单。"
         />
       </PageShell>
     );
@@ -105,7 +105,7 @@ export default function PreparePage() {
           </div>
         </div>
         <Link href="/me/lesson" className="btn btn--secondary mt-12">
-          结束后记一句
+          结束后随手记一条
         </Link>
       </div>
 

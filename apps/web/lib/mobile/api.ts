@@ -137,6 +137,8 @@ export interface SyncResult {
 }
 
 export interface CommuteLocation {
+  city?: string | null;
+  coordinate_system?: "gcj02" | "wgs84" | null;
   label: string;
   latitude: number;
   longitude: number;
@@ -191,6 +193,8 @@ export type CheckPhase =
   | "cancelled";
 
 export interface CommuteCheck {
+  local_service_date?: string | null;
+  target_arrival_at?: string | null;
   check_id: string;
   plan_id: string;
   status: CheckStatus;
@@ -293,7 +297,7 @@ export interface Advisory {
   reason_codes: string[];
   explanation_source: "template" | "model";
   ai_analysis: {
-    status: "available" | "unavailable" | "rejected" | "unknown";
+    status: "available" | "unavailable" | "rejected" | "unknown" | "failed";
     route_source?: "client_snapshot" | "server_provider" | "none" | null;
     used_duration_seconds: number | null;
     duration_source: string;

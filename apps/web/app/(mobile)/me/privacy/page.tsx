@@ -7,54 +7,52 @@ import { PageShell } from "@/components/mobile/ui";
 export default function PrivacyPage() {
   return (
     <PageShell
-      title="内容与隐私"
-      subtitle="按当前实现描述：只说明实际保存与删除的行为，不对未接入的能力作承诺。"
+      title="隐私说明"
+      subtitle="我们如何保存、使用和删除你的内容"
     >
       <section className="card">
-        <h2 className="section-title" style={{ fontSize: 18 }}>服务器保存什么</h2>
+        <h2 className="section-title" style={{ fontSize: 18 }}>保存在账号里的内容</h2>
         <ul className="body-text" style={{ paddingLeft: "1.2em", margin: "8px 0 0" }}>
-          <li>PA 本地账号、密码校验摘要与当前设备会话（不保存明文密码）。</li>
-          <li>你向助手提交的问题、状态、最终回答与完成时间。</li>
-          <li>内容来源登记、已上传的副本与字段授权；浏览器导入的笔记也存放在这里。</li>
-          <li>通勤计划、手动检查、建议、动作记录与 Bark 绑定状态（Bark Key 只存服务器、不回显）。</li>
+          <li>账号信息与登录状态（不保存明文密码）。</li>
+          <li>你向助手提交的问题、回答与完成时间。</li>
+          <li>导入的笔记、内容来源与授权范围。</li>
+          <li>通勤计划、提醒绑定与通勤建议。</li>
         </ul>
       </section>
 
       <section className="card mt-14">
-        <h2 className="section-title" style={{ fontSize: 18 }}>只在这台浏览器里</h2>
+        <h2 className="section-title" style={{ fontSize: 18 }}>只保存在当前设备</h2>
         <ul className="body-text" style={{ paddingLeft: "1.2em", margin: "8px 0 0" }}>
-          <li>httpOnly Cookie 里的会话令牌；JavaScript 读不到它。</li>
-          <li>“收下内容 / 记一句”产生的本机记录，按账号隔离保存在 localStorage。</li>
-          <li>问答草稿（sessionStorage）、问答本地缓存、外观选择、演示模式开关与安装 ID。</li>
+          <li>当前设备的登录状态。</li>
+          <li>“本机暂存”里的内容，按账号隔离保存。</li>
+          <li>问答草稿、外观选择与安装标识。</li>
         </ul>
         <p className="caption" style={{ margin: "8px 0 0" }}>
-          退出登录会撤销当前设备会话并清理页面内的问答状态；按账号隔离的本机记录会保留，直到你在本机删除或清除浏览器数据。
+          退出登录会结束当前设备的登录状态；本机暂存会保留，直到你删除它或清理浏览器数据。
         </p>
       </section>
 
       <section className="card mt-14">
-        <h2 className="section-title" style={{ fontSize: 18 }}>不会做的事</h2>
+        <h2 className="section-title" style={{ fontSize: 18 }}>我们不会做</h2>
         <ul className="body-text" style={{ paddingLeft: "1.2em", margin: "8px 0 0" }}>
-          <li>不读取真实的屏幕、通知、相册或麦克风；收下内容只能由你粘贴、输入或选择文本文件。</li>
-          <li>不因为“这次没有出现”就推断某条内容被删除；删除必须走显式操作。</li>
-          <li>不把设备上的日历、提醒事项或 Apple 备忘录写回；浏览器也没有这些系统权限。</li>
-          <li>不向浏览器暴露平台令牌、模型密钥或角色绑定；AI 调用由 PA 服务端转发。</li>
+          <li>不读取你的屏幕、相册、麦克风或其他应用。</li>
+          <li>不擅自修改正式日程；每次变更都需要你确认。</li>
+          <li>不把当前设备的日历、提醒事项写回。</li>
+          <li>不向页面暴露平台密钥或内部凭据。</li>
         </ul>
       </section>
 
       <section className="card mt-14">
         <h2 className="section-title" style={{ fontSize: 18 }}>删除与退出</h2>
         <p className="body-text" style={{ margin: "8px 0 0" }}>
-          在来源详情里可以删除“已上传副本”（保留来源与授权），也可以删除整个来源及其副本。
-          本机记录可以在“今天”的最近整理中删除。退出登录撤销当前设备会话，其他设备不受影响。
+          在来源详情里可以删除上传记录或整个来源；本机暂存可以在“今天”的最近整理中删除；退出登录只影响当前设备。
         </p>
         <p className="caption" style={{ margin: "8px 0 0" }}>
-          当前没有面向用户的“原文保留 N 天”设置接口，因此页面不提供无法实际生效的保留期限开关。
-          服务器侧的通勤数据保留策略由部署配置决定，不在浏览器里承诺。
+          删除后，相关内容不会再被引用。账号中的其他内容会继续保留，直到你主动删除。
         </p>
         <div className="mt-10" style={{ display: "grid", gap: 8 }}>
-          <Link href="/me/sources" className="btn btn--secondary">管理内容来源与副本</Link>
-          <Link href="/me/about" className="btn btn--secondary">能力与原生限制</Link>
+          <Link href="/me/sources" className="btn btn--secondary">管理内容来源</Link>
+          <Link href="/me/about" className="btn btn--secondary">返回关于生活助手</Link>
         </div>
       </section>
     </PageShell>

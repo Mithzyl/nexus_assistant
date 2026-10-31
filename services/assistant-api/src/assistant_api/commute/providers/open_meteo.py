@@ -36,7 +36,7 @@ class OpenMeteoWeatherProvider:
                                          trust_env=False, transport=transport)
 
     async def _fetch_location(self, latitude: float, longitude: float, timezone: str,
-                              role: str) -> LocationForecast:
+                              role: str, forecast_days: int = 2) -> LocationForecast:
         try:
             response = await self._client.get(
                 self._base_url,
@@ -45,7 +45,7 @@ class OpenMeteoWeatherProvider:
                     "longitude": longitude,
                     "hourly": "temperature_2m,precipitation_probability,weather_code",
                     "timezone": timezone,
-                    "forecast_days": 2,
+                    "forecast_days": forecast_days,
                 },
             )
         except httpx.TimeoutException as exc:
@@ -86,9 +86,12 @@ class OpenMeteoWeatherProvider:
                                 fetched_at=ensure_aware(self._now()), periods=periods)
 
     async def fetch(self, *, origin, destination, window_start, window_end, timezone):
+        local_now = ensure_aware(self._now()).astimezone(ZoneInfo(timezone))
+        local_end = ensure_aware(window_end).astimezone(ZoneInfo(timezone))
+        days = min(16, max(2, (local_end.date() - local_now.date()).days + 1))
         origin_forecast, destination_forecast = await asyncio.gather(
-            self._fetch_location(origin[0], origin[1], timezone, "origin"),
-            self._fetch_location(destination[0], destination[1], timezone, "destination"),
+            self._fetch_location(origin[0], origin[1], timezone, "origin", days),
+            self._fetch_location(destination[0], destination[1], timezone, "destination", days),
         )
         periods = origin_forecast.periods + destination_forecast.periods
         return WeatherResult(

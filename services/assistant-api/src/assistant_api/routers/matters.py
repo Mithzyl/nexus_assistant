@@ -83,6 +83,61 @@ async def get_intake_result(
     return await matters.get_intake_result(db, user, local_run_id)
 
 
+@router.post("/matters/intake/stream")
+async def intake_stream(request: Request, payload: schemas.IntakeRequest,
+                        client: NexusClient, settings: SettingsDependency,
+                        runtime: CommuteRuntimeDependency, user: CurrentUser):
+    import asyncio
+    import json
+    from fastapi.responses import StreamingResponse
+    from assistant_api.services.intake_stream import sink, answer_prefix
+    queue = asyncio.Queue()
+    raw = ""
+    previous = ""
+    def observe(delta):
+        nonlocal raw, previous
+        raw += delta
+        text = answer_prefix(raw)
+        if text and text != previous:
+            previous = text
+            queue.put_nowait(("answer", {"text": text}))
+    async def execute():
+        token = sink.set(observe)
+        try:
+            async with request.app.state.session_factory() as db:
+                result = await matters.intake(db, client, settings,
+                    request.app.state.session_factory, runtime, user=user,
+                    text=payload.text, idempotency_key=payload.idempotency_key,
+                    continuation_run_id=payload.continuation_run_id,
+                    memory_disclosures=[item.model_dump() for item in payload.memory_disclosures])
+                queue.put_nowait(("result", _intake_response(result=result, response=Response())))
+        except Exception:
+            queue.put_nowait(("error", {"message": "本次连接未能取得完整结果，请用同一次操作核对或重试。"}))
+        finally:
+            sink.reset(token)
+            queue.put_nowait(None)
+    task = asyncio.create_task(execute())
+    # Keep execution alive if the browser disconnects; idempotency prevents redispatch.
+    active = getattr(request.app.state, "intake_stream_tasks", set())
+    request.app.state.intake_stream_tasks = active
+    active.add(task)
+    task.add_done_callback(active.discard)
+    async def events():
+        yield 'event: accepted\ndata: {}\n\n'
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), 10)
+            except TimeoutError:
+                yield ': heartbeat\n\n'
+                continue
+            if item is None:
+                break
+            kind, data = item
+            yield f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @router.post("/matters/intake", response_model=schemas.IntakeResponse, status_code=201)
 async def intake(
     request: Request,

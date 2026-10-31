@@ -36,7 +36,7 @@ export default function ContentDetailPage({ params }: { params: { id: string } }
       {item.loading ? <LoadingCard label="正在读取内容…" /> : null}
       {item.error ? <ErrorCard message={errorText(item.error)} onRetry={item.reload} /> : null}
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后才能查看云端内容" body="内容副本属于服务器上的账号。">
+        <EmptyState title="登录后才能查看云端内容" body="内容副本属于云端上的账号。">
           <Link href="/login" className="btn btn--primary">登录</Link>
         </EmptyState>
       ) : null}
@@ -79,7 +79,7 @@ export default function ContentDetailPage({ params }: { params: { id: string } }
           )}
 
           <p className="micro mt-14" style={{ lineHeight: 1.7 }}>
-            这是服务器上保存的副本。这里不能编辑设备上的原始记录，也不会写回系统日历、提醒事项或备忘录。
+            这是云端上保存的副本。这里不能编辑设备上的原始记录，也不会写回系统日历、提醒事项或备忘录。
           </p>
           <Link href="/me/sources" className="btn btn--secondary mt-14">
             返回内容来源

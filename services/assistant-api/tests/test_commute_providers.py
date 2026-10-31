@@ -380,4 +380,10 @@ async def test_open_meteo_parses_hourly_without_keys():
     assert result.origin.periods[0].precipitation_probability == 0.55
     assert result.destination.periods[1].temperature_c == 22.0
     assert all("latitude" in r.url.params for r in seen)
+    await provider.fetch(
+        origin=(31.23, 121.47), destination=(31.22, 121.45),
+        window_start=datetime(2026, 10, 27, 0, 0, tzinfo=UTC),
+        window_end=datetime(2026, 10, 27, 2, 0, tzinfo=UTC), timezone="Asia/Shanghai",
+    )
+    assert all(r.url.params["forecast_days"] == "4" for r in seen[-2:])
     await provider.aclose()

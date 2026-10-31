@@ -5,11 +5,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 
 import { ApiError, registrationOptions } from "@/lib/mobile/api";
 import { useAuth } from "@/components/mobile/providers";
 import { PrimaryButton } from "@/components/mobile/buttons";
+import { NexusLogin } from "@/components/mobile/nexus-login";
 
 export function LoginScreen() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export function LoginScreen() {
   }, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -45,7 +47,7 @@ export function LoginScreen() {
       return;
     }
     if (creating && (!displayName.trim() || password.length < 8)) {
-      setError("请填写称呼，密码至少需要8个字符。"); return;
+      setError("请填写称呼，密码至少需要 8 个字符。"); return;
     }
     if (creating && password !== confirmPassword) {
       setError("两次输入的密码不一致，请再确认一下。"); return;
@@ -67,7 +69,7 @@ export function LoginScreen() {
             : caught.message || "登录未能完成。",
         );
       } else {
-        setError("无法连接服务器，请稍后再试。");
+        setError("暂时无法连接，请稍后再试。");
       }
     } finally {
       setBusy(false);
@@ -75,16 +77,20 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="m-app" style={{ minHeight: "100dvh" }}>
-      <div style={{ padding: "calc(env(safe-area-inset-top) + 10px) 18px 0" }}>
+    <div className="m-app auth-app" style={{ minHeight: "100dvh" }}>
+      <div className="auth-brand">
         <Link href="/today" className="icon-button" aria-label="返回">
           <ArrowLeft size={19} />
         </Link>
+        <p className="auth-wordmark">生活助手</p>
+        <p className="auth-tagline">帮你记住要事、理清安排、持续跟进</p>
       </div>
-      <main style={{ padding: "28px 22px 40px" }}>
-        <h1 className="screen-title">{creating ? "创建新账号" : "登录"}</h1>
+      <main style={{ padding: "26px 22px 40px" }}>
+        <h1 className="section-title" style={{ fontSize: 20 }}>
+          {creating ? "创建账号" : "登录账号"}
+        </h1>
         <p className="caption mt-6" style={{ fontSize: 13 }}>
-          {creating ? "从一张空白的生活手册开始。创建后即可进入，不会添加示例安排。" : "登录后，继续整理你的安排与生活记忆。"}
+          {creating ? "从一个清晰的开始，建立你的安排与记忆。" : "登录后，继续整理你的安排与个人记忆。"}
         </p>
 
         <form onSubmit={submit} className="card mt-20">
@@ -100,7 +106,7 @@ export function LoginScreen() {
               spellCheck={false}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
+              placeholder="输入邮箱或账号"
             />
           </label>
           {creating ? <label className="field" htmlFor="register-name">
@@ -109,21 +115,41 @@ export function LoginScreen() {
           </label> : null}
           <label className="field" htmlFor="login-password">
             <span className="field__label">密码</span>
-            <input
-              id="login-password"
-              className="input"
-              type="password"
-              autoComplete={creating ? "new-password" : "current-password"}
-              maxLength={256}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder={creating ? "至少8个字符" : "账号密码"}
-            />
+            <div className="password-wrap">
+              <input
+                id="login-password"
+                className="input"
+                type={showPassword ? "text" : "password"}
+                autoComplete={creating ? "new-password" : "current-password"}
+                maxLength={256}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={creating ? "至少 8 个字符" : "输入密码"}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                {showPassword ? <EyeOff size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}
+              </button>
+            </div>
           </label>
 
           {creating ? <label className="field" htmlFor="register-confirm">
             <span className="field__label">确认密码</span>
-            <input id="register-confirm" className="input" type="password" autoComplete="new-password" maxLength={256} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再输入一次密码" />
+            <div className="password-wrap">
+              <input id="register-confirm" className="input" type={showPassword ? "text" : "password"} autoComplete="new-password" maxLength={256} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再输入一次密码" />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                {showPassword ? <EyeOff size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}
+              </button>
+            </div>
           </label> : null}
           {creating && options?.invite_required ? <label className="field" htmlFor="register-invite">
             <span className="field__label">注册邀请码</span>
@@ -139,8 +165,9 @@ export function LoginScreen() {
             {busy ? (creating ? "正在创建…" : "正在登录…") : (creating ? "创建并进入" : "登录")}
           </PrimaryButton>
         </form>
+        {!creating && <NexusLogin />}
 
-        {(creating || options?.enabled) ? <button type="button" className="btn btn--quiet mt-20" disabled={busy} onClick={() => { setCreating(!creating); setError(null); setPassword(""); setConfirmPassword(""); setInviteCode(""); }}>
+        {(creating || options?.enabled) ? <button type="button" className="auth-switch" disabled={busy} onClick={() => { setCreating(!creating); setError(null); setPassword(""); setConfirmPassword(""); setInviteCode(""); setShowPassword(false); }}>
           {creating ? "已有账号？返回登录" : "还没有账号？创建新账号"}
         </button> : null}
         {options && !options.enabled ? <p className="caption mt-20">暂未开放注册，请联系管理员。</p> : null}

@@ -55,16 +55,21 @@ async def worker_tick(
         worker_id=worker_id,
         now=now,
         lease_seconds=settings.commute_job_lease_seconds,
+        max_attempts=settings.commute_provider_max_attempts,
     )
     did_check = check is not None
     if check is not None:
+        check_id = check.check_id
         if active_state is not None:
             active_state["job"] = ActiveJob(kind="check", job_id=check.check_id, owner=worker_id)
         try:
-            await execute_check(db, runtime, check_id=check.check_id, worker_id=worker_id)
+            await asyncio.wait_for(
+                execute_check(db, runtime, check_id=check.check_id, worker_id=worker_id),
+                timeout=settings.commute_job_timeout_seconds,
+            )
         except Exception:  # noqa: BLE001 - expired lease allows recovery
             await db.rollback()
-            logger.exception("commute check %s failed", check.check_id)
+            logger.exception("commute check %s failed", check_id)
         finally:
             if active_state is not None:
                 active_state["job"] = None
@@ -79,15 +84,16 @@ async def worker_tick(
     )
     did_push = outbox is not None
     if outbox is not None:
+        outbox_id = outbox.outbox_id
         if active_state is not None:
             active_state["job"] = ActiveJob(kind="outbox", job_id=outbox.outbox_id, owner=worker_id)
         try:
-            await deliver_outbox(
+            await asyncio.wait_for(deliver_outbox(
                 db, runtime, outbox_id=outbox.outbox_id, worker_id=worker_id
-            )
+            ), timeout=settings.commute_job_timeout_seconds)
         except Exception:  # noqa: BLE001 - lease expiry gives bounded recovery
             await db.rollback()
-            logger.exception("commute outbox %s failed", outbox.outbox_id)
+            logger.exception("commute outbox %s failed", outbox_id)
         finally:
             if active_state is not None:
                 active_state["job"] = None

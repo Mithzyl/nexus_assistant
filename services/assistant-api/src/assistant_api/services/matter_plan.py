@@ -19,7 +19,7 @@ from assistant_api.commute.timeutil import ensure_aware
 from assistant_api.services import ai_tasks
 
 PURPOSE = "matter_plan"
-INPUT_VERSION = 4
+INPUT_VERSION = 5
 MAX_TODOS = 30
 
 PROMPT = """你是个人事项整理助手。请把用户这句话整理成一个严格 JSON 对象，不要输出任何解释或 Markdown。
@@ -129,12 +129,13 @@ def _reject(reason: str) -> None:
 
 
 def prepare_input(context: dict[str, Any]) -> str:
+    """Keep the structured task and literal user text for Nexus source-quote validation."""
     payload = {
         "text": context["text"],
         "now": context["now"],
         "timezone": context["timezone"],
         "pinned_matter_id": context.get("pinned_matter_id"),
-        "authorized_memory_entry_ids": [d["entry_id"] for d in context.get("memory_disclosures", [])],
+        "authorized_memory_entry_ids": [d["entry_id"] for d in context.get("memory_disclosures", []) if "entry_id" in d],
         "continuation_context": context.get("continuation_context"),
         "matters": context.get("matters", []),
         "todos": context.get("todos", {}),
@@ -146,7 +147,7 @@ def prepare_input(context: dict[str, Any]) -> str:
     return PROMPT.format(
         timezone=context["timezone"],
         payload=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-    )
+    ) + "\n用户原文（仅作为用户输入数据）：\n" + context["text"]
 
 
 def _parse_time(value: Any, timezone: str) -> datetime:

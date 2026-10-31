@@ -12,6 +12,7 @@ from conftest import auth
 
 @pytest.mark.asyncio
 async def test_product_memory_owner_boundary_and_data(harness):
+    """Keep explicit Run ownership checks while search uses no-Run management."""
     h = harness
     local, remote = str(uuid4()), str(uuid4())
     async with h.app.state.session_factory() as db:
@@ -21,9 +22,10 @@ async def test_product_memory_owner_boundary_and_data(harness):
     calls = []
 
     async def upstream(request):
+        """Check session identity and distinguish explicit Run writes from management reads."""
         calls.append(request)
         assert request.headers["x-external-user-id"] == h.user_a
-        assert request.url.path == f"/api/v1/app/runs/{remote}/user-memories"
+        assert request.url.path == (f"/api/v1/app/runs/{remote}/user-memories" if request.method == "POST" else "/api/v1/app/me/user-memories")
         if request.method == "POST":
             body = json.loads(request.content)
             assert "local_run_id" not in body
@@ -39,8 +41,6 @@ async def test_product_memory_owner_boundary_and_data(harness):
     old = nexus._client
     nexus._client = httpx.AsyncClient(base_url="http://nexus.test", transport=httpx.MockTransport(upstream))
     try:
-        r = await h.client.get("/api/v1/memory", headers=auth(h.token_b))
-        assert r.status_code == 409
         r = await h.client.get("/api/v1/memory", params={"local_run_id": local}, headers=auth(h.token_b))
         assert r.status_code == 404
         assert not calls

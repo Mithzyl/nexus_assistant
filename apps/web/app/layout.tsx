@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "生活助手",
   description:
-    "Personal Assistant 移动 Web：今天、事项、问助手与我的。",
+    "生活助手网页版：今天、事项、问助手与我的。",
   applicationName: "生活助手",
   manifest: "/manifest.webmanifest",
   appleWebApp: {

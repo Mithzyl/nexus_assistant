@@ -17,7 +17,7 @@ import {
   FileText,
   Mic,
   RotateCcw,
-  SquareArrowDown,
+  Sparkles,
   X,
 } from "lucide-react";
 
@@ -73,21 +73,20 @@ export function CaptureSheet({
   const submit = () => {
     setError(null);
     if (mode === "say" && !text.trim()) {
-      setError("先记一句，或试试下面的示例。");
+      setError("先写点内容，或试试下面的示例。");
       return;
     }
     if (!enabled) {
       if (!text.trim()) {
-        setError("先把要收下的内容粘贴进来。");
+        setError("先把要交给助手的内容粘贴进来。");
         return;
       }
-      const title = text.trim().split("\n")[0].slice(0, 28) || "本机记录";
+      const title = text.trim().split("\n")[0].slice(0, 28) || "本机暂存";
       addRecord({ kind: mode === "say" ? "note" : "capture", title, text: text.trim() });
       setOutcome({
         tone: "done",
-        title: "已保存在这台浏览器",
-        body:
-          "这段内容保存在本机记录里，没有上传到 PA 服务器，也没有生成事务。你可以在“今天”的最近整理里看到它。",
+        title: "已保存在当前设备",
+        body: "这段内容已暂存在当前设备，可在“今天”的最近整理中查看。",
         route: null,
       });
       setStage("result");
@@ -147,11 +146,11 @@ export function CaptureSheet({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="sheet-panel" role="dialog" aria-modal="true" aria-label="收下内容">
+      <div className="sheet-panel" role="dialog" aria-modal="true" aria-label="交给助手整理">
         <div className="sheet-handle" />
         <div className="flex items-center gap-10">
           <span className="micro grow">
-            {enabled ? "演示模式 · 使用内置示例" : "保存到本机 · 不上传服务器"}
+            {enabled ? "演示模式 · 使用内置示例" : "仅保存在当前设备"}
           </span>
           <button type="button" className="icon-button" onClick={onClose} aria-label="关闭" style={{ width: 40, height: 40 }}>
             <X size={18} />
@@ -203,21 +202,21 @@ export function CaptureSheet({
               <PrimaryButton onClick={onClose}>收起</PrimaryButton>
             )}
             <div className="mt-10">
-              <SecondaryButton onClick={reset}>再交一份</SecondaryButton>
+              <SecondaryButton onClick={reset}>再整理一份</SecondaryButton>
             </div>
           </div>
         ) : null}
 
         {stage === "compose" ? (
           <>
-            <div className="mode-switch mt-8" role="tablist" aria-label="收下方式">
+            <div className="mode-switch mt-8" role="tablist" aria-label="整理方式">
               <button
                 type="button"
                 role="tab"
                 aria-selected={mode === "choose"}
                 onClick={() => setMode("choose")}
               >
-                <SquareArrowDown size={16} /> 收下这个
+                <Sparkles size={16} strokeWidth={1.5} /> 交给助手整理
               </button>
               <button
                 type="button"
@@ -225,27 +224,27 @@ export function CaptureSheet({
                 aria-selected={mode === "say"}
                 onClick={() => setMode("say")}
               >
-                <Mic size={16} /> 记一句
+                <Mic size={16} /> 随手记一条
               </button>
             </div>
 
             <h2 className="hero-line mt-16">
-              {mode === "choose" ? "把这份内容，交给助手。" : "想到什么，顺手留一句。"}
+              {mode === "choose" ? "把内容交给助手整理" : "想到什么，随手记一条"}
             </h2>
             <p className="body-text muted mt-6" style={{ fontSize: 15 }}>
               {enabled
                 ? mode === "choose"
-                  ? "不用选择记账还是待办。先收下，再关联到对应的事。"
-                  : "这里用输入文字体验口述，不会调用麦克风。"
+                  ? "把消息、会议或待办粘贴进来，助手会帮你理清安排。"
+                  : "这里用文字记录，不调用麦克风。"
                 : mode === "choose"
-                  ? "浏览器没有系统分享与读取其他 App 的权限；粘贴或输入的内容只会保存在本机。"
-                  : "这句话会保存在这台浏览器，不会写入 PA 服务器。"}
+                  ? "把内容粘贴进来，先保存在当前设备。"
+                  : "这条会先保存在当前设备。"}
             </p>
 
             {enabled && mode === "choose" ? (
               <div className="mt-16">
                 <div className="flex items-center justify-between gap-10">
-                  <span className="micro">本次交来的内容 · 示例</span>
+                  <span className="micro">示例内容</span>
                   <button
                     type="button"
                     className="link-button link-button--inline"
@@ -365,7 +364,7 @@ export function CaptureSheet({
                     <button
                       type="button"
                       className="chip chip--sm"
-                      onClick={() => setText("想去柳江边散散步，留60分钟。")}
+                      onClick={() => setText("想去柳江边散散步，留 60 分钟。")}
                     >
                       留住一个念头
                     </button>
@@ -381,20 +380,20 @@ export function CaptureSheet({
             ) : null}
 
             <PrimaryButton onClick={submit}>
-              {mode === "choose" ? "收下这个" : "把这句话交给助手"}
+              {mode === "choose" ? "生成安排草稿" : "保存这条记录"}
             </PrimaryButton>
 
             {!enabled ? (
               <div className="mt-10" style={{ display: "grid", gap: 8 }}>
                 <SecondaryButton onClick={askDraft}>带着这段内容去提问</SecondaryButton>
-                <SecondaryButton onClick={importNote}>导入为云端笔记</SecondaryButton>
+                <SecondaryButton onClick={importNote}>导入为笔记</SecondaryButton>
               </div>
             ) : null}
 
             <p className="micro text-center mt-14" style={{ lineHeight: 1.6 }}>
               {enabled
-                ? "仅整理你在这里选中的示例。不会读取真实屏幕、通知、相册或其他应用。"
-                : "只保存在本机浏览器存储中；不会读取真实屏幕、通知或相册。"}
+                ? "这里只整理你选中的示例。"
+                : "仅保存在当前设备，可随时删除。"}
             </p>
           </>
         ) : null}

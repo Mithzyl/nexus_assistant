@@ -61,6 +61,10 @@ def _values(payload: CommutePlanInput) -> dict:
         "rain_probability_threshold": payload.rain_probability_threshold,
         "rain_extra_buffer_minutes": payload.rain_extra_buffer_minutes,
         "notify_enabled": payload.notify_enabled,
+        "origin_city": payload.origin.city,
+        "origin_coordinate_system": payload.origin.coordinate_system,
+        "destination_city": payload.destination.city,
+        "destination_coordinate_system": payload.destination.coordinate_system,
         "origin_label": payload.origin.label,
         "origin_latitude": payload.origin.latitude,
         "origin_longitude": payload.origin.longitude,
@@ -112,6 +116,14 @@ async def update_plan(
     expected = parse_if_match(if_match)
     now = datetime.now(UTC)
     values = _values(payload)
+    previous = await get_plan(db, user_id, plan_id)
+    for side in ("origin", "destination"):
+        point = getattr(payload, side)
+        unchanged = (point.latitude == getattr(previous, f"{side}_latitude") and
+                     point.longitude == getattr(previous, f"{side}_longitude"))
+        for field in ("city", "coordinate_system"):
+            if field not in point.model_fields_set and unchanged:
+                values[f"{side}_{field}"] = getattr(previous, f"{side}_{field}")
     if "effective_from" not in payload.model_fields_set:
         values.pop("effective_from", None)
     values.update({"revision": expected + 1, "updated_at": now})

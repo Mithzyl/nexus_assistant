@@ -190,7 +190,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
               允许上传的字段
             </p>
             <p className="caption" style={{ margin: "4px 0 10px" }}>
-              修改会作用于这个来源之后的上传；撤权不会删除设备上的原始数据，服务器会清理不再允许的副本字段。
+              修改会作用于这个来源之后的上传；撤权不会删除设备上的原始数据，云端会清理不再允许的副本字段。
             </p>
             <div style={{ display: "grid", gap: 4 }}>
               {FIELDS[data.source_type].map((field) => {
@@ -265,7 +265,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
         title={confirm === "items" ? "删除已上传副本？" : "删除整个来源？"}
         body={
           confirm === "items"
-            ? "只删除服务器上已上传的副本；来源登记与授权保留，之后仍可重新上传。不会影响设备上的原始数据。"
+            ? "只删除云端上已上传的副本；来源登记与授权保留，之后仍可重新上传。不会影响设备上的原始数据。"
             : "删除来源与它的全部副本，之后需要重新登记来源并上传。不会影响设备上的原始数据。"
         }
         confirmLabel={confirm === "items" ? "删除副本" : "删除来源"}

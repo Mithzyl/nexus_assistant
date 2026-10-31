@@ -33,8 +33,12 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./assistant-dev.db"
 
     # NexusPilot application boundary. The token is an application credential, not
-    # a NexusPilot user credential: Personal Assistant users never log in there.
+    # a NexusPilot user credential. Optional browser login uses a separate code exchange.
     nexus_base_url: str = "http://127.0.0.1:8000"
+    # Optional browser login; local password login remains independently available.
+    nexus_login_enabled: bool = False
+    nexus_web_url: str = "http://127.0.0.1:3000"
+    nexus_login_callback_url: str = "http://127.0.0.1:3001/nexus-callback"
     nexus_application_id: str = "personal_assistant"
     nexus_application_token: SecretStr = Field(
         default=SecretStr("dev-application-token-change-me"),
@@ -122,6 +126,7 @@ class Settings(BaseSettings):
     commute_weather_freshness_seconds: int = Field(default=3600, ge=300, le=21_600)
     commute_departure_earlier_threshold_minutes: int = Field(default=10, ge=5, le=60)
     commute_scheduler_poll_seconds: float = Field(default=20.0, ge=1, le=300)
+    commute_job_timeout_seconds: float = Field(default=240, ge=10, le=900)
     commute_worker_poll_seconds: float = Field(default=3.0, ge=0.5, le=60)
     commute_heartbeat_interval_seconds: float = Field(default=15.0, ge=1, le=60)
     commute_heartbeat_stale_seconds: int = Field(default=60, ge=10, le=600)

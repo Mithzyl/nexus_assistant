@@ -57,7 +57,7 @@ export default function NewCommutePage() {
   return (
     <PageShell title="新建通勤计划" subtitle="地点坐标需手动填写；浏览器不生成路线。">
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后才能保存" body="通勤计划保存在 PA 服务器，并用于后台检查。">
+        <EmptyState title="登录后保存通勤计划" body="登录账号后，通勤计划会同步到云端。">
           <Link href="/login" className="btn btn--primary">登录</Link>
         </EmptyState>
       ) : null}

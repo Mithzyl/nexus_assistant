@@ -4,24 +4,26 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  Bell,
   Brain,
   ChevronRight,
   CircleHelp,
-  Lock,
-  MapPin,
-  Plus,
-  RefreshCw,
-  SquarePen,
-  Sun,
-  Archive,
-  UserRound,
-  LogOut,
+  Database,
+  FileText,
   FlaskConical,
+  Lightbulb,
+  Lock,
+  LogOut,
+  MapPin,
+  RefreshCw,
+  Search,
+  UserRound,
 } from "lucide-react";
 
 import { DataConnections } from "@/components/mobile/data-connections";
-import { useAuth, useDemo, useUI } from "@/components/mobile/providers";
-import { ConfirmDialog, ScreenHeader, SwitchRow } from "@/components/mobile/ui";
+import { NexusLogin } from "@/components/mobile/nexus-login";
+import { useAuth, useUI } from "@/components/mobile/providers";
+import { ConfirmDialog, ScreenHeader } from "@/components/mobile/ui";
 import { formatDateTime } from "@/lib/mobile/format";
 import { useMatters } from "@/lib/mobile/use-matters";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
@@ -67,15 +69,13 @@ export default function MePage() {
   const router = useRouter();
   const { state, user, expiresAt, error, renewing, renewMessage, logout, renew } = useAuth();
   const signedIn = state === "signedIn";
-  const demo = useDemo();
   const matters = useMatters(signedIn, user?.user_id ?? null);
   const sources = useApiResource<DataSource[]>(signedIn ? "/api/pa/data-sources" : null, { enabled: signedIn });
-  const { openCapture, theme, setTheme, toast } = useUI();
+  const { theme, setTheme, toast } = useUI();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [busyLogout, setBusyLogout] = useState(false);
   const [logoutNote, setLogoutNote] = useState<string | null>(null);
 
-  const enabledMemories = demo.memories.filter((memory) => memory.enabled).length;
   const accountTitle = (() => {
     if (state === "loading") return "正在验证会话…";
     if (signedIn && user) return user.display_name;
@@ -85,10 +85,10 @@ export default function MePage() {
   })();
 
   const accountDetail = (() => {
-    if (state === "loading") return "正在向 PA 服务器确认登录状态。";
-    if (signedIn) return "已登录 PA 服务器。";
-    if (state === "offline") return "网络不可用，保留上次登录身份与本地记录。";
-    return "登录 PA 本地账号后，问答与通勤提醒由服务器处理。";
+    if (state === "loading") return "正在同步账号状态…";
+    if (signedIn) return "已登录，内容会同步到你的账号。";
+    if (state === "offline") return "网络不可用，保留上次登录状态与暂存内容。";
+    return "登录账号后，问答与通勤提醒会同步到云端。";
   })();
 
   const doLogout = async () => {
@@ -98,31 +98,22 @@ export default function MePage() {
     setConfirmLogout(false);
     setLogoutNote(
       result.revoked
-        ? "已退出，并撤销了当前设备的服务器会话。"
-        : "本机已退出；服务器撤销未能确认，重新登录后旧凭据会自然过期。",
+        ? "已退出，并结束当前设备的登录状态。"
+        : "当前设备已退出；云端退出暂未确认，重新登录后旧登录会自然过期。",
     );
-    toast(result.revoked ? "已退出登录" : "本机已退出，服务器撤销未确认");
+    toast(result.revoked ? "已退出登录" : "当前设备已退出，云端退出未确认");
     router.push("/today");
   };
 
   return (
     <div className="m-screen m-stack-18" style={{ paddingBottom: 24 }}>
-      <ScreenHeader
-        title="我的"
-        subtitle="账号、来源、通勤与隐私都在这里"
-        action={
-          <button
-            type="button"
-            className="icon-button"
-            onClick={() => openCapture("choose")}
-            aria-label="交给助手"
-          >
-            <Plus size={18} />
-          </button>
-        }
-      />
+      <ScreenHeader title="我的" subtitle="账号、个人记忆与偏好" />
+      {signedIn && <NexusLogin link />}
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
+        <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
+          账号与同步
+        </h2>
         <div className="card">
           <div className="flex items-start gap-12">
             <UserRound size={40} className="fog" strokeWidth={1.3} style={{ flex: "0 0 auto" }} />
@@ -138,13 +129,13 @@ export default function MePage() {
               ) : null}
               {signedIn && expiresAt ? (
                 <p className="micro" style={{ margin: "4px 0 0" }}>
-                  会话有效期至 {formatDateTime(expiresAt)}
-                  {renewing ? " · 正在续期…" : ""}
+                  登录有效期至 {formatDateTime(expiresAt)}
+                  {renewing ? " · 正在延长…" : ""}
                 </p>
               ) : null}
               {renewMessage && !renewing && signedIn ? (
                 <p className="micro amber" style={{ margin: "4px 0 0" }}>
-                  {renewMessage === "已续期" ? "已向服务器确认续期。" : renewMessage}
+                  {renewMessage === "已续期" ? "已延长登录。" : renewMessage}
                 </p>
               ) : null}
               {state === "anonymous" && error ? (
@@ -172,10 +163,10 @@ export default function MePage() {
                 className="btn btn--secondary btn--small"
                 onClick={() => {
                   void renew();
-                  toast("正在重新核对登录状态");
+                  toast("正在重新连接");
                 }}
               >
-                <RefreshCw size={13} /> 验证会话
+                <RefreshCw size={13} /> 重新连接
               </button>
             ) : null}
             {signedIn ? (
@@ -186,7 +177,7 @@ export default function MePage() {
                   onClick={() => void renew()}
                   disabled={renewing}
                 >
-                  <RefreshCw size={13} /> {renewing ? "续期中…" : "立即续期"}
+                  <RefreshCw size={13} /> {renewing ? "处理中…" : "延长登录"}
                 </button>
                 <button
                   type="button"
@@ -218,152 +209,117 @@ export default function MePage() {
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
         <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
-          通勤与提醒
-        </h2>
-        <div className="group">
-          <Row
-            href="/me/commute"
-            icon={<MapPin size={14} />}
-            title="通勤设置"
-            detail="固定地点与时间；检查与提醒由服务器完成"
-          />
-          <Row
-            href="/me/commute/bark"
-            icon={<Sun size={14} />}
-            title="Bark 提醒"
-            detail="绑定账号后接收服务端通勤提醒；Bark 不是 Web Push"
-          />
-        </div>
-      </section>
-
-      <section style={{ padding: "0 var(--m-gutter)" }}>
-        <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
-          你的内容
+          内容与导入
         </h2>
         <div className="group">
           <Row
             href="/me/sources"
-            icon={<Archive size={14} />}
+            icon={<Database size={14} strokeWidth={1.5} />}
             title="内容来源"
-            detail="已同步的日历、提醒与笔记副本"
+            detail="已同步的日历、提醒与笔记"
           />
           <Row
             href="/me/sources/import"
-            icon={<SquarePen size={14} />}
+            icon={<FileText size={14} strokeWidth={1.5} />}
             title="导入笔记"
-            detail="文本或 Markdown，主动导入后才会上传"
-          />
-          <Row
-            href="/me/memories"
-            icon={<Brain size={14} />}
-            title="个人记忆"
-            detail={
-              demo.enabled
-                ? `${enabledMemories} 条生效 · ${demo.memories.length} 条保存（演示）`
-                : "查看已保存记忆与待确认提取"
-            }
-          />
-          <Row
-            href="/me/lesson"
-            icon={<SquarePen size={14} />}
-            title="记住一点经验"
-            detail="主动写下的，不靠模型推测"
-          />
-          <Row
-            href="/me/memory-search"
-            icon={<CircleHelp size={14} />}
-            title="记忆检索"
-            detail="按关键词读取 Nexus 账号记忆"
+            detail="导入文本或 Markdown"
           />
         </div>
       </section>
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
         <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
-          外观与演示
-        </h2>
-        <div className="group" style={{ padding: "6px 14px" }}>
-          <div style={{ padding: "8px 0" }}>
-            <p className="card-title" style={{ fontSize: 15 }}>
-              外观
-            </p>
-            <p className="caption" style={{ margin: "2px 0 8px" }}>
-              默认跟随系统；深色模式使用同一套暖白与雾蓝的暗色值。
-            </p>
-            <div className="chip-row">
-              {THEMES.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className="chip chip--sm"
-                  aria-pressed={theme === option.value}
-                  onClick={() => setTheme(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <hr className="divider" />
-          <SwitchRow
-            title="演示模式（本地示例）"
-            detail="使用本机事项/日程预览、个人经验与旧版消费示例；开启后页面明确标注，关闭时不混入真实页面。"
-            checked={demo.enabled}
-            onChange={() => {
-              demo.setEnabled(!demo.enabled);
-              toast(demo.enabled ? "已关闭演示模式" : "已开启演示模式，仅使用本地示例");
-            }}
-          />
-        </div>
-        {demo.enabled ? (
-          <div className="notice notice--amber mt-8">
-            旧版消费演示刷新后恢复；计划接续预览保存在本机，删除后不再恢复。两者都不会写入 PA 服务器，也不代表真实事项。
-          </div>
-        ) : null}
-      </section>
-
-      <section style={{ padding: "0 var(--m-gutter)" }}>
-        <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
-          内容与隐私
+          个人记忆与偏好
         </h2>
         <div className="group">
           <Row
-            href="/me/lab"
-            icon={<FlaskConical size={14} />}
-            title="实验室"
-            detail="消费售后、愿望清单与计划接续预览；概念预览，不进入正式数据"
+            href="/me/memories"
+            icon={<Brain size={14} strokeWidth={1.5} />}
+            title="个人记忆"
+            detail="查看已保存的记忆与待确认内容"
           />
           <Row
-            href="/me/privacy"
-            icon={<Lock size={14} />}
-            title="内容与隐私"
-            detail="哪些在服务器、哪些只在本机浏览器"
+            href="/me/lesson"
+            icon={<Lightbulb size={14} strokeWidth={1.5} />}
+            title="记住一点经验"
+            detail="只保存你主动写下的内容"
           />
           <Row
-            href="/me/about"
-            icon={<CircleHelp size={14} />}
-            title="关于生活助手"
-            detail="当前能力、原生限制与演示范围"
+            href="/me/memory-search"
+            icon={<Search size={14} strokeWidth={1.5} />}
+            title="记忆检索"
+            detail="按关键词查找个人记忆"
           />
           <Row
-            href="/board"
-            icon={<Archive size={14} />}
-            title="旧版看板"
-            detail="保留原有桌面看板入口"
+            href="/me/commute"
+            icon={<MapPin size={14} strokeWidth={1.5} />}
+            title="通勤设置"
+            detail="常用地点与出发时间"
+          />
+          <Row
+            href="/me/commute/bark"
+            icon={<Bell size={14} strokeWidth={1.5} />}
+            title="提醒方式"
+            detail="绑定 Bark，接收通勤提醒"
           />
         </div>
       </section>
 
-      <p className="micro text-center" style={{ padding: "4px var(--m-gutter) 0", lineHeight: 1.7 }}>
-        {signedIn
-          ? "已连接 PA 服务器。Bark 与通勤提醒由服务端调度，不依赖浏览器定时器。"
-          : "未登录 PA 服务器。问答与通勤提醒需要登录后才由服务器处理。"}
+      <section style={{ padding: "0 var(--m-gutter)" }}>
+        <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
+          外观与显示
+        </h2>
+        <div className="group" style={{ padding: 10 }}>
+          <div className="chip-row">
+            {THEMES.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className="chip chip--sm"
+                aria-pressed={theme === option.value}
+                onClick={() => setTheme(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section style={{ padding: "0 var(--m-gutter)" }}>
+        <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
+          更多与关于
+        </h2>
+        <div className="group">
+          <Row
+            href="/me/about"
+            icon={<CircleHelp size={14} strokeWidth={1.5} />}
+            title="关于生活助手"
+            detail="版本、能力与使用边界"
+          />
+          <Row
+            href="/me/privacy"
+            icon={<Lock size={14} strokeWidth={1.5} />}
+            title="隐私说明"
+            detail="我们如何保存与删除你的内容"
+          />
+          <Row
+            href="/me/lab"
+            icon={<FlaskConical size={14} strokeWidth={1.5} />}
+            title="实验室与高级选项"
+            detail="概念预览、演示模式与旧版看板"
+          />
+        </div>
+      </section>
+
+      <p className="micro" style={{ padding: "4px var(--m-gutter) 0" }}>
+        生活助手 · 版本 0.1.0
       </p>
 
       <ConfirmDialog
         open={confirmLogout}
         title="退出登录？"
-        body="本机会清理当前账号的问答内存状态与登录 Cookie；服务器上的账号数据仍保留。"
+        body="退出后，当前设备会清理问答状态；账号里的内容仍会保留。"
         confirmLabel="退出登录"
         danger
         busy={busyLogout}

@@ -104,7 +104,7 @@ export async function upstreamError(upstream: Response): Promise<{
   retryable: boolean;
 }> {
   let code = "upstream_error";
-  let message = "服务器暂时无法处理该请求。";
+  let message = "云端暂时无法处理该请求。";
   let retryable = upstream.status >= 500;
   try {
     const body = (await upstream.json()) as {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowRight,
   ArrowUp,
   Cloud,
   Copy,
@@ -14,7 +15,7 @@ import type { AskItem } from "@/components/mobile/ask-store";
 import { isVisibleChat, useAskStore } from "@/components/mobile/ask-store";
 import { Markdown } from "@/components/mobile/markdown";
 import { useAuth, useUI } from "@/components/mobile/providers";
-import { LoadingCard, ScreenHeader } from "@/components/mobile/ui";
+import { LoadingCard, LoginRequired, ScreenHeader } from "@/components/mobile/ui";
 import { MemoryPicker, MemoryCandidates, type SelectedMemory } from "@/components/mobile/account-memory";
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
 import type {
@@ -27,7 +28,7 @@ import { ApiError } from "@/lib/mobile/api";
 import {
   confirmSummary,
   getIntakeResult,
-  intakeMatter,
+  streamIntakeMatter,
   listDrafts,
   listIntakeResults,
   newOperationKey,
@@ -94,7 +95,7 @@ function StatusCard({
     return (
       <div className="card card--tight">
         <p className="micro" style={{ margin: 0 }}>
-          正在向服务器核对此前保存的记录；确认属于聊天后才会显示正文。
+          正在核对此前保存的记录，确认后会显示内容。
         </p>
         <button type="button" className="link-button mt-6" onClick={onRecheck}>
           重新核对
@@ -107,10 +108,10 @@ function StatusCard({
     return (
       <div className="card card--amber">
         <p className="card-title amber" style={{ fontSize: 15 }}>
-          这条本机记录尚未确认
+          这条记录暂未确认
         </p>
         <p className="caption" style={{ margin: "4px 0 0" }}>
-          服务器暂时无法确认它是否属于聊天。为安全起见，这里不显示正文，也不会把它作为新问题再次提交。
+          暂时无法确认它属于问答，为安全起见先不显示正文。
         </p>
         <button type="button" className="link-button mt-6" onClick={onRecheck}>
           重新核对
@@ -124,7 +125,7 @@ function StatusCard({
       <div className="card card--tight">
         <div className="ask-status">
           <span className="spinner" />
-          正在提交给服务器…
+          正在提交…
         </div>
       </div>
     );
@@ -137,7 +138,7 @@ function StatusCard({
           提交结果暂不确定
         </p>
         <p className="caption" style={{ margin: "4px 0 0" }}>
-          请求可能已经到达服务器，也可能没有。重试会复用同一个请求键，不会创建第二次执行。
+          网络可能中断；重试不会重复提交。
         </p>
         <button type="button" className="link-button mt-6" onClick={onRetry}>
           重试同一次提交
@@ -151,10 +152,10 @@ function StatusCard({
       <div className="card card--tight">
         <div className="ask-status">
           <span className="spinner" />
-          {item.phase === "queued" ? "已提交，等待服务器开始" : "服务器正在处理"}
+          {item.phase === "queued" ? "已提交，等待助手开始" : "助手正在处理"}
         </div>
         <p className="caption" style={{ margin: "6px 0 0" }}>
-          最终回答由服务器保存；离开页面不会取消执行。
+          回答会保存到账号，离开页面也会继续。
         </p>
         <div className="ask-actions">
           {item.serverId ? (
@@ -178,16 +179,16 @@ function StatusCard({
         ) : (
           <>
             <p className="card-title amber" style={{ fontSize: 15 }}>
-              服务器报告已完成，但没有返回可读回答。
+              助手已完成，但没有返回可读内容。
             </p>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              可以重新查询；如果仍然为空，这属于服务器结果异常。
+              可以重新查询。
             </p>
           </>
         )}
         <div className="flex items-center gap-10 mt-12" style={{ flexWrap: "wrap" }}>
           <span className="micro grow">
-            完成于 {formatDateTime(item.completedAt) || "服务器未给出时间"}
+            完成于 {formatDateTime(item.completedAt) || "暂无完成时间"}
           </span>
           {item.answer ? (
             <button type="button" className="link-button link-button--inline" onClick={onCopy}>
@@ -209,7 +210,7 @@ function StatusCard({
           这次没有完成
         </p>
         <p className="caption red" style={{ margin: "4px 0 0", opacity: 0.92 }}>
-          {item.errorMessage || "服务器未能完成这次处理。"}
+          {item.errorMessage || "助手未能完成这次处理。"}
         </p>
         <div className="ask-actions">
           <button type="button" className="link-button" style={{ color: "var(--m-red)" }} onClick={onReuse}>
@@ -228,7 +229,7 @@ function StatusCard({
       <div className="card card--tight">
         <div className="ask-status">
           <XCircle size={17} className="muted" />
-          <span className="muted">已取消，服务器确认后不会再产生回答。</span>
+          <span className="muted">已取消，不会再产生回答。</span>
         </div>
       </div>
     );
@@ -240,7 +241,7 @@ function StatusCard({
         处理状态暂不确定
       </p>
       <p className="caption" style={{ margin: "4px 0 0" }}>
-        服务器仍在核对结果。可以刷新查询；不要把它当作安全重试的信号。
+        仍在核对结果，可以刷新查看最新状态。
       </p>
       {item.pollingPaused ? (
         <button type="button" className="link-button mt-6" onClick={onContinue}>
@@ -264,6 +265,7 @@ export default function AskPage() {
   const [memoryRefresh, setMemoryRefresh] = useState(0);
   const [intakeDraft, setIntakeDraft] = useState<MatterDraft | null>(null);
   const [pendingDrafts, setPendingDrafts] = useState<MatterDraft[]>([]);
+  const [liveTurn, setLiveTurn] = useState<{ question: string; answer: string } | null>(null);
   const [intakeAnswers, setIntakeAnswers] = useState<IntakeAnswer[]>([]);
   const [serverIntakeResults, setServerIntakeResults] = useState<MatterIntakeResult[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -285,6 +287,7 @@ export default function AskPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const latestIntakeRef = useRef<HTMLDivElement>(null);
   const restoredComposerKey = useRef<string | null>(null);
   const intakeAnswerStorageKey = accountKey("pa.web.intakeAnswers", user?.user_id ?? null);
   const composerStorageKey = accountKey("pa.web.ask.composer", user?.user_id ?? null);
@@ -407,6 +410,8 @@ export default function AskPage() {
     setClarificationContext({});
     setOperationFailure(null);
     setProcessing(true);
+    setLiveTurn({ question: value, answer: "" });
+    setDraft("");
     if (
       !intakeKey.current ||
       intakeKey.current.text !== value ||
@@ -419,17 +424,18 @@ export default function AskPage() {
       };
     }
     try {
-      const result = await intakeMatter(
+      const result = await streamIntakeMatter(
         value,
         intakeKey.current.key,
         activeContinuation,
         selectedMemories,
+        (answer) => setLiveTurn({ question: value, answer }),
       );
       if (result.outcome === "answer" || result.draft) setSelectedMemories([]);
       if (result.outcome === "answer") {
         if (!result.answer) {
           setOperationFailure(
-            result.message || "服务器没有返回可读的回答，输入已经保留。",
+            result.message || "助手没有返回可读的回答，输入已经保留。",
           );
           return;
         }
@@ -445,7 +451,7 @@ export default function AskPage() {
         ].slice(-20));
         setDraft("");
         writeSession(composerStorageKey, "");
-        toast("服务器已直接回答");
+        toast("助手已直接回答");
         intakeKey.current = null;
         setContinuationRunId(null);
         setClarificationContext({});
@@ -485,13 +491,14 @@ export default function AskPage() {
       }
       if (!result.draft) {
         setOperationFailure(
-          result.message || "服务器没有生成事项草稿，当前输入已保留。",
+          result.message || "助手没有生成事项草稿，当前输入已保留。",
         );
         setRecoveryRunId(result.local_run_id);
         void refreshServerIntake();
         return;
       }
     } catch (caught) {
+      setDraft(value);
       if (
         caught instanceof ApiError &&
         (caught.status >= 500 ||
@@ -507,6 +514,7 @@ export default function AskPage() {
       void refreshServerIntake();
     } finally {
       setProcessing(false);
+      setLiveTurn(null);
     }
   };
 
@@ -520,7 +528,7 @@ export default function AskPage() {
           );
       if (!result) {
         setOperationFailure(
-          "服务器暂时没有找到这次结果。可以保留原输入和操作标识继续原来的处理。",
+          "暂时没有找到这次结果。可以保留原输入继续原来的处理。",
         );
         return;
       }
@@ -529,7 +537,7 @@ export default function AskPage() {
         setIntakeDraft(result.draft);
         setContinuationRunId(null);
         setClarificationContext({});
-        toast("已读取服务器保存的待确认结果");
+        toast("已读取待确认结果");
       } else if (result.outcome === "needs_clarification") {
         setClarificationContext(result.pending_context ?? {});
         setSupplementQuestion(result.clarify || "请补充缺失的信息。");
@@ -537,9 +545,9 @@ export default function AskPage() {
       } else if (result.outcome === "answer") {
         setContinuationRunId(null);
         setClarificationContext({});
-        toast("服务器回答已恢复到历史");
+        toast("回答已恢复到历史");
       } else if (result.outcome === "processing" || result.outcome === "unknown") {
-        setOperationFailure("服务器仍在核实这次结果，请稍后再次查询。");
+        setOperationFailure("仍在核实这次结果，请稍后再次查询。");
       } else {
         setOperationFailure("这次操作没有形成可继续的结果，输入已保留。");
       }
@@ -568,6 +576,17 @@ export default function AskPage() {
     intakeAnswers,
   );
 
+  useEffect(() => {
+    if (liveTurn) latestIntakeRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [liveTurn?.question, liveTurn?.answer]);
+
+  const latestIntake = unifiedHistory[unifiedHistory.length - 1];
+  const latestIntakeId = latestIntake && ("local_run_id" in latestIntake ? latestIntake.local_run_id : latestIntake.localRunId || latestIntake.id);
+  useEffect(() => {
+    if (!latestIntakeId) return;
+    latestIntakeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [latestIntakeId, latestIntake?.answer, unifiedHistory.length]);
+
   return (
     <div className="m-screen" style={{ paddingBottom: 220 }}>
       <ScreenHeader title="问助手" subtitle="说一件事、一个问题或最新进展" />
@@ -577,7 +596,7 @@ export default function AskPage() {
           <div className="flex items-center gap-6" style={{ marginBottom: 16 }}>
             <Cloud size={14} className="fog" />
             <span className="caption" style={{ margin: 0 }}>
-              已登录 {user.display_name} · 回答来自 PA 服务器
+              已登录 {user.display_name} · 问答会同步到账号
             </span>
           </div>
         ) : null}
@@ -586,7 +605,7 @@ export default function AskPage() {
           <div className="flex items-center gap-6" style={{ marginBottom: 16, color: "var(--m-amber)" }}>
             <WifiOff size={14} />
             <span className="caption" style={{ margin: 0, color: "var(--m-amber)" }}>
-              离线：保留本机问答记录，暂时不能发送。
+              当前离线，可以继续查看已有问答。
             </span>
             <button type="button" className="link-button link-button--inline" onClick={() => void ask.refreshHistory()}>
               重试
@@ -595,22 +614,17 @@ export default function AskPage() {
         ) : null}
 
         {state === "anonymous" ? (
-          <div className="card card--amber" style={{ marginBottom: 16 }}>
-            <p className="card-title amber" style={{ fontSize: 15 }}>
-              登录后才能向服务器提问
-            </p>
-            <p className="caption" style={{ margin: "4px 0 0" }}>
-              未登录时仍可浏览本机已有内容；输入会保留。
-            </p>
-            <Link href="/login" className="link-button mt-6">
-              登录 PA 账号
-            </Link>
+          <div style={{ marginBottom: 16 }}>
+            <LoginRequired
+              title="登录后向助手提问"
+              body="登录账号后，问答与待确认草稿会同步到账号；暂存内容仍留在当前设备。"
+            />
           </div>
         ) : null}
 
         {renewMessage ? (
           <p className="micro" style={{ marginBottom: 12 }}>
-            {renewing ? "正在向服务器续期…" : renewMessage}
+            {renewing ? "正在延长登录…" : renewMessage}
           </p>
         ) : null}
 
@@ -635,7 +649,7 @@ export default function AskPage() {
               有 {pendingDrafts.length} 条待确认变更
             </p>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              从服务器恢复，不会因为重新打开页面反复弹出。
+              已从账号同步，重新打开页面也不会重复出现。
             </p>
             <div className="m-stack-8 mt-10">
               {pendingDrafts.slice(0, 3).map((draftItem) => (
@@ -654,7 +668,7 @@ export default function AskPage() {
 
       {unifiedHistory.length > 0 ? (
         <section className="ask-stream" style={{ marginBottom: 16 }}>
-          {unifiedHistory.map((item) => {
+          {unifiedHistory.map((item, index) => {
             const serverItem = "request_text" in item;
             const question = serverItem ? item.request_text : item.question;
             const answer = serverItem ? item.answer : item.answer;
@@ -684,7 +698,7 @@ export default function AskPage() {
             const createdAt = serverItem ? item.created_at : item.createdAt;
             const key = serverItem ? item.local_run_id : item.id;
             return (
-            <div key={key}>
+            <div key={key} ref={!liveTurn && index === unifiedHistory.length - 1 ? latestIntakeRef : undefined}>
               <div className="bubble-user">{question}</div>
               <div className="card mt-10">
                 <div className="flex items-center justify-between gap-10">
@@ -699,7 +713,7 @@ export default function AskPage() {
                             ? "处理失败"
                             : outcome === "cancelled"
                               ? "已取消"
-                              : "服务器直接回答")}
+                              : "助手直接回答")}
                   </span>
                   <span className="micro">{formatDateTime(createdAt)}</span>
                 </div>
@@ -719,7 +733,7 @@ export default function AskPage() {
                   {!answer && !clarify && !historyNote && outcome !== "unknown" ? (
                     <p className="caption" style={{ margin: 0 }}>
                       {outcome === "processing" || outcome === "unknown"
-                        ? "服务器尚未返回确定结果，可保留原输入后继续查询。"
+                        ? "助手尚未返回确定结果，可保留原输入后继续查询。"
                         : "这次操作没有形成可继续的回答。"}
                     </p>
                   ) : null}
@@ -767,14 +781,22 @@ export default function AskPage() {
         </section>
       ) : null}
 
+      {liveTurn ? <section className="ask-stream" aria-live="polite" ref={latestIntakeRef}>
+        <div className="bubble-user">{liveTurn.question}</div>
+        <div className="card mt-10">
+          <span className="micro">{liveTurn.answer ? "正在回复…" : "已发送，助手正在理解…"}</span>
+          {liveTurn.answer ? <Markdown source={liveTurn.answer} /> : <span className="spinner" />}
+        </div>
+      </section> : null}
+
       {timeline.length === 0 && unifiedHistory.length === 0 ? (
         <section style={{ padding: "0 var(--m-gutter)" }}>
           <div className="card">
             <p className="card-title" style={{ fontSize: 18 }}>
-              直接说，交给助手理解。
+              直接说，交给助手整理
             </p>
             <p className="body-text muted mt-8">
-              助手会判断是回答、补充问题，还是生成一张待确认变更卡；确认前不会写入正式安排。
+              助手会先给出回答或一份待确认草稿；你确认后才会更新正式日程与事项。
             </p>
             <div className="mt-12" style={{ display: "grid", gap: 8 }}>
               {SUGGESTIONS.map((suggestion) => (
@@ -801,13 +823,13 @@ export default function AskPage() {
                   }}
                 >
                   {suggestion}
-                  <span className="faint" aria-hidden="true">↗</span>
+                  <ArrowRight size={16} strokeWidth={1.5} className="faint" aria-hidden="true" />
                 </button>
               ))}
             </div>
             {ask.loadingHistory ? (
               <p className="micro mt-12" style={{ marginBottom: 0 }}>
-                正在读取历史记录…
+                正在同步历史…
               </p>
             ) : null}
           </div>
@@ -829,7 +851,7 @@ export default function AskPage() {
                   {concealed
                     ? item.classification === "pending"
                       ? "正在核对此前保存的记录…"
-                      : "这条本机记录暂不显示内容"
+                      : "这条暂存暂不显示内容"
                     : item.question}
                 </div>
                 <div className="mt-10">
@@ -859,25 +881,11 @@ export default function AskPage() {
               </div>
             );
           })}
-          {ask.loadingHistory ? <LoadingCard label="正在同步服务器历史…" /> : null}
+          {ask.loadingHistory ? <LoadingCard label="正在同步历史…" /> : null}
           <div ref={endRef} />
         </div>
       )}
 
-      <section style={{ padding: "0 var(--m-gutter)", marginTop: 28 }}>
-        <div style={{ display: "grid", gap: 6 }}>
-          <span className="micro">关于这版回答</span>
-          <p className="caption" style={{ margin: 0 }}>
-            一次发送只调用一个统一入口。服务器返回回答时直接显示；返回事项草稿时使用底部确认面板，不把同一句话再次发送给另一个入口。
-          </p>
-          <p className="caption" style={{ margin: 0 }}>
-            日历、提醒事项和笔记目前只读取已同步到服务器的副本；浏览器不能声称获得了系统读取权限。
-          </p>
-          <p className="caption" style={{ margin: 0 }}>
-            正式日程和提醒只在你确认变更卡后写入。待确认内容会从服务器恢复；多候选事项可在面板中直接选择，不需要重输背景。
-          </p>
-        </div>
-      </section>
 
       {composerError ? (
         <p className="composer-hint" style={{ position: "fixed", bottom: "calc(132px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 36 }} role="alert">
@@ -965,7 +973,7 @@ export default function AskPage() {
 
       {processing ? (
         <p className="composer-hint" style={{ position: "fixed", bottom: "calc(132px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, zIndex: 36 }}>
-          正在理解内容，服务器返回结果后再继续…
+          正在理解内容，请稍候…
         </p>
       ) : null}
 

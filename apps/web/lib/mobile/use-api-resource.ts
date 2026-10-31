@@ -59,7 +59,7 @@ export function errorText(error: ApiError | Error | null): string {
   if (!error) return "";
   if (error instanceof ApiError) {
     if (error.status === 401) return "登录状态已失效，请重新登录。";
-    if (error.status === 404) return "这条记录在服务器上已不存在。";
+    if (error.status === 404) return "这条记录在云端上已不存在。";
     return error.message;
   }
   return error.message || "请求未能完成。";

@@ -23,6 +23,7 @@ import httpx
 
 from assistant_api.nexus_client.errors import (
     NexusError,
+    MEMORY_MESSAGES,
     NexusProtocolError,
     NexusTimeoutError,
     NexusUnavailableError,
@@ -98,7 +99,7 @@ class NexusPilotClient:
             headers.update(extra)
         return headers
 
-    async def _post(self, path: str, payload: dict[str, Any], *, external_user_id: str) -> dict[str, Any]:
+    async def _post(self, path: str, payload: dict[str, Any], *, external_user_id: str | None) -> dict[str, Any]:
         """Send one JSON request and convert every failure into a typed error."""
 
         try:
@@ -110,6 +111,17 @@ class NexusPilotClient:
         except httpx.HTTPError as exc:
             raise NexusUnavailableError("NexusPilot is unreachable") from exc
         return self._decode(response)
+
+    async def exchange_login(self, *, code: str, redirect_uri: str, verifier: str) -> dict[str, Any]:
+        """Exchange one browser-approved code without a browser-selected external identity."""
+        return await self._post("/api/v1/auth/app/exchange", {
+            "code": code, "redirect_uri": redirect_uri, "code_verifier": verifier,
+        }, external_user_id=None)
+
+    async def begin_account_link(self, external_user_id: str) -> dict[str, Any]:
+        """Request a link ticket only for the locally authenticated account."""
+        return await self._post(f"{APPLICATION_PREFIX}/me/account-link-requests", {},
+                                external_user_id=external_user_id)
 
     async def _get(self, path: str, *, external_user_id: str) -> dict[str, Any]:
         try:
@@ -126,7 +138,15 @@ class NexusPilotClient:
         """Return a JSON object or raise the mapped error; never return a bare 200."""
 
         if response.status_code >= 400:
-            raise error_for_status(response.status_code, _detail_from(response))
+            error = error_for_status(response.status_code, _detail_from(response))
+            try:
+                detail = response.json().get("detail")
+                public_code = detail.get("code") if isinstance(detail, dict) else None
+            except (ValueError, AttributeError):
+                public_code = None
+            if isinstance(public_code, str) and public_code in MEMORY_MESSAGES:
+                error.memory_code = public_code
+            raise error
         try:
             body = response.json()
         except ValueError as exc:
@@ -214,22 +234,27 @@ class NexusPilotClient:
         )
         return MemoryQueryResponse.model_validate(body)
 
-    async def list_product_memory(self, external_user_id: str, run_id: str, *, offset: int = 0, limit: int = 20) -> dict:
-        """Read current App memory under a server-resolved Run."""
+    async def list_product_memory(self, external_user_id: str, run_id: str | None = None, *, offset: int = 0, limit: int = 20) -> dict:
+        """Read App-owned memory, optionally retaining an explicitly resolved Run."""
+        target = f"runs/{run_id}" if run_id else "me"
         return await self._get(
-            f"{APPLICATION_PREFIX}/runs/{run_id}/user-memories?scope=personal&offset={offset}&limit={limit}",
+            f"{APPLICATION_PREFIX}/{target}/user-memories?offset={offset}&limit={limit}",
             external_user_id=external_user_id,
         )
 
-    async def product_memory_settings(self, external_user_id: str, run_id: str) -> dict:
+    async def product_memory_settings(self, external_user_id: str, run_id: str | None = None) -> dict:
+        """Read the current App scope without creating a conversation."""
+        target = f"runs/{run_id}" if run_id else "me"
         return await self._get(
-            f"{APPLICATION_PREFIX}/runs/{run_id}/memory-settings?scope=personal",
+            f"{APPLICATION_PREFIX}/{target}/memory-settings",
             external_user_id=external_user_id,
         )
 
-    async def mutate_product_memory(self, external_user_id: str, run_id: str, command: dict) -> dict:
+    async def mutate_product_memory(self, external_user_id: str, run_id: str | None, command: dict) -> dict:
+        """Forward the unchanged operation key and version to Nexus-owned storage."""
+        target = f"runs/{run_id}" if run_id else "me"
         return await self._post(
-            f"{APPLICATION_PREFIX}/runs/{run_id}/user-memories",
+            f"{APPLICATION_PREFIX}/{target}/user-memories",
             command,
             external_user_id=external_user_id,
         )

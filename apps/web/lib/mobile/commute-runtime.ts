@@ -251,7 +251,7 @@ export function describeCommuteRuntime({
       kind: loading ? "loading" : "unavailable",
       label: loading ? "正在获取后台状态…" : "暂时无法获取后台状态",
       detail: loading
-        ? "正在获取后台状态；任务状态以服务器保存的检查为准。"
+        ? "正在获取后台状态；任务状态以云端保存的检查为准。"
         : "暂时无法获取后台状态；任务已保存，不会因此判定失败。",
       tone: loading ? "neutral" : "amber",
       ageSeconds: null,

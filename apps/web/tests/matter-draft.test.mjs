@@ -212,3 +212,11 @@ test("stop-following conflicts trigger a reread instead of fake success", () => 
   assert.equal(isRecordChangedError("schedule_changed"), true);
   assert.equal(isRecordChangedError("not_initial_create"), true);
 });
+
+test("unified history sorts newest server reply last after sync", () => {
+  const rows = mergeIntakeHistory([
+    { local_run_id: "new", created_at: "2026-10-30T03:21:00Z", answer: "当前事项" },
+    { local_run_id: "old", created_at: "2026-10-29T08:57:00Z", answer: "已保存" },
+  ], [{ localRunId: "new", createdAt: "2026-10-30T03:21:01Z", answer: "当前事项" }]);
+  assert.deepEqual(rows.map(row => row.local_run_id), ["old", "new"]);
+});

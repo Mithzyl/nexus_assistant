@@ -339,6 +339,13 @@ async def _start_workflow(
     # Nexus enforces owner/version checks and per-run sensitive disclosure.
     # Complete these explicit grants before any model starts; errors fail closed.
     for disclosure in (row.context_json or {}).get("memory_disclosures", []):
+        if "grant_id" in disclosure:
+            await client._post(
+                f"/api/v1/app/runs/{row.nexus_run_id}/shared-memory-disclosures",
+                {**disclosure, "key": f"shared:{row.local_run_id}:{disclosure['grant_id']}"},
+                external_user_id=external_user_id,
+            )
+            continue
         await client.mutate_product_memory(
             external_user_id,
             row.nexus_run_id,
@@ -630,6 +637,11 @@ async def _consume_workflow(
             external_user_id, remote_run_id, payload
         ):
             data = client.event_payload(event)
+            from assistant_api.services.intake_stream import sink
+            observer = sink.get()
+            if observer and data.get("event_type") == "agent.answer.delta":
+                observer((data.get("public_payload") or {}).get("text_delta", ""))
+                logging.getLogger(__name__).info("intake answer delta run=%s chars=%s", local_run_id, len((data.get("public_payload") or {}).get("text_delta", "")))
             event_workflow_id = data.get("workflow_execution_id")
             if workflow_id is None and isinstance(event_workflow_id, str) and event_workflow_id:
                 workflow_id = event_workflow_id

@@ -511,7 +511,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
         nextStep: "由你确认它属于哪件事",
         detail: [
           { label: "收下时间", value: "刚刚" },
-          { label: "来源", value: "本机演示的一句话" },
+          { label: "来源", value: "当前设备演示的一句话" },
         ],
       };
       setMatters((current) => [matter, ...current]);
@@ -581,7 +581,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
           return {
             tone: "duplicate",
             title: "你撤销过这次更新，保持原样",
-            body: "同一份回执已经处理过，而且你选择了撤销。不会因为重复交入而悄悄重新应用。",
+            body: "同一份回执已经处理过，而且你选择了撤销。不会因为重复提交而悄悄重新应用。",
             route: "/matters/coffee",
           };
         }

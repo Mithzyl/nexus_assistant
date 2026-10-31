@@ -67,6 +67,8 @@ class CommuteLocation(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    city: str | None = Field(default=None, max_length=160)
+    coordinate_system: Literal["gcj02", "wgs84"] | None = None
     label: str = Field(min_length=1, max_length=160)
     latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
     longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
@@ -252,7 +254,7 @@ class CheckCreateRequest(BaseModel):
 
 
 class AiAnalysisRead(BaseModel):
-    status: Literal["available", "unavailable", "rejected", "unknown"]
+    status: Literal["available", "unavailable", "rejected", "unknown", "failed"]
     analysis_version: int | None = None
     route_source: Literal["client_snapshot", "server_provider", "none"] | None = None
     used_duration_seconds: int | None = None
@@ -333,12 +335,21 @@ class CheckError(BaseModel):
     retryable: bool
 
 
+class AnalysisTarget(BaseModel):
+    local_service_date: date
+    target_arrival_at: UtcDateTime
+
+
 class CheckCreated(BaseModel):
+    local_service_date: date | None = None
+    target_arrival_at: UtcDateTime | None = None
     check_id: str
     status: CheckStatus
 
 
 class CheckRead(BaseModel):
+    local_service_date: date | None = None
+    target_arrival_at: UtcDateTime | None = None
     check_id: str
     plan_id: str
     status: CheckStatus

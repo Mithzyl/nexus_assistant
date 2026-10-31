@@ -360,10 +360,10 @@ def route_sources(eta: EtaEvaluation) -> dict[str, Any]:
         "attribution": {
             "text": constants.ROUTE_ATTRIBUTION_TEXT
             if eta.provider == "apple_maps_server_api"
-            else "开发/测试路线数据，非 Apple Maps",
+            else ("高德地图路线数据" if eta.provider == "amap" else "暂无可用路线" if eta.provider == "unavailable" else "开发/测试路线数据"),
             "url": constants.ROUTE_ATTRIBUTION_URL
             if eta.provider == "apple_maps_server_api"
-            else "https://example.invalid/mock-route",
+            else ("https://lbs.amap.com/" if eta.provider == "amap" else "" if eta.provider == "unavailable" else "https://example.invalid/mock-route"),
         },
         "request_depart_at": utc_iso(eta.request_depart_at),
         "target_arrival_at": utc_iso(eta.target_arrival_at),
@@ -408,7 +408,7 @@ def build_facts(
         ),
         rain_risk=weather.rain_risk,
         departure_status=status,  # type: ignore[arg-type]
-        weather_available=weather.available,
+        weather_available=weather.available and weather.coverage == "full",
         eta_available=eta.available,
         reason_codes=list(eta.reason_codes + weather.reason_codes),
     )
@@ -417,7 +417,7 @@ def build_facts(
 def render_template(facts: AdviceFacts) -> AdviceText:
     """Produce a safe fallback whose numbers are the only numbers allowed later."""
 
-    mode = "驾车" if facts.transport_mode == "driving" else "步行"
+    mode = {"driving": "驾车", "transit": "公交", "walking": "步行"}.get(facts.transport_mode, "出行")
     if not facts.eta_available and not facts.weather_available:
         return AdviceText(
             title="通勤建议暂不可用",
@@ -429,7 +429,7 @@ def render_template(facts: AdviceFacts) -> AdviceText:
             summary=(
                 f"暂时无法获取{mode}耗时，因此不生成精确出发时间。"
                 f"目标到达时间为 {facts.target_arrival_local}，天气数据"
-                f"{'可用' if facts.weather_available else '也不可用'}。"
+                f"{'已覆盖分析时段' if facts.weather_available else '未完整覆盖分析时段，不能据此判断目标时段天气'}。"
             ),
         )
     eta = facts.eta_minutes or 0

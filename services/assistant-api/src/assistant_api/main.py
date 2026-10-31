@@ -29,6 +29,7 @@ from assistant_api.core.errors import AssistantError
 from assistant_api.infrastructure.database import create_engine_and_factory
 from assistant_api.models import Base
 from assistant_api.nexus_client import NexusError, NexusPilotClient
+from assistant_api.nexus_client.errors import MEMORY_MESSAGES
 from assistant_api.routers import (
     assistant,
     auth,
@@ -40,6 +41,7 @@ from assistant_api.routers import (
     sync_ios,
 )
 from assistant_api.services.run_service import shutdown_background_tasks
+from assistant_api.routers import nexus_login
 
 
 _CALENDAR_TOKEN_PATH = re.compile(r"(/api/v1/calendar/)[^/\s?]+(\.ics)")
@@ -141,6 +143,7 @@ def create_app(
     app.state.settings = resolved
 
     app.include_router(auth.router)
+    app.include_router(nexus_login.router)
     app.include_router(assistant.router)
     app.include_router(memory.router)
     app.include_router(internal_tools.router)
@@ -175,14 +178,23 @@ def create_app(
 
     @app.exception_handler(NexusError)
     async def nexus_error_handler(request: Request, error: NexusError) -> JSONResponse:
-        """Translate remote failures without exposing remote internals."""
+        """Preserve user memory conflicts; workflow configuration failures remain upstream errors."""
 
         status_code, code = _nexus_status(error)
+        message = str(error)
+        if request.url.path.startswith("/api/v1/memory"):
+            status_code = {"nexus_conflict": 409, "nexus_invalid_request": 422}.get(code, status_code)
+            code = getattr(error, "memory_code", code)
+            message = MEMORY_MESSAGES.get(code, {
+                404: "未找到当前账号可操作的记忆或共享许可。",
+                409: "操作未被接受，请刷新并核对版本、启用状态和确认选项。",
+                422: "记忆字段无效，请核对类型、日期、时间和坐标。",
+            }.get(status_code, "记忆服务暂时不可用，操作结果尚未确认；请稍后重试。"))
         return _error_response(
             request,
             status_code,
             code,
-            str(error),
+            message,
             retryable=bool(error.retryable),
         )
 

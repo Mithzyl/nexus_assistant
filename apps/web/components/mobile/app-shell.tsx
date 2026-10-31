@@ -37,11 +37,39 @@ function TabBar() {
             className="tab"
             aria-current={active ? "page" : undefined}
           >
-            <Icon size={21} strokeWidth={active ? 2.1 : 1.7} aria-hidden="true" />
+            <Icon size={21} strokeWidth={1.5} aria-hidden="true" />
             <span>{tab.label}</span>
           </Link>
         );
       })}
+    </nav>
+  );
+}
+
+function DesktopNav() {
+  const pathname = usePathname();
+  return (
+    <nav className="desktop-nav" aria-label="主导航">
+      <p className="desktop-nav__brand">
+        生活助手
+        <small>记住要事，理清安排</small>
+      </p>
+      {TABS.map((tab) => {
+        const Icon = tab.icon;
+        const active = isActive(pathname, tab.href);
+        return (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className="desktop-nav__item"
+            aria-current={active ? "page" : undefined}
+          >
+            <Icon size={19} strokeWidth={1.5} aria-hidden="true" />
+            <span>{tab.label}</span>
+          </Link>
+        );
+      })}
+      <p className="desktop-nav__foot">生活助手 · 0.1.0</p>
     </nav>
   );
 }
@@ -80,6 +108,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="m-app" ref={shellRef} data-keyboard="false">
+      <DesktopNav />
       <main className="m-content">{children}</main>
       <TabBar />
     </div>

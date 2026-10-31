@@ -57,7 +57,7 @@ export default function ImportNotePage() {
     try {
       const text = await file.text();
       if (text.length > MAX_BODY) {
-        setError("文件内容超过 100000 个字符，服务器不接受更大的正文。");
+        setError("文件内容超过 100000 个字符，云端不接受更大的正文。");
         return;
       }
       const heading = /^#\s+(.+)$/m.exec(text);
@@ -167,12 +167,12 @@ export default function ImportNotePage() {
   return (
     <PageShell
       title="导入笔记"
-      subtitle="只支持纯文本与 Markdown；确认后才会写入服务器。"
+      subtitle="只支持纯文本与 Markdown；确认后才会写入云端。"
     >
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后才能导入" body="上传会写入服务器上的笔记来源。">
+        <EmptyState title="登录后导入笔记" body="登录账号后可以导入笔记。">
           <Link href="/login" className="btn btn--primary">
-            登录 PA 账号
+            登录账号
           </Link>
         </EmptyState>
       ) : null}
@@ -183,7 +183,7 @@ export default function ImportNotePage() {
             <div className="card card--green">
               <p className="card-title green" style={{ fontSize: 16 }}>
                 {result.created > 0
-                  ? "已保存到服务器"
+                  ? "已保存到云端"
                   : result.updated > 0
                     ? "已更新已有副本"
                     : "内容已存在，没有新增副本"}
@@ -192,7 +192,7 @@ export default function ImportNotePage() {
                 新建 {result.created} · 更新 {result.updated} · 未改动 {result.unchanged}
               </p>
               <p className="micro" style={{ margin: "6px 0 0" }}>
-                服务器时间 {new Date(result.last_sync_at).toLocaleString("zh-CN")} · 这条笔记来自浏览器导入
+                同步时间 {new Date(result.last_sync_at).toLocaleString("zh-CN")} · 这条笔记来自浏览器导入
               </p>
               <div className="mt-14" style={{ display: "grid", gap: 8 }}>
                 <Link
@@ -288,7 +288,7 @@ export default function ImportNotePage() {
 
               <div className="mt-14">
                 <PrimaryButton onClick={() => void submit()} busy={busy} disabled={busy}>
-                  {busy ? "正在写入服务器…" : "确认导入"}
+                  {busy ? "正在写入云端…" : "确认导入"}
                 </PrimaryButton>
               </div>
               <div className="mt-10">
@@ -304,7 +304,7 @@ export default function ImportNotePage() {
             选择文件不等于同步成功，只有上面的保存结果才算写入。
           </Notice>
           <p className="micro mt-12" style={{ lineHeight: 1.7 }}>
-            导入后会创建一个独立的“浏览器导入笔记”来源（范围键以本机安装 ID 区分），
+            导入后会创建一个独立的“浏览器导入笔记”来源（范围键以当前设备安装 ID 区分），
             不会与 iPhone 上传的日历、提醒或笔记混在一起。默认助手不可读，可在来源详情里单独授权。
           </p>
         </>

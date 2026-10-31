@@ -19,7 +19,7 @@ import { Notice, Pill } from "./ui";
 const REASON_LABEL: Record<string, string> = {
   ROUTE_UNAVAILABLE: "路线数据不可用",
   ROUTE_CLIENT_SNAPSHOT: "使用客户端路线快照",
-  ROUTE_SERVER_PROVIDER: "使用服务器路线查询",
+  ROUTE_SERVER_PROVIDER: "使用云端路线查询",
   AI_ANALYSIS_AVAILABLE: "AI 分析结果可用",
   ADVISORY_DEGRADED: "部分数据不完整",
   WEATHER_FRESH: "天气数据新鲜",
@@ -62,7 +62,7 @@ export function AdvisoryCard({
     ? {
         ...baseAiBadge,
         label: baseAiBadge.available
-          ? "模型分析（基于开发/测试数据）"
+          ? "示例数据分析"
           : baseAiBadge.label,
         tone: "amber" as const,
       }
@@ -100,7 +100,7 @@ export function AdvisoryCard({
         ) : (
           <div>
             <span className="micro" style={{ display: "block" }}>建议出发</span>
-            <span style={{ fontSize: 15 }}>服务器未给出</span>
+            <span style={{ fontSize: 15 }}>云端未给出</span>
           </div>
         )}
         <div>
@@ -157,7 +157,7 @@ export function AdvisoryCard({
 
         {historySnapshot ? (
           <p className="micro mt-8">
-            这条建议使用了客户端路线快照，不是本轮 Web 发起的服务器路线查询；Web 不生成同类快照。
+            这条建议来自上次保存的路线结果。
           </p>
         ) : null}
 
@@ -198,13 +198,13 @@ export function AdvisoryCard({
 
         {ai && ai.status !== "available" ? (
           <p className="micro" style={{ margin: "8px 0 0" }}>
-            分析没有完成；标题与摘要仍来自服务器保存的记录，不当作 AI 成功结果。
+            分析没有完成；标题与摘要仍来自云端保存的记录，不当作 AI 成功结果。
           </p>
         ) : null}
 
         {mock.length > 0 ? (
           <div className="notice notice--amber" style={{ marginTop: 10 }}>
-            <strong>开发/测试数据</strong>
+            <strong>示例数据</strong>
             <p style={{ margin: "4px 0 0" }}>
               {mock.join(" / ")}：不是真实路况或真实天气，也不是 Apple 签名结果。
             </p>
@@ -270,7 +270,7 @@ export function AdvisoryCard({
 
       {advisory.quality === "degraded" ? (
         <Notice tone="amber" title="数据不完整">
-          部分天气或路线数据暂不可用。建议仍按服务器给出的时间展示，不补齐缺失值。
+          部分天气或路线数据暂不可用。建议仍按云端给出的时间展示，不补齐缺失值。
         </Notice>
       ) : null}
 
@@ -318,7 +318,7 @@ export function AdvisoryCard({
         建议更新于 {formatDateTime(advisory.generated_at)} · 有效至 {formatDateTime(advisory.expires_at)}
         <br />
         文案来源：{advisory.explanation_source === "model" ? "模型文案" : "确定性模板"}；
-        分析状态：{aiBadge.label}。数字与出发时间以服务器保存的记录为准。
+        分析状态：{aiBadge.label}。数字与出发时间以云端保存的记录为准。
       </p>
 
       {onSkip ? (
@@ -334,7 +334,7 @@ export function AdvisoryCard({
       ) : null}
 
       <p className="micro mt-8" style={{ lineHeight: 1.6 }}>
-        <Clock size={11} style={{ display: "inline", verticalAlign: "-1px" }} /> 提醒由服务器调度；
+        <Clock size={11} style={{ display: "inline", verticalAlign: "-1px" }} /> 提醒由云端调度；
         浏览器定时器不负责后台检查，Web Push 未接入。
       </p>
     </div>

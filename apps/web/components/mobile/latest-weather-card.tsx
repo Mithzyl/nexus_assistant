@@ -11,7 +11,7 @@ import { CloudRain, RefreshCw, Thermometer } from "lucide-react";
 
 import type { Advisory, PlanWeather } from "@/lib/mobile/api";
 import { ApiError } from "@/lib/mobile/api";
-import { formatDateTime } from "@/lib/mobile/format";
+import { formatDateTime, formatServiceDate } from "@/lib/mobile/format";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
 import { Pill } from "./ui";
 
@@ -26,11 +26,9 @@ const FRESHNESS: Record<
 
 export function LatestWeatherCard({
   planId,
-  planRevision,
   advisory,
 }: {
   planId: string;
-  planRevision: number;
   advisory: Advisory | null;
 }) {
   const weather = useApiResource<PlanWeather>(
@@ -62,13 +60,13 @@ export function LatestWeatherCard({
 
       {weather.loading ? (
         <p className="caption" style={{ margin: "8px 0 0" }}>
-          正在读取服务器天气…
+          正在读取云端天气…
         </p>
       ) : null}
 
       {noWeather ? (
         <p className="caption" style={{ margin: "8px 0 0" }}>
-          今天还没有服务器保存的天气记录。后台检查完成后会出现在这里，不会借用其他日期或地点的天气。
+          今天还没有天气记录。后台检查完成后会显示在这里。
         </p>
       ) : null}
 
@@ -104,29 +102,28 @@ export function LatestWeatherCard({
           </div>
 
           <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-            {data.provider} · 取得于 {formatDateTime(data.fetched_at) || "服务器未给出时间"}
+            {data.provider === "mock" ? "示例天气" : data.provider} · 获取于 {formatDateTime(data.fetched_at) || "暂无时间"}
             {data.valid_to ? ` · 有效至 ${formatDateTime(data.valid_to)}` : ""}
           </p>
           <p className="micro" style={{ margin: "3px 0 0", lineHeight: 1.6 }}>
-            服务日期 {data.local_service_date} · 计划 revision {data.plan_revision}
+            服务日期 {formatServiceDate(data.local_service_date)}
           </p>
 
           {!data.matches_current_plan ? (
             <p className="micro amber" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-              这条天气属于计划 revision {data.plan_revision}，当前为 revision{" "}
-              {data.current_plan_revision}；不会作为当前计划的新分析依据。
+              这条天气来自较早的通勤设置，不会作为当前设置的依据。
             </p>
           ) : null}
 
           {data.is_stale ? (
             <p className="micro amber" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-              天气已超出服务器的新鲜度窗口，仅表示最近一次保存的记录。
+              天气已超出有效期，这里仅显示最近一次记录。
             </p>
           ) : null}
 
           {data.coverage !== "full" ? (
             <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-              天气覆盖：{data.coverage === "partial" ? "部分时段" : "不可用"}；不完整时不会补齐缺失值。
+              天气覆盖：{data.coverage === "partial" ? "部分时段" : "不可用"}。
             </p>
           ) : null}
 
@@ -140,14 +137,13 @@ export function LatestWeatherCard({
             </div>
           ) : (
             <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-              这里只显示最新天气快照，不代表出发建议已经重新分析。
+              这里显示最近一次天气记录，出发建议可能尚未更新。
             </p>
           )}
 
           {advisory && !advisory.matches_current_plan ? (
             <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-              当前建议生成于计划 revision {advisory.plan_revision}，与 revision{" "}
-              {planRevision} 不是同一版。
+              这条建议来自较早的通勤设置，与当前设置不一致。
             </p>
           ) : null}
         </>

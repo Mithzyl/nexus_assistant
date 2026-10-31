@@ -44,7 +44,7 @@ async def search_memory(
 
     if memory_types:
         raise InvalidRequestError("memory_type_unsupported", "新版记忆不支持旧版类型筛选。")
-    run_id = await resolve_memory_run(db, external_user_id, local_run_id)
+    run_id = await resolve_memory_run(db, external_user_id, local_run_id) if local_run_id else None
     body = await client.list_product_memory(external_user_id, run_id, offset=offset, limit=limit)
     items = []
     for item in body["items"]:

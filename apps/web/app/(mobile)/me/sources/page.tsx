@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, CalendarDays, FileText, NotebookPen } from "lucide-react";
+import { Archive, CalendarDays, ChevronRight, FileText, NotebookPen } from "lucide-react";
 
 import type { ContentItem, DataSource } from "@/lib/mobile/api";
 import { useApiResource, errorText } from "@/lib/mobile/use-api-resource";
@@ -70,7 +70,7 @@ export default function SourcesPage() {
     <div style={{ paddingBottom: 24 }}>
       <PageShell
         title="内容来源"
-        subtitle="只读取已同步到服务器的副本；浏览器不能读取系统日历或提醒事项。"
+        subtitle="只读取已同步到云端的副本；浏览器不能读取系统日历或提醒事项。"
         action={
           <button
             type="button"
@@ -83,11 +83,11 @@ export default function SourcesPage() {
       >
         {!signedIn && state !== "loading" ? (
           <EmptyState
-            title="登录后才能查看内容来源"
-            body="来源、同步状态和搜索都需要服务器上的账号。"
+            title="登录后查看通勤计划内容来源"
+            body="登录账号后可以查看内容来源与同步状态。"
           >
             <Link href="/login" className="btn btn--primary">
-              登录 PA 账号
+              登录账号
             </Link>
           </EmptyState>
         ) : null}
@@ -111,7 +111,7 @@ export default function SourcesPage() {
                 aria-pressed={tab === "content"}
                 onClick={() => setTab("content")}
               >
-                云端内容
+                已同步内容
               </button>
             </div>
 
@@ -152,7 +152,7 @@ export default function SourcesPage() {
                             : " · 还没有同步记录"}
                         </span>
                       </span>
-                      <span className="chevron">›</span>
+                      <ChevronRight size={16} className="chevron" aria-hidden="true" />
                     </span>
                     <span className="flex items-center gap-8 mt-10" style={{ flexWrap: "wrap" }}>
                       <Pill tone={source.sync_enabled ? "fog" : "amber"}>
@@ -180,7 +180,7 @@ export default function SourcesPage() {
             ) : (
               <div className="mt-14">
                 <label className="field" htmlFor="content-query">
-                  <span className="field__label">搜索云端内容</span>
+                  <span className="field__label">搜索已同步内容</span>
                   <input
                     id="content-query"
                     className="input"
@@ -211,7 +211,7 @@ export default function SourcesPage() {
                   ))}
                 </div>
 
-                {content.loading ? <LoadingCard label="正在读取云端内容…" /> : null}
+                {content.loading ? <LoadingCard label="正在读取已同步内容…" /> : null}
                 {content.error ? (
                   <ErrorCard message={errorText(content.error)} onRetry={content.reload} />
                 ) : null}
@@ -250,7 +250,7 @@ export default function SourcesPage() {
                                 : formatDateTime(item.source_updated_at)}
                           </span>
                         </span>
-                        <span className="chevron">›</span>
+                        <ChevronRight size={16} className="chevron" aria-hidden="true" />
                       </button>
                     </div>
                   ))}

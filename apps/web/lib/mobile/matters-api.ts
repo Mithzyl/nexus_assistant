@@ -307,7 +307,7 @@ export function revertMatterChange(
 }
 
 export function confirmSummary(response: DraftConfirmResponse): string {
-  if (!response.applied) return "服务器没有确认这次写入，请重新检查草稿。";
+  if (!response.applied) return "云端没有确认这次写入，请重新检查草稿。";
   const parts: string[] = [];
   if (response.schedule) parts.push(`日程「${response.schedule.title}」已更新`);
   if (response.reminders.length > 0) parts.push(`${response.reminders.length} 个提醒已保存`);
@@ -344,4 +344,37 @@ export function newOperationKey(prefix: string): string {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${random}`.slice(0, 128);
+}
+
+export async function streamIntakeMatter(text: string, idempotencyKey: string,
+  continuationRunId: string | null | undefined,
+  memoryDisclosures: import("@/components/mobile/account-memory").SelectedMemory[],
+  onAnswer: (text: string) => void): Promise<MatterIntakeResponse> {
+  const response = await fetch(pa("/matters/intake/stream"), {
+    method: "POST", headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ text, idempotency_key: idempotencyKey,
+      continuation_run_id: continuationRunId, memory_disclosures: memoryDisclosures }),
+  });
+  if (!response.ok || !response.body) throw new Error("暂时无法连接助手，请保留本次输入重试。");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let boundary;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+        const type = frame.match(/^event: (.+)$/m)?.[1];
+        const raw = frame.match(/^data: (.+)$/m)?.[1];
+        if (!raw) continue;
+        const data = JSON.parse(raw);
+        if (type === "answer") onAnswer(data.text);
+        if (type === "result") return data as MatterIntakeResponse;
+        if (type === "error") throw new Error(data.message);
+      }
+      if (done) throw new Error("连接已中断，输入和操作标识已保留，请核对原结果或重试同一次操作。");
+    }
+  } finally { reader.releaseLock(); }
 }

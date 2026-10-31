@@ -28,14 +28,14 @@ export default function LessonPage() {
         text: `个人经验：${trimmed}`,
       });
       setSaved({ demo: false });
-      toast("已保存在本机记录");
+      toast("已保存在本机暂存");
     }
   };
 
   return (
     <PageShell
       title="记住一点经验"
-      subtitle="你主动写下的内容；不是模型自动总结，也不会凭空生成。"
+      subtitle="你主动写下的内容，可以随时回来查看。"
     >
       {saved ? (
         <>
@@ -46,7 +46,7 @@ export default function LessonPage() {
             <p className="caption" style={{ margin: "6px 0 0" }}>
               {saved.demo
                 ? "可以在“个人记忆”里编辑或停用；所有改动只存在于当前演示会话。"
-                : "服务器目前没有记忆写入接口，所以这句话不会同步到 AI 平台，也不会进入助手记忆。"}
+                : "云端目前没有记忆写入功能，所以这句话不会同步到 AI 平台，也不会进入助手记忆。"}
             </p>
           </div>
           <div className="mt-14" style={{ display: "grid", gap: 8 }}>
@@ -84,12 +84,12 @@ export default function LessonPage() {
             </span>
           </label>
           <PrimaryButton onClick={save} disabled={!text.trim()}>
-            {demo.enabled ? "保存到演示记忆" : "保存为本机记录"}
+            {demo.enabled ? "保存到演示记忆" : "保存为本机暂存"}
           </PrimaryButton>
-          <Notice tone="amber" title={demo.enabled ? "演示模式" : "能力边界"}>
+          <Notice tone="amber" title={demo.enabled ? "演示模式" : "关于保存"}>
             {demo.enabled
-              ? "这条经验只会影响当前页面的本地示例，刷新后恢复；不会写入服务器或 AI 平台。"
-              : "当前后端没有记忆新增接口。正常模式只能把这句话保存在本机记录，不能声称已经同步到助手记忆。"}
+              ? "这条经验只影响当前页面的示例，刷新后恢复。"
+              : "这条内容会先保存在当前设备的暂存里。"}
           </Notice>
           <Link href="/me/memories" className="link-button mt-6">
             查看个人记忆说明

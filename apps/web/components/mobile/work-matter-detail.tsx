@@ -51,7 +51,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
             title="这是概念预览中的事项"
-            body="事项服务尚未接入服务器。请先在“我的”开启概念预览，再查看本机示例。"
+            body="事项服务尚未接入云端。请先在“我的”开启概念预览，再查看当前设备示例。"
           />
         </div>
       </PageShell>
@@ -62,7 +62,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
     return (
       <PageShell title="事项" fallbackHref="/me/lab/plan">
         <div style={{ padding: "0 var(--m-gutter)" }}>
-          <EmptyState title="这条预览事项不存在" body="它可能已被删除，或当前账号没有这条本机记录。">
+          <EmptyState title="这条预览事项不存在" body="它可能已被删除，或当前账号没有这条本机暂存。">
             <button type="button" className="btn btn--secondary" onClick={() => router.push("/me/lab/plan")}>
               返回事项
             </button>
@@ -75,7 +75,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
   return (
     <PageShell
       title="事项详情"
-      subtitle="本机概念预览 · 未写入服务器"
+      subtitle="当前设备概念预览 · 未写入云端"
       fallbackHref="/me/lab/plan"
       action={
         <button type="button" className="icon-button" onClick={() => setEditOpen(true)} aria-label="纠正事项">
@@ -135,14 +135,14 @@ export function WorkMatterDetail({ id }: { id: string }) {
                     />
                     <div className="flex items-center gap-8" style={{ paddingLeft: 48 }}>
                       <SyncPill status={item.syncStatus} />
-                      <span className="micro">未写入 iPhone 系统日历</span>
+                      <span className="micro">仅保存在应用内</span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
             <p className="micro" style={{ margin: "10px 0 0" }}>
-              修改只保存到本机预览；正式日程和提醒请在“事项”页用服务器草稿确认。
+              修改只保存到当前设备预览；正式日程和提醒请在“事项”页用云端草稿确认。
             </p>
           </div>
         </section>
@@ -174,7 +174,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
                 ))}
               </div>
             )}
-            <p className="micro" style={{ margin: "10px 0 0" }}>勾选只改本机预览，不会把正式提醒标为完成。</p>
+            <p className="micro" style={{ margin: "10px 0 0" }}>勾选只改当前设备预览，不会把正式提醒标为完成。</p>
           </div>
         </section>
 
@@ -205,7 +205,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
                 location: undoSchedule.location,
               });
               setUndoSchedule(null);
-              toast("已撤回本机预览中的这次修改");
+              toast("已撤回当前设备预览中的这次修改");
             }}
           >
             <Undo2 size={14} /> 撤回上次预览修改
@@ -224,7 +224,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
           </button>
         </div>
         <p className="micro text-center" style={{ marginTop: 8 }}>
-          删除只移除此浏览器中的预览；不会删除服务器事项，也不会取消真实提醒。
+          删除只移除此浏览器中的预览；不会删除云端事项，也不会取消真实提醒。
         </p>
       </div>
 
@@ -234,7 +234,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
         onClose={() => setProgressOpen(false)}
         onSubmit={(text) => {
           plan.addProgress(matter.id, text);
-          toast("进展已保存到本机预览");
+          toast("进展已保存到当前设备预览");
         }}
       />
       <MatterEditSheet
@@ -243,7 +243,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
         onClose={() => setEditOpen(false)}
         onSave={(patch) => {
           plan.updateMatter(matter.id, patch);
-          toast("事项内容已保存到本机预览");
+          toast("事项内容已保存到当前设备预览");
         }}
       />
       <ScheduleEditSheet
@@ -257,7 +257,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
           if (!schedule) return;
           plan.updateSchedule(matter.id, schedule.id, patch);
           setUndoSchedule(schedule);
-          toast("日程修改已保存到本机预览");
+          toast("日程修改已保存到当前设备预览");
         }}
       />
       <ConflictSheet
@@ -267,32 +267,32 @@ export function WorkMatterDetail({ id }: { id: string }) {
           if (!conflict) return;
           plan.applyOption(conflict, optionId);
           setConflictOpen(false);
-          toast("已按所选方案更新本机预览");
+          toast("已按所选方案更新当前设备预览");
         }}
       />
       <ConfirmSheet
         open={stopOpen}
         title="停止跟进这件事？"
-        body="预览会把它移入“已完成／归档”，并保留跟进记录。该操作不会取消服务器提醒，因为这里只有本机数据。"
+        body="预览会把它移入“已完成／归档”，并保留跟进记录。该操作不会取消云端提醒，因为这里只有当前设备数据。"
         confirmLabel="停止跟进并归档"
         onClose={() => setStopOpen(false)}
         onConfirm={() => {
           plan.stopFollowing(matter.id);
           setStopOpen(false);
-          toast("已在本机预览中停止跟进");
+          toast("已在当前设备预览中停止跟进");
           router.push("/me/lab/plan");
         }}
       />
       <ConfirmSheet
         open={deleteOpen}
         title="彻底删除这条预览？"
-        body="只会移除当前浏览器中的预览和关联日程；服务器数据和正式提醒不会被删除。删除后无法从本机撤回。"
-        confirmLabel="彻底删除本机预览"
+        body="只会移除当前浏览器中的预览和关联日程；云端数据和正式提醒不会被删除。删除后无法从当前设备撤回。"
+        confirmLabel="彻底删除当前设备预览"
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => {
           plan.deleteMatter(matter.id);
           setDeleteOpen(false);
-          toast("已删除本机预览");
+          toast("已删除当前设备预览");
           router.push("/me/lab/plan");
         }}
       />

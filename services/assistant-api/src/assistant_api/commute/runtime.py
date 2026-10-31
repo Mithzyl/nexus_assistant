@@ -33,6 +33,7 @@ from assistant_api.commute.providers.mock import (
     TemplateOnlyAdviceTextProvider,
 )
 from assistant_api.commute.providers.open_meteo import OpenMeteoWeatherProvider
+from assistant_api.commute.providers.weather_fallback import AmapWeatherProvider, FallbackWeatherProvider
 from assistant_api.commute.providers.weatherkit import WeatherKitProvider
 
 
@@ -189,6 +190,9 @@ def build_runtime(settings: Settings, *, clock: Callable[[], datetime] | None = 
         if settings.commute_amap_api_key
         else None
     )
+    if amap is not None:
+        weather = FallbackWeatherProvider(weather, AmapWeatherProvider(amap, now),
+                                          settings.commute_http_timeout_seconds)
     eta = amap or (
         MapsEtaProvider(
             team_id=settings.commute_maps_team_id or "",

@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDownRight, FlaskConical, Plus, RefreshCw } from "lucide-react";
+import { ArrowDownRight, Plus, RefreshCw } from "lucide-react";
 
 import { useAuth, useUI } from "@/components/mobile/providers";
-import { EmptyState, ErrorCard, LoadingCard, ScreenHeader } from "@/components/mobile/ui";
+import { EmptyState, ErrorCard, LoadingCard, LoginRequired, ScreenHeader } from "@/components/mobile/ui";
 import { useMatters } from "@/lib/mobile/use-matters";
 import type { MatterSummary } from "@/lib/mobile/api";
 
@@ -40,34 +40,42 @@ export default function MattersPage() {
     <div className="m-screen m-stack-18" style={{ paddingBottom: 28 }}>
       <ScreenHeader
         title="事项"
-        subtitle="需要持续推进的事，以及下一步"
+        subtitle="把长期的事拆成下一步"
         action={
-          <button type="button" className="icon-button" onClick={() => openCapture("choose")} aria-label="交给助手">
-            <Plus size={18} />
-          </button>
+          <div className="flex items-center gap-6">
+            <button
+              type="button"
+              className="icon-button"
+              onClick={matters.refresh}
+              disabled={matters.loading}
+              aria-label="刷新事项"
+              title="刷新事项"
+            >
+              <RefreshCw size={17} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => openCapture("choose")}
+              aria-label="新建事项"
+              title="新建事项"
+            >
+              <Plus size={18} strokeWidth={1.5} />
+            </button>
+          </div>
         }
       />
 
-      <div style={{ padding: "0 var(--m-gutter)" }}>
-        <div className="flex items-center justify-between gap-10">
-          <Link href="/me/lab" className="link-button">
-            <FlaskConical size={14} /> 实验室预览
-          </Link>
-          <button type="button" className="link-button" onClick={matters.refresh} disabled={matters.loading}>
-            <RefreshCw size={13} /> 刷新
-          </button>
-        </div>
-      </div>
-
       {!signedIn ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
-          <EmptyState title="登录后读取服务器事项" body="事项、日程和提醒都按当前账号保存在 PA 服务器；未登录不会显示示例。">
-            <Link href="/login" className="btn btn--secondary">登录 PA 账号</Link>
-          </EmptyState>
+          <LoginRequired
+            title="登录后同步事项"
+            body="登录账号后，事项、日程和提醒会同步到这里，方便你持续跟进。"
+          />
         </div>
       ) : matters.loading && matters.items.length === 0 ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
-          <LoadingCard label="正在读取事项…" />
+          <LoadingCard label="正在同步事项…" />
         </div>
       ) : matters.error ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
@@ -77,11 +85,13 @@ export default function MattersPage() {
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
             title="还没有事项"
-            body="在问助手交代一件要持续跟进的事，或从实验室查看概念预览。正式事项只来自服务器。"
+            body="把要做的事交给助手，之后可以在这里持续跟进。"
           >
             <div className="m-stack-8">
-              <Link href="/ask" className="btn btn--secondary">去问助手</Link>
-              <Link href="/me/lab" className="btn btn--quiet">查看实验室预览</Link>
+              <Link href="/ask" className="btn btn--primary">交给助手整理</Link>
+              <button type="button" className="btn btn--quiet" onClick={() => openCapture("choose")}>
+                新建一条事项
+              </button>
             </div>
           </EmptyState>
         </div>
@@ -112,8 +122,8 @@ export default function MattersPage() {
               </button>
             </div>
           ) : null}
-          <p className="micro text-center" style={{ padding: "0 var(--m-gutter)" }}>
-            来自 PA 服务器 · 当前已读取 {matters.items.length} 条；没有把本地预览混入这里。
+          <p className="micro" style={{ padding: "0 var(--m-gutter)" }}>
+            已同步 {matters.items.length} 条事项
           </p>
         </>
       )}

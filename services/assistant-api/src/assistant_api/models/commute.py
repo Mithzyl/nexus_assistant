@@ -47,6 +47,10 @@ class CommutePlan(TimestampMixin, Base):
     rain_extra_buffer_minutes: Mapped[int] = mapped_column(Integer, default=10)
     notify_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    origin_city: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    origin_coordinate_system: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    destination_city: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    destination_coordinate_system: Mapped[str | None] = mapped_column(String(160), nullable=True)
     origin_label: Mapped[str] = mapped_column(String(160))
     origin_latitude: Mapped[float] = mapped_column(Float)
     origin_longitude: Mapped[float] = mapped_column(Float)

@@ -104,7 +104,7 @@ function todosEqual(left: EditableTodo[], right: EditableTodo[]): boolean {
 function conflictText(conflict: MatterConflict | null): string | null {
   if (!conflict?.has_conflict) return null;
   const item = conflict.conflicts[0];
-  if (!item) return "服务器报告存在时间冲突，请先核对风险。";
+  if (!item) return "云端报告存在时间冲突，请先核对风险。";
   if (item.eta_status === "unverified") {
     return `${item.title}：路程耗时尚未核实，不能判定时间充裕。${item.reason}`;
   }
@@ -254,7 +254,7 @@ export function MatterDraftSheet({
       }
       hydrate(next);
       setBaseMatter(sourceMatter);
-      setMessage("已读取服务器最新草稿。");
+      setMessage("已读取云端最新草稿。");
     } catch (caught) {
       setLoadError(caught instanceof Error ? caught.message : "读取草稿失败");
     } finally {
@@ -437,7 +437,7 @@ export function MatterDraftSheet({
     try {
       const next = await selectDraftMatter(current.draft_id, current.version, matterId);
       hydrate(next);
-      setMessage("已绑定所选事项，冲突已按服务器结果重新计算。");
+      setMessage("已绑定所选事项，冲突已按云端结果重新计算。");
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : "选择事项失败");
       await load();
@@ -461,13 +461,13 @@ export function MatterDraftSheet({
         cancel_schedule_ids: nextIds,
       });
       hydrate(next);
-      setMessage("未来日程的取消选择已保存到服务器预览。");
+      setMessage("未来日程的取消选择已保存到云端预览。");
     } catch (caught) {
       if (caught instanceof ApiError && isRecordChangedError(caught.code)) {
         setMessage("记录已发生变化，请刷新后重新选择要取消的未来日程。");
       } else {
         setMessage(
-          caught instanceof Error ? caught.message : "服务器没有接受这次日程选择。",
+          caught instanceof Error ? caught.message : "云端没有接受这次日程选择。",
         );
       }
       await load();
@@ -494,8 +494,9 @@ export function MatterDraftSheet({
         optionConsequences(option, before, next.payload),
         option?.affected || [],
       );
+      setSelectedOption(optionId);
       setAcknowledge(false);
-      setMessage("方案已写入服务器预览，正式安排尚未修改。");
+      setMessage("调整方案已写入预览，正式安排尚未修改。");
     } catch (caught) {
       if (caught instanceof ApiError) {
         if (caught.code === "option_not_executable") {
@@ -504,7 +505,7 @@ export function MatterDraftSheet({
           setMessage("记录已发生变化，请刷新后检查。");
           await load();
         } else {
-          setMessage(caught.message || "服务器没有接受这次方案，请重新读取草稿后再试。");
+          setMessage(caught.message || "云端没有接受这次方案，请重新读取草稿后再试。");
           await load();
         }
       } else {
@@ -602,14 +603,14 @@ export function MatterDraftSheet({
     try {
       const next = await patchDraft(current.draft_id, input);
       hydrate(next);
-      setMessage("修改已保存到预览，冲突和影响已按服务器最新结果更新。");
+      setMessage("修改已保存到预览，冲突和影响已按云端最新结果更新。");
     } catch (caught) {
       if (caught instanceof ApiError) {
         if (isRecordChangedError(caught.code)) {
           setMessage("记录已发生变化，请刷新后检查。");
           await load();
         } else {
-          setMessage(caught.message || "服务器没有接受这次修改，请重新读取草稿后再试。");
+          setMessage(caught.message || "云端没有接受这次修改，请重新读取草稿后再试。");
         }
       } else {
         setMessage(caught instanceof Error ? caught.message : "保存失败");
@@ -641,6 +642,8 @@ export function MatterDraftSheet({
       );
       if (requestId !== placeSearchRequestId.current) return;
       setPlaceCandidates(result.candidates);
+      setPlaceMapOpen(result.candidates.some(candidate =>
+        candidate.coordinate_system === "gcj02" && Number.isFinite(candidate.latitude) && Number.isFinite(candidate.longitude)));
       if (result.candidates.length === 0) {
         setPlaceError("没有找到可用候选，请补充城市或更详细的地址后再试。");
       }
@@ -654,6 +657,23 @@ export function MatterDraftSheet({
       }
     }
   };
+
+  // Resolve AI-produced place text once the authoritative draft has loaded.
+  // Candidates are previews only; explicit selection still controls saved coordinates.
+  useEffect(() => {
+    if (!open || loading || loadError || !current || isTerminal || !current.payload.schedule?.location?.trim()) return;
+    if (currentPlaceCoordinates) {
+      setPlaceMapOpen(true);
+      return;
+    }
+    const timer = window.setTimeout(() => { void searchPlaceCandidates(); }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      placeSearchRequestId.current += 1;
+    };
+    // Draft version is the boundary; typing does not issue paid requests on every keypress.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, loading, loadError, current?.draft_id, current?.version]);
 
   /** Toggle the inline map and center it on an explicit existing coordinate. */
   const openPlaceMap = () => {
@@ -723,7 +743,7 @@ export function MatterDraftSheet({
           result.reason_code === "map_pick_address_missing"
             ? "这个位置没有解析出可用地址，请移动地图后重试。"
             : result.reason_code === "amap_not_configured"
-              ? "服务器尚未配置选点地址解析服务。"
+              ? "云端尚未配置选点地址解析服务。"
               : "这个位置暂时无法解析，请移动地图后重试。",
         );
         return;
@@ -748,7 +768,7 @@ export function MatterDraftSheet({
     try {
       const next = await confirmPlaceSelection(current.draft_id, selectedPlaceToken);
       hydrate(next);
-      setMessage("地点已写入服务器预览，路线与冲突已重新计算。");
+      setMessage("地点已写入云端预览，路线与冲突已重新计算。");
     } catch (caught) {
       if (caught instanceof ApiError && isRecordChangedError(caught.code)) {
         setPlaceError("记录已发生变化，请刷新后检查。");
@@ -783,7 +803,7 @@ export function MatterDraftSheet({
       return;
     }
     if (hasConflictOptions && !selectedOption) {
-      setFieldError("请先选择服务器给出的调整方案。");
+      setFieldError("请先选择云端给出的调整方案。");
       return;
     }
     if (selectedOptionBlocked) {
@@ -791,7 +811,7 @@ export function MatterDraftSheet({
       return;
     }
     if (conflict?.has_conflict && !acknowledge) {
-      setFieldError("服务器仍报告冲突，请明确确认风险后再提交。");
+      setFieldError("云端仍报告冲突，请明确确认风险后再提交。");
       return;
     }
     setBusy(true);
@@ -813,7 +833,7 @@ export function MatterDraftSheet({
       setCurrent(response.draft);
       if (!response.applied) {
         setOutcome("failed");
-        setMessage("服务器没有确认这次写入，请重新检查草稿后再试。");
+        setMessage("云端没有确认这次写入，请重新检查草稿后再试。");
         return;
       }
       setOutcome("confirmed");
@@ -840,7 +860,7 @@ export function MatterDraftSheet({
           setMessage(caught.message || "结果未知，请重新读取草稿后再检查。");
         } else {
           setOutcome("failed");
-          setMessage(caught.message || "服务器没有接受这次确认，请重新检查草稿。");
+          setMessage(caught.message || "云端没有接受这次确认，请重新检查草稿。");
         }
       } else {
         setOutcome("unknown");
@@ -875,7 +895,7 @@ export function MatterDraftSheet({
           <span className="draft-kind__label">待确认 · {primarySummary(effectiveMode)}</span>
           <span className="micro">确认前不会写入正式日程、待办、提醒或归档状态</span>
         </div>
-        {loading ? <p className="caption">正在读取服务器最新草稿…</p> : null}
+        {loading ? <p className="caption">正在读取云端最新草稿…</p> : null}
         {loadError ? <p className="danger-text">{loadError}</p> : null}
         {current ? (
           <>
@@ -891,7 +911,7 @@ export function MatterDraftSheet({
               <div className="notice notice--amber">
                 <strong>请选择这条整理要接续哪件事项</strong>
                 <p className="caption" style={{ margin: "4px 0 8px" }}>
-                  服务器返回了多个候选；选择后会重新绑定版本并计算冲突。
+                  找到多个可接续的事项；选择后会重新核对冲突。
                 </p>
                 {candidates.map((candidate) => {
                   const value = String(candidate.matter_id ?? "");
@@ -928,8 +948,8 @@ export function MatterDraftSheet({
                                 relevantSchedule.starts_at,
                               )}${relevantSchedule.location ? ` · ${relevantSchedule.location}` : ""}`
                             : unavailableCandidateIds.has(value)
-                              ? "暂时无法读取这条候选的安排；选择时服务器会再次校验。"
-                              : "服务器未返回相关日程。"}
+                              ? "暂时无法读取这条候选的安排；选择时云端会再次校验。"
+                              : "云端未返回相关日程。"}
                         </span>
                         <span className="choice-card__detail">
                           选择只用于接续事项，不等于确认保存修改。
@@ -986,7 +1006,7 @@ export function MatterDraftSheet({
             ) : isArchiveDraft ? (
               <div className="m-stack-10">
                 <div className="notice">
-                  此确认只执行服务器列出的归档、提醒和未来日程取消，不改写日程时间或地点。
+                  此确认只执行云端列出的归档、提醒和未来日程取消，不改写日程时间或地点。
                 </div>
                 {archiveSchedules.length > 0 ? (
                   <div className="card card--tight">
@@ -1033,7 +1053,7 @@ export function MatterDraftSheet({
                     </div>
                     {actionBusy === "cancel-schedules" ? (
                       <p className="micro" style={{ margin: "8px 0 0" }}>
-                        正在把选择保存到服务器…
+                        正在把选择保存到云端…
                       </p>
                     ) : null}
                   </div>
@@ -1114,6 +1134,7 @@ export function MatterDraftSheet({
                         onChange={(event) => {
                           markManualEdit();
                           setLocation(event.target.value);
+                          setPlaceQuery(event.target.value);
                           placeSearchRequestId.current += 1;
                           setPlaceCandidates([]);
                           setSelectedPlaceToken(null);
@@ -1128,7 +1149,9 @@ export function MatterDraftSheet({
                       {current.payload.schedule?.latitude !== null &&
                       current.payload.schedule?.latitude !== undefined
                         ? `已确认地点：${current.payload.schedule.location || location}${current.payload.schedule.location_address ? ` · ${current.payload.schedule.location_address}` : ""}${current.payload.schedule.location_city ? ` · ${current.payload.schedule.location_city}` : ""}`
-                        : "当前只有文字地点，没有已确认坐标。手工输入地点不会自动生成坐标。"}
+                        : placeSearching ? "正在根据地点文字查询高德候选…"
+                        : placeCandidates.length ? "已找到高德候选，请选择正确地点后保存坐标。"
+                        : "当前为文字地点，尚未确认坐标；请查看查询结果或补充更准确的名称与城市。"}
                     </p>
                     <div className="place-search">
                       <p className="micro" style={{ margin: 0 }}>查找并确认地点</p>
@@ -1331,8 +1354,8 @@ export function MatterDraftSheet({
                           />
                           <p className="micro place-map-dependency">
                             {placeMapMode === "pick"
-                              ? "移动地图，中心图钉固定在地图中央。拖动过程只更新临时坐标；点击“使用这个位置”后才向服务器请求一次地址解析。"
-                              : "编号标记对应搜索结果，绿点是当前已确认地点。选出候选后仍需点击下方按钮才会写入服务器草稿。"}
+                              ? "移动地图，中心图钉固定在地图中央。拖动过程只更新临时坐标；点击“使用这个位置”后才向云端请求一次地址解析。"
+                              : "编号标记对应搜索结果，绿点是当前已确认地点。选出候选后仍需点击下方按钮才会写入云端草稿。"}
                           </p>
                           {placeMapMode === "pick" ? (
                             <button
@@ -1492,7 +1515,7 @@ export function MatterDraftSheet({
 
             {!dirty && routeUnverified && !conflict?.has_conflict ? (
               <div className="notice notice--amber">
-                路程尚未核实。服务器没有发现确定的时间冲突，但不能视为所有风险已排除。
+                路程尚未核实。云端没有发现确定的时间冲突，但不能视为所有风险已排除。
               </div>
             ) : null}
 
@@ -1640,7 +1663,7 @@ export function MatterDraftSheet({
                   </details>
                 ) : null}
                 <p className="micro" style={{ margin: "6px 0 0" }}>
-                  这些变化已进入服务器预览，仍需点击“确认更新”才生效。
+                  这些变化已进入云端预览，仍需点击“确认更新”才生效。
                 </p>
               </div>
             ) : null}
@@ -1653,13 +1676,13 @@ export function MatterDraftSheet({
                   onChange={(event) => setSyncToIos(event.target.checked)}
                 />
                 <span className="caption" style={{ margin: 0 }}>
-                  同时加入 iOS 待同步（不等于已写入苹果日历或提醒）
+                  同时加入 Apple 日历待同步
                 </span>
               </label>
             ) : null}
 
             {current.payload.commute_revision ? <div className="card"><p>只调整本次通勤，重复计划的常规时间保持不变。</p><p>目标到达：{current.payload.commute_revision.target_arrival_at ? new Date(current.payload.commute_revision.target_arrival_at).toLocaleString('zh-CN') : '待核实'}；提前 {current.payload.commute_revision.buffer_minutes} 分钟。</p><p>{current.payload.commute_revision.route?.status === 'available' ? `真实路线已重测，约 ${Math.ceil((current.payload.commute_revision.route.duration_seconds ?? 0)/60)} 分钟；确认后绑定新出发时间。` : '路线未核实，不能确认。'}</p></div> : null}
-            {current.payload.commute_plan_cancellations?.length ? <div className="card"><strong>同时停止重复通勤计划</strong>{current.payload.commute_plan_cancellations.map(p=><p key={p.plan_id}>{p.name}（当前版本 {p.revision}）</p>)}<p>停止未来检查与尚未发送的推送；不能撤回手机上已显示的通知。</p></div> : null}
+            {current.payload.commute_plan_cancellations?.length ? <div className="card"><strong>同时停止重复通勤计划</strong>{current.payload.commute_plan_cancellations.map(p=><p key={p.plan_id}>{p.name}</p>)}<p>停止未来检查与尚未发送的推送；不能撤回手机上已显示的通知。</p></div> : null}
             {fieldError ? <p className="danger-text" style={{ margin: 0 }}>{fieldError}</p> : null}
             {message ? <p className="caption" style={{ margin: 0 }}>{message}</p> : null}
             {outcome === "unknown" ? (
@@ -1714,7 +1737,7 @@ export function MatterDraftSheet({
                 <div className="notice notice--amber">
                   <strong>取消这条草稿？</strong>
                   <p className="caption" style={{ margin: "4px 0 8px" }}>
-                    取消只影响服务器预览，不会撤销已正式生效的变更。
+                    取消只影响云端预览，不会撤销已正式生效的变更。
                   </p>
                   <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
                     <button
@@ -1750,7 +1773,7 @@ export function MatterDraftSheet({
               <div className="notice notice--amber">
                 <strong>有未保存的修改</strong>
                 <p className="caption" style={{ margin: "4px 0 8px" }}>
-                  关闭会丢弃这次编辑；服务器上的草稿不会被修改。
+                  关闭会丢弃这次编辑；云端上的草稿不会被修改。
                 </p>
                 <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
                   <button

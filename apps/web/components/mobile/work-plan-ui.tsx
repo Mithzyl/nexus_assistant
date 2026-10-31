@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, Clock3, MapPin, Pencil } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, Clock3, MapPin, Pencil } from "lucide-react";
 
 import type {
   WorkConflict,
@@ -14,7 +14,7 @@ import { Notice, Sheet } from "./ui";
 export function PreviewBanner({ children }: { children?: React.ReactNode }) {
   return (
     <Notice title="概念预览 · 仅保存在这台浏览器" tone="amber">
-      {children ?? "这里的事项、日程和提醒尚未写入 PA 服务器，也不会出现在 iPhone 系统日历中。关闭预览可回到真实空状态。"}
+      {children ?? "这里的事项、日程和提醒只保存在当前设备预览，不会影响正式安排。"}
     </Notice>
   );
 }
@@ -38,7 +38,7 @@ export function ConflictCard({
           到「{conflict.second.title}」只有 {Math.max(0, conflict.gapMinutes)} 分钟；
           预览按 {conflict.travelMinutes} 分钟路上时间估算（未调用路线服务）。
         </span>
-        <span className="change-card__action">查看调整方案 <span aria-hidden="true">›</span></span>
+        <span className="change-card__action">查看调整方案 <ChevronRight size={14} className="chevron" aria-hidden="true" /></span>
       </span>
     </button>
   );
@@ -62,7 +62,7 @@ export function ConflictSheet({
       {conflict ? (
         <div className="m-stack-12">
           <p className="caption" style={{ margin: 0 }}>
-            影响「{conflict.matterTitle}」。确认后只修改本机预览，不会写入服务器或 iOS；
+            影响「{conflict.matterTitle}」。确认后只修改当前设备预览，不会写入云端或 iOS；
             关闭不会提交。
           </p>
           <div className="m-stack-8" role="radiogroup" aria-label="调整方案">
@@ -106,7 +106,7 @@ export function ProgressSheet({
   title,
   onClose,
   onSubmit,
-  note = "只更新本机预览，不会自动完成待办，也不会改动正式安排。",
+  note = "只更新当前设备预览，不会自动完成待办，也不会改动正式安排。",
   stayOpenOnSubmit = false,
   busy = false,
   error = null,
@@ -183,7 +183,7 @@ export function ProgressSheet({
             if (!stayOpenOnSubmit) onClose();
           }}
         >
-          {busy ? "正在交给服务器…" : submitLabel}
+          {busy ? "正在交给云端…" : submitLabel}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onClose} disabled={busy}>
           取消
@@ -239,7 +239,7 @@ export function MatterEditSheet({
             onClose();
           }}
         >
-          保存到本机预览
+          保存到当前设备预览
         </button>
         <button type="button" className="btn btn--quiet" onClick={onClose}>
           取消
@@ -264,8 +264,8 @@ export function ScheduleEditSheet({
   onClose,
   onSave,
   heading = "修改预览日程",
-  submitLabel = "保存到本机预览",
-  note = "保存只改本机预览；涉及正式日程或提醒时，仍需服务器确认后才生效。这里不会显示“已写入 iPhone”。",
+  submitLabel = "保存到当前设备预览",
+  note = "保存只改当前设备预览；涉及正式日程或提醒时，仍需云端确认后才生效。这里不会显示“已写入 iPhone”。",
 }: {
   schedule: WorkSchedule | null;
   open: boolean;

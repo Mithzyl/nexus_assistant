@@ -106,7 +106,7 @@ export function RouteMapSheet({
         setError(
           caught instanceof Error
             ? caught.message
-            : "暂时无法读取服务器保存的路线。",
+            : "暂时无法读取云端保存的路线。",
         );
       })
       .finally(() => {
@@ -162,7 +162,7 @@ export function RouteMapSheet({
   return (
     <Sheet title={title} open={open} onClose={onClose}>
       <div className="route-map-sheet">
-        {loading ? <LoadingCard label="正在读取服务器保存的路线…" /> : null}
+        {loading ? <LoadingCard label="正在读取云端保存的路线…" /> : null}
         {error ? (
           <div className="notice notice--red" role="alert">
             <strong>路线图暂时无法读取</strong>
@@ -172,7 +172,7 @@ export function RouteMapSheet({
               className="link-button"
               onClick={() => setReloadKey((current) => current + 1)}
             >
-              <RefreshCw size={13} /> 重新读取服务器路线
+              <RefreshCw size={13} /> 重新读取云端路线
             </button>
           </div>
         ) : null}
@@ -203,12 +203,12 @@ export function RouteMapSheet({
             <div>
               <strong>暂未提供路线图</strong>
               <p>
-                服务器保存了方式、耗时和费用，但没有真实道路形状。这里只标出
+                已保存出行方式、耗时和费用，但没有真实道路形状。这里只标出
                 已有起终点，不画直线，也不在浏览器重新计算路线。
               </p>
               {mode === "transit" ? (
                 <p>
-                  公交步行段与乘车段的分段线条需要服务器保留对应形状后才能显示。
+                  公交步行段与乘车段的分段线条需要云端保留对应形状后才能显示。
                 </p>
               ) : null}
             </div>
@@ -218,7 +218,7 @@ export function RouteMapSheet({
         available?.shape?.status === "partial" &&
         !shapeMissing ? (
           <div className="notice notice--amber" role="status">
-            服务器只保存了部分路线形状；缺少形状的步行或乘车段不会用直线补齐。
+            只保存了部分路线形状；缺少形状的步行或乘车段不会用直线补齐。
           </div>
         ) : null}
 
@@ -226,7 +226,7 @@ export function RouteMapSheet({
           <>
             <div className="route-map-sheet__source" role="status">
               <Info size={15} aria-hidden="true" />
-              地图使用服务器保存的真实路线形状，不在浏览器再次查询或计算路线。
+              地图使用云端保存的真实路线形状，不在浏览器再次查询或计算路线。
             </div>
             <div className="route-map-sheet__legend" aria-label="路线线条说明">
               {hasDriving ? (

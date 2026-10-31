@@ -31,7 +31,7 @@ from assistant_api.commute.schemas import CheckCreateRequest, CheckCreated, Rout
 from assistant_api.commute.serializers import check_read
 from assistant_api.commute.services.ai import analyze as analyze_commute
 from assistant_api.commute.services.plans import get_plan
-from assistant_api.commute.services.scheduling import ensure_instance, latest_advisory
+from assistant_api.commute.services.scheduling import ensure_instance, latest_advisory, get_instance
 from assistant_api.commute.timeutil import ensure_aware, local_today, target_arrival_for
 from assistant_api.core.errors import AssistantError, ConflictError, NotFoundError
 from assistant_api.models import (
@@ -97,6 +97,33 @@ def canonical_hash(payload: dict) -> str:
     ).hexdigest()
 
 
+async def next_manual_target(db, plan, *, now):
+    """Resolve a future eligible service day without creating work or calling providers."""
+    if not plan.enabled:
+        raise ConflictError("plan_disabled", "计划已关闭，请先启用后再分析。")
+    first = max(local_today(now, plan.timezone), plan.effective_from or local_today(now, plan.timezone))
+    for offset in range(366):
+        day = first + timedelta(days=offset)
+        if day.isoweekday() not in (plan.weekdays_json or []):
+            continue
+        target = target_arrival_for(day, plan.arrival_local_time, plan.timezone)
+        if target - timedelta(minutes=30) < now:
+            continue
+        existing = await get_instance(db, plan_id=plan.plan_id, local_service_date=day)
+        if existing is not None and existing.status == "skipped":
+            continue
+        return day, target
+    raise ConflictError("no_upcoming_commute", "没有找到可分析的通勤日期，请检查生效日期和星期设置。")
+
+
+async def created_check_response(db, check_id, status):
+    check = await db.get(CommuteCheck, check_id)
+    instance = await db.get(CommuteInstance, check.instance_id) if check else None
+    return CheckCreated(check_id=check_id, status=status,
+        local_service_date=instance.local_service_date if instance else None,
+        target_arrival_at=instance.target_arrival_at if instance else None)
+
+
 async def create_manual_check(
     db: AsyncSession,
     runtime: CommuteRuntime,
@@ -130,7 +157,7 @@ async def create_manual_check(
             )
         )
         status = check.status if check is not None else existing_key.response_json["status"]
-        return CheckCreated(check_id=existing_key.resource_id, status=status), True
+        return await created_check_response(db, existing_key.resource_id, status), True
 
     plan = await get_plan(db, user_id, plan_id)
     if request is not None and request.plan_revision != plan.revision:
@@ -144,17 +171,10 @@ async def create_manual_check(
     )
     if route_snapshot is not None:
         _validate_route_snapshot(plan, route_snapshot, now=now)
-    day = local_today(now, plan.timezone)
-    target = target_arrival_for(day, plan.arrival_local_time, plan.timezone)
-    if now >= target:
-        raise ConflictError(
-            "check_window_closed", "今天的目标到达时间已过，不再生成通勤建议。"
-        )
-    instance = await ensure_instance(db, plan, now=now, allow_non_scheduled_day=True)
-    if instance is None:
-        raise ConflictError("check_window_closed", "今天没有可执行的通勤窗口。")
-    if instance.status == "skipped":
-        raise ConflictError("skipped_today", "今天已跳过该计划。")
+    day, target = await next_manual_target(db, plan, now=now)
+    instance = await ensure_instance(db, plan, now=now, service_date=day)
+    if instance is None or instance.status != "active":
+        raise ConflictError("check_window_closed", "通勤计划已变化，请刷新后重新分析。")
 
     check = CommuteCheck(
         check_id=new_id(),
@@ -208,8 +228,8 @@ async def create_manual_check(
             select(CommuteCheck).where(CommuteCheck.check_id == existing_key.resource_id)
         )
         status = check.status if check is not None else existing_key.response_json["status"]
-        return CheckCreated(check_id=existing_key.resource_id, status=status), True
-    return CheckCreated(check_id=check.check_id, status="queued"), False
+        return await created_check_response(db, existing_key.resource_id, status), True
+    return await created_check_response(db, check.check_id, "queued"), False
 
 
 async def get_check(db: AsyncSession, *, user_id: str, check_id: str) -> CommuteCheck:
@@ -224,10 +244,21 @@ async def get_check(db: AsyncSession, *, user_id: str, check_id: str) -> Commute
 
 
 async def claim_check(
-    db: AsyncSession, *, worker_id: str, now: datetime, lease_seconds: int
+    db: AsyncSession, *, worker_id: str, now: datetime, lease_seconds: int, max_attempts: int = 3
 ) -> CommuteCheck | None:
     """Atomically claim one runnable check, including an expired lease."""
 
+    # A process crash must consume the same finite attempt budget as a provider failure.
+    await db.execute(update(CommuteCheck).where(
+        CommuteCheck.attempt_count >= max_attempts,
+        (CommuteCheck.status == "queued") | (
+            (CommuteCheck.status == "running") & (CommuteCheck.lease_expires_at < now)
+        ),
+    ).values(status="failed", phase="failed", phase_updated_at=now,
+             finished_at=now, lease_owner=None, lease_expires_at=None,
+             error_code="execution_attempts_exhausted",
+             error_message="执行中断或重试次数已用尽，请检查服务后重新分析。").execution_options(synchronize_session=False))
+    await db.commit()
     candidates = list(
         (
             await db.scalars(
@@ -257,13 +288,14 @@ async def claim_check(
             .where(
                 CommuteCheck.check_id == check_id,
                 (
-                    (CommuteCheck.status == "queued")
+                    ((CommuteCheck.status == "queued") & ((CommuteCheck.next_attempt_at.is_(None)) | (CommuteCheck.next_attempt_at <= now)))
                     | (
                         (CommuteCheck.status == "running")
                         & (CommuteCheck.lease_expires_at < now)
                     )
                 ),
             )
+            .execution_options(synchronize_session=False)
             .values(
                 status="running",
                 lease_owner=worker_id,
@@ -274,7 +306,7 @@ async def claim_check(
         if result.rowcount == 1:
             await db.commit()
             return await db.scalar(
-                select(CommuteCheck).where(CommuteCheck.check_id == check_id)
+                select(CommuteCheck).where(CommuteCheck.check_id == check_id).execution_options(populate_existing=True)
             )
     await db.rollback()
     return None
@@ -300,10 +332,24 @@ async def _call_eta(runtime: CommuteRuntime, plan: CommutePlan, *, request_depar
     if not getattr(runtime.eta, "available", True):
         return None, ProviderNotConfigured("route provider is not configured", code="route_provider_unconfigured")
     try:
+        extra = {}
+        if getattr(runtime.eta, "provider", None) == "amap" and plan.transport_mode == "transit":
+            for side in ("origin", "destination"):
+                city = getattr(plan, f"{side}_city", None)
+                if not city:
+                    place = await asyncio.wait_for(runtime.places.reverse_geocode(
+                        latitude=getattr(plan, f"{side}_latitude"),
+                        longitude=getattr(plan, f"{side}_longitude"),
+                    ), timeout=runtime.settings.commute_http_timeout_seconds)
+                    city = place.city
+                if not city:
+                    return None, ProviderNotConfigured("city unresolved", code="transit_city_required")
+                extra[f"{side}_city"] = city
         return await asyncio.wait_for(
             runtime.eta.fetch(
                 origin=(plan.origin_latitude, plan.origin_longitude),
                 destination=(plan.destination_latitude, plan.destination_longitude),
+                **extra,
                 mode=plan.transport_mode,  # type: ignore[arg-type]
                 request_depart_at=request_depart_at,
                 target_arrival_at=target,
@@ -332,7 +378,8 @@ async def _call_weather(
                 window_end=window_end,
                 timezone=plan.timezone,
             ),
-            timeout=runtime.settings.commute_http_timeout_seconds,
+            timeout=getattr(runtime.weather, "total_timeout_seconds",
+                            runtime.settings.commute_http_timeout_seconds),
         ), None
     except TimeoutError as exc:
         return None, ProviderTimeout("weather provider timed out", code="provider_timeout")
@@ -769,6 +816,8 @@ async def execute_check(
         code = "ROUTE_CLIENT_SNAPSHOT" if route_source == "client_snapshot" else "ROUTE_SERVER_PROVIDER"
         if not any(x.get("code") == code for x in values["reason_codes"]):
             values["reason_codes"].append({"code": code})
+    if eta_error is not None:
+        values["reason_codes"].append({"code": eta_error.code})
     if client_snapshot_stale and not any(x.get("code") == "ROUTE_SNAPSHOT_STALE" for x in values["reason_codes"]):
         values["reason_codes"].append({"code": "ROUTE_SNAPSHOT_STALE"})
     if should_create and client_snapshot_stale:
@@ -807,6 +856,8 @@ async def execute_check(
             should_create = True
     if not await _set_phase(db, runtime, check=check, worker_id=worker_id, phase="saving"):
         return check
+    if ai_result and ai_result.get("status") in {"failed", "rejected", "unknown"} and values["quality"] != "unavailable":
+        values["quality"] = "degraded"
     created_advisory: CommuteAdvisory | None = None
     if should_create:
         title = values["template"].title

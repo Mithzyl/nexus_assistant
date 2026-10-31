@@ -376,7 +376,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       setProgressError(
         result.clarify ||
           result.message ||
-          "服务器还需要更具体的信息。请补充后再提交。",
+          "云端还需要更具体的信息。请补充后再提交。",
       );
     } catch (caught) {
       if (
@@ -441,7 +441,7 @@ export function MatterRealDetail({ id }: { id: string }) {
     setRevertTarget(null);
     await run("revert", async () => {
       await revertMatterChange(matter.matter_id, change.change_id, matter.version);
-      toast("服务器已撤回这条变更");
+      toast("云端已撤回这条变更");
       await load();
       requestTodayRefresh();
     });
@@ -465,7 +465,7 @@ export function MatterRealDetail({ id }: { id: string }) {
         delete next[scheduleId];
         return next;
       });
-      throw new Error("服务器尚未把路线结果关联到当前日程，请刷新后重试。");
+      throw new Error("云端尚未把路线结果关联到当前日程，请刷新后重试。");
     }
     setRouteDetails((current) => ({ ...current, [scheduleId]: result }));
     setRouteBySchedule((current) => ({ ...current, ...summaries }));
@@ -546,7 +546,7 @@ export function MatterRealDetail({ id }: { id: string }) {
   return (
     <PageShell
       title="事项详情"
-      subtitle="服务器保存"
+      subtitle="云端保存"
       fallbackHref="/matters"
       action={
         <button
@@ -671,9 +671,9 @@ export function MatterRealDetail({ id }: { id: string }) {
                         routeBySchedule[schedule.schedule_id]?.status === "available"
                           ? routeBySchedule[schedule.schedule_id]?.fetched_at
                             ? `路线结果取得于 ${dateTimeLabel(routeBySchedule[schedule.schedule_id].fetched_at || "")}`
-                            : "路线结果由服务器返回。"
+                            : "路线结果由云端返回。"
                           : routeBySchedule[schedule.schedule_id]?.message ||
-                            "服务器尚未把这条日程关联到路线结果，不能沿用独立通勤建议。"
+                            "云端尚未把这条日程关联到路线结果，不能沿用独立通勤建议。"
                       }
                       mapTarget={{
                         label: schedule.location_address || schedule.location,
@@ -702,7 +702,7 @@ export function MatterRealDetail({ id }: { id: string }) {
               </div>
             )}
             <p className="micro" style={{ margin: "10px 0 0" }}>
-              “调整”会读取服务器里的当前日程并生成结构化预览；只有再次确认后才会改写正式安排。
+              “调整”会读取云端里的当前日程并生成结构化预览；只有再次确认后才会改写正式安排。
             </p>
             <button type="button" className="link-button mt-6" onClick={() => {
               setProgressError(null);
@@ -741,7 +741,7 @@ export function MatterRealDetail({ id }: { id: string }) {
           <h2 className="section-title" style={{ marginBottom: 8 }}>跟进记录</h2>
           <div className="m-stack-8">
             {matter.progress.length === 0 ? (
-              <p className="caption">还没有服务器跟进记录。</p>
+              <p className="caption">还没有云端跟进记录。</p>
             ) : (
               matter.progress.map((entry) => (
                 <details key={entry.progress_id} className="history-item">
@@ -766,7 +766,7 @@ export function MatterRealDetail({ id }: { id: string }) {
           ) : changesError ? (
             <ErrorCard message={changesError} onRetry={() => void load()} />
           ) : changes.length === 0 ? (
-            <p className="caption">服务器还没有记录这条事项的变更。</p>
+            <p className="caption">云端还没有记录这条事项的变更。</p>
           ) : (
             <div className="card card--tight">
               {changes.map((change, index) => {
@@ -830,12 +830,12 @@ export function MatterRealDetail({ id }: { id: string }) {
             </div>
           )}
           <p className="micro" style={{ margin: "8px 0 0" }}>
-            只有服务器标记为可撤回的最近变更才显示撤回操作；初始新建事项的连带删除也以服务器返回的资格为准。
+            只有云端标记为可撤回的最近变更才显示撤回操作；初始新建事项的连带删除也以云端返回的资格为准。
           </p>
         </section>
 
         <p className="micro text-center" style={{ marginTop: 0 }}>
-          停止跟进的范围以确认面板中的服务器数据为准；提醒只表示服务器已有记录，不代表已经送达。
+          停止跟进的范围以确认面板中的云端数据为准；提醒只表示云端已有记录，不代表已经送达。
         </p>
 
         <div className="work-actions">
@@ -870,7 +870,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ProgressSheet
         open={progressOpen}
         title={matter.title}
-        note="提交后由服务器生成待确认草稿；确认前不会写正式进展或日程。"
+        note="提交后由云端生成待确认草稿；确认前不会写正式进展或日程。"
         stayOpenOnSubmit
         busy={busy === "progress"}
         error={progressError}
@@ -892,7 +892,7 @@ export function MatterRealDetail({ id }: { id: string }) {
             );
           },
         }))}
-        submitLabel="交给服务器整理"
+        submitLabel="交给助手整理"
         onClose={() => {
           setProgressOpen(false);
           setProgressError(null);
@@ -1021,7 +1021,7 @@ export function MatterRealDetail({ id }: { id: string }) {
               </p>
             </div>
             <p className="micro" style={{ margin: 0 }}>
-              服务器在事项整理中直接返回了这份回答；没有再次发起普通问答，也没有创建草稿。
+              云端在事项整理中直接返回了这份回答；没有再次发起普通问答，也没有创建草稿。
             </p>
             <button
               type="button"
@@ -1038,7 +1038,7 @@ export function MatterRealDetail({ id }: { id: string }) {
         title="撤回这条变更？"
         body={
           revertTarget
-            ? `服务器会${describeRevert(revertTarget)}。撤回后事项、历史和今天的安排会重新读取。`
+            ? `云端会${describeRevert(revertTarget)}。撤回后事项、历史和今天的安排会重新读取。`
             : ""
         }
         confirmLabel="确认撤回"
@@ -1050,7 +1050,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ConfirmDialog
         open={Boolean(initialDeleteTarget)}
         title="删除这个新事项？"
-        body="服务器会再次核对资格，并在同一事务中软删该事项及本次新建的日程、待办和提醒；其他事项、参考日程和苹果导入副本不受影响。"
+        body="云端会再次核对资格，并在同一事务中软删该事项及本次新建的日程、待办和提醒；其他事项、参考日程和苹果导入副本不受影响。"
         confirmLabel="删除新事项"
         danger
         onCancel={() => setInitialDeleteTarget(null)}
@@ -1090,7 +1090,7 @@ export function MatterRealDetail({ id }: { id: string }) {
               </div>
             ) : (
               <p className="caption" style={{ margin: "4px 0 0" }}>
-                服务器没有未触发的提醒。
+                没有未触发的提醒。
               </p>
             )}
             {pendingReminders.length > 0 ? (
@@ -1157,7 +1157,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ConfirmSheet
         open={reopenOpen}
         title="重新打开这件事？"
-        body="服务器会把状态改回正在推进，并重新出现在列表。"
+        body="云端会把状态改回正在推进，并重新出现在列表。"
         confirmLabel="重新打开"
         onClose={() => setReopenOpen(false)}
         onConfirm={() => {

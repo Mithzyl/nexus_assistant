@@ -411,7 +411,7 @@ def main() -> int:
             page.wait_for_timeout(1800)
             body = page.locator("body").inner_text()
             check("web shows the model title after the real worker finishes", MODEL_TITLE in body, MODEL_TITLE if MODEL_TITLE in body else body[:200].replace("\n", " / "))
-            badge_ok = "模型分析（基于开发/测试数据）" in body
+            badge_ok = "示例数据分析" in body
             check(
                 "mock-backed advisory is labelled as test data",
                 badge_ok,

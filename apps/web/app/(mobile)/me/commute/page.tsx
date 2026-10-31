@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, MapPin, Plus } from "lucide-react";
+import { Bell, ChevronRight, MapPin, Plus } from "lucide-react";
 
 import type { CommutePlan } from "@/lib/mobile/api";
 import { useApiResource, errorText } from "@/lib/mobile/use-api-resource";
@@ -38,7 +38,7 @@ export default function CommutePage() {
     <div style={{ paddingBottom: 24 }}>
       <PageShell
         title="通勤设置"
-        subtitle="固定地点与时间，由服务器检查天气和路况；浏览器不负责后台调度。"
+        subtitle="固定地点与时间，到点前查看天气和路况。"
         action={
           <button
             type="button"
@@ -50,8 +50,8 @@ export default function CommutePage() {
         }
       >
         {!signedIn && state !== "loading" ? (
-          <EmptyState title="登录后才能管理通勤" body="通勤计划、检查与 Bark 提醒都绑定到 PA 账号。">
-            <Link href="/login" className="btn btn--primary">登录 PA 账号</Link>
+          <EmptyState title="登录后管理通勤" body="登录账号后，通勤计划与提醒会同步到这里。">
+            <Link href="/login" className="btn btn--primary">登录账号</Link>
           </EmptyState>
         ) : null}
 
@@ -65,7 +65,7 @@ export default function CommutePage() {
             {!plans.loading && !plans.error && (plans.data?.length ?? 0) === 0 ? (
               <EmptyState
                 title="还没有通勤计划"
-                body="设立固定起点、终点和时间后，服务器可以按计划生成检查与提醒。"
+                body="设置固定起点、终点和时间，通勤建议会在这里生成。"
               >
                 <Link href="/me/commute/new" className="btn btn--primary">
                   <Plus size={14} /> 新建计划
@@ -117,17 +117,16 @@ export default function CommutePage() {
                       Bark 提醒
                     </span>
                     <span className="caption" style={{ display: "block", marginTop: 2 }}>
-                      绑定账号接收服务端推送；Bark 不是 Web Push，也不代表已送达
+                      绑定账号后接收通勤提醒
                     </span>
                   </span>
-                  <span className="chevron">›</span>
+                  <ChevronRight size={16} className="chevron" aria-hidden="true" />
                 </span>
               </Link>
             </div>
 
-            <Notice tone="amber" title="原生能力边界">
-              网页组合草稿支持地点候选、真实驾车与公交测算及路线地图；手动计划表单仍需填写坐标。
-              未来日期检查、天气与推送取决于服务器调度和通知配置，需另行核验。
+            <Notice title="使用提示">
+              网页版支持地点候选、驾车与公交路线；手动新建计划时需要填写地点坐标。
             </Notice>
           </>
         ) : null}

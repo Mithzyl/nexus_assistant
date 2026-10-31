@@ -11,6 +11,7 @@ from sqlalchemy import delete, select
 from assistant_api.commute.runtime import CommuteRuntime
 from assistant_api.commute.schemas import (
     CheckCreateRequest,
+    AnalysisTarget,
     AdvisoryActionInput,
     AdvisoryActionRead,
     AdvisoryRead,
@@ -153,6 +154,14 @@ async def delete_commute_plan(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.get("/commute-plans/{plan_id}/analysis-target", response_model=AnalysisTarget)
+async def get_analysis_target(plan_id: str, db: DatabaseSession,
+                              runtime: CommuteRuntimeDependency, user: CurrentUser):
+    plan = await plan_service.get_plan(db, user.user_id, plan_id)
+    day, target = await check_service.next_manual_target(db, plan, now=ensure_aware(runtime.now()))
+    return AnalysisTarget(local_service_date=day, target_arrival_at=target)
+
+
 @router.post(
     "/commute-plans/{plan_id}/checks",
     response_model=CheckCreated,
@@ -184,7 +193,9 @@ async def get_check(
     check_id: str, db: DatabaseSession, user: CurrentUser
 ) -> CheckRead:
     check = await check_service.get_check(db, user_id=user.user_id, check_id=check_id)
-    return check_read(check)
+    result = check_read(check)
+    dates = await check_service.created_check_response(db, check.check_id, check.status)
+    return result.model_copy(update={"local_service_date": dates.local_service_date, "target_arrival_at": dates.target_arrival_at})
 
 
 @router.get("/commute-plans/{plan_id}/weather", response_model=PlanWeatherRead)

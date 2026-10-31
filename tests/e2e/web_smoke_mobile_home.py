@@ -12,7 +12,7 @@ with sync_playwright() as p:
     page.on('pageerror', lambda e: errs.append(str(e)))
     page.goto(BASE+'/today', wait_until='networkidle'); page.wait_for_timeout(500)
     body=page.locator('body').inner_text()
-    check('today loads logged out', '今天' in body and '收下内容' in body)
+    check('today loads logged out', '今天' in body and '交给助手整理' in body)
     check('logged out notice', '未登录时' in body)
     page.screenshot(path=out+'/smoke-today-anon.png', full_page=True)
     page.goto(BASE+'/login', wait_until='networkidle')

@@ -4,10 +4,11 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { Brain, Pencil, Trash2 } from "lucide-react";
 
-import { MemoryPicker, MemoryCandidates } from "@/components/mobile/account-memory";
+import { MemoryManagement } from "@/components/mobile/memory-management";
 import { useDemo } from "@/components/mobile/providers";
 import { ConfirmDialog, PageShell, SwitchRow } from "@/components/mobile/ui";
 
+/** Keep demo memories separate from authenticated Nexus management. */
 export default function MemoriesPage() {
   const demo = useDemo();
   const [editing, setEditing] = useState<string | null>(null);
@@ -19,18 +20,16 @@ export default function MemoriesPage() {
   return (
     <PageShell
       title="个人记忆"
-      subtitle="查看 Nexus 账号记忆；提取的候选内容需确认后保存。"
+      subtitle="管理个人记忆和 Assistant 用户指令。"
       action={
-        <Link href="/me/lesson" className="page-bar__action">
+        <Link href={demo.enabled ? "/me/lesson" : "#new-memory"} className="page-bar__action">
           记一条
         </Link>
       }
     >
       {!demo.enabled ? (
         <>
-          <MemoryCandidates />
-          <MemoryPicker selected={[]} onChange={() => {}} viewOnly />
-          <Link href="/ask">前往问助手，为本次对话选择授权记忆</Link>
+          <MemoryManagement />
         </>
       ) : (
         <>
@@ -142,15 +141,14 @@ export default function MemoriesPage() {
           </div>
 
           <p className="micro mt-14" style={{ lineHeight: 1.7 }}>
-            演示模式 · 这些经验和修改都只保存在当前页面内，刷新后恢复；没有写入 AI 平台，
-            也没有自动学习。
+            演示模式 · 这些经验和修改只保存在当前页面，刷新后恢复。
           </p>
         </>
       )}
       <ConfirmDialog
         open={Boolean(deleting)}
         title="删除这条经验？"
-        body="只删除当前演示会话中的这条本机经验，不会影响服务器或 AI 平台；刷新后可恢复示例。"
+        body="只删除这次演示中的经验，刷新后可恢复示例。"
         confirmLabel="删除"
         danger
         onCancel={() => setDeleting(null)}

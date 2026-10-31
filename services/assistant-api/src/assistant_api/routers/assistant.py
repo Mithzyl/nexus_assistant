@@ -10,6 +10,8 @@ invisible to the list, detail, event and cancel endpoints.
 """
 
 import json
+from assistant_api.schemas.memory import SharedMemoryDisclosure
+
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -55,7 +57,7 @@ class AskRequest(BaseModel):
 
     text: str = Field(min_length=1, max_length=4_000)
     idempotency_key: str = Field(min_length=8, max_length=128)
-    memory_disclosures: list[MemoryDisclosure] = Field(default_factory=list, max_length=10)
+    memory_disclosures: list[MemoryDisclosure | SharedMemoryDisclosure] = Field(default_factory=list, max_length=10)
 
 
 class AskResponse(BaseModel):

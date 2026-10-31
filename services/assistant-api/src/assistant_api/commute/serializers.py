@@ -49,11 +49,15 @@ def plan_read(plan: CommutePlan) -> CommutePlanRead:
         rain_extra_buffer_minutes=plan.rain_extra_buffer_minutes,
         notify_enabled=plan.notify_enabled,
         origin=CommuteLocation(
+            city=plan.origin_city,
+            coordinate_system=plan.origin_coordinate_system,
             label=plan.origin_label,
             latitude=plan.origin_latitude,
             longitude=plan.origin_longitude,
         ),
         destination=CommuteLocation(
+            city=plan.destination_city,
+            coordinate_system=plan.destination_coordinate_system,
             label=plan.destination_label,
             latitude=plan.destination_latitude,
             longitude=plan.destination_longitude,

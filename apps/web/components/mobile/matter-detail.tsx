@@ -512,8 +512,8 @@ export function MatterDetail({ id }: { id: string }) {
     return (
       <PageShell title="事务详情">
         <EmptyState
-          title="事务详情需要服务器接口"
-          body="当前后端没有事务、退款或订单接口，正常模式不展示示例详情。你可以在“我的”里显式开启演示模式查看交互。"
+          title="事务详情需要云端功能"
+          body="当前后端没有事务、退款或订单功能，正常模式不展示示例详情。你可以在“我的”里显式开启演示模式查看交互。"
         >
           <button type="button" className="btn btn--secondary" onClick={() => demo.setEnabled(true)}>
             开启演示模式
@@ -552,7 +552,7 @@ export function MatterDetail({ id }: { id: string }) {
       {matter.kind === "order" || matter.kind === "unknown" ? <GenericBody matter={matter} /> : null}
 
       <p className="micro mt-20" style={{ lineHeight: 1.65 }}>
-        演示模式 · 这里的状态只保存在当前页面内，刷新后恢复初始示例；不会同步到服务器或外部服务。
+        演示模式 · 这里的状态只保存在当前页面内，刷新后恢复初始示例；不会同步到云端或外部服务。
       </p>
       <div className="mt-12">
         <LinkRow

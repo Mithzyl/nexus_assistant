@@ -81,7 +81,7 @@ export async function expiringSession(): Promise<
       ok: false,
       status: 502,
       code: "web_upstream_unavailable",
-      message: "无法连接 PA 服务器，已保留本机登录状态。",
+      message: "无法连接 云端，已保留当前设备登录状态。",
       retryable: true,
       clear: false,
     };
@@ -143,7 +143,7 @@ export async function renewCurrentSession(): Promise<
       ok: false,
       status: 502,
       code: "web_upstream_unavailable",
-      message: "无法连接 PA 服务器，本机登录状态保持不变。",
+      message: "无法连接 云端，当前设备登录状态保持不变。",
       retryable: true,
       clear: false,
     };
@@ -185,7 +185,7 @@ export async function renewCurrentSession(): Promise<
       ok: false,
       status: 502,
       code: "invalid_session_response",
-      message: "服务器返回的会话期限无效，本机登录状态保持不变。",
+      message: "云端返回的会话期限无效，当前设备登录状态保持不变。",
       retryable: true,
       clear: false,
     };

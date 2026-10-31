@@ -237,7 +237,7 @@ export function DataConnections({
       setShortcutCredential(created);
       shortcutTokens.reload();
     } catch (caught) {
-      setShortcutError(caught instanceof Error ? caught.message : "上传凭据未能生成。");
+      setShortcutError(caught instanceof Error ? caught.message : "上传连接未能生成。");
     } finally {
       setShortcutBusy(null);
     }
@@ -254,7 +254,7 @@ export function DataConnections({
         ),
       );
     } catch (caught) {
-      setShortcutError(caught instanceof Error ? caught.message : "上传凭据未能撤销。");
+      setShortcutError(caught instanceof Error ? caught.message : "上传连接未能撤销。");
     } finally {
       setShortcutBusy(null);
     }
@@ -263,25 +263,25 @@ export function DataConnections({
   return (
     <section style={{ padding: "0 var(--m-gutter)" }}>
       <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
-        数据连接
+        同步方式
       </h2>
       <div className="m-stack-10">
         <details className="connection-card">
           <summary>
             <span className="tile tile--sm"><CalendarDays size={15} /></span>
             <span className="grow">
-              <span className="connection-card__title">应用内日程与提醒</span>
+              <span className="connection-card__title">日程与提醒</span>
               <span className="connection-card__detail">
                 {mattersError
                   ? "这次读取失败，不代表记录不存在。"
-                  : `已保存的正式记录${matters.length > 0 ? `，当前读取 ${matters.length} 个事项` : ""}。`}
+                  : `已同步的记录${matters.length > 0 ? `，当前读取 ${matters.length} 个事项` : ""}。`}
               </span>
             </span>
             <Pill tone={appState === "可用" ? "green" : "neutral"}>{appState}</Pill>
           </summary>
           <div className="connection-card__body">
-            <p>这里的内容直接保存在 PA 服务器，关闭浏览器后仍可查看。</p>
-            <p>独立待办提醒没有对应日程时，仍作为应用内提醒显示，不宣称进入苹果提醒事项。</p>
+            <p>日程与提醒会同步到你的账号，换设备登录也能查看。</p>
+            <p>独立待办会作为应用内提醒显示。</p>
             <Link href="/matters" className="link-button">查看正式事项与安排</Link>
           </div>
         </details>
@@ -290,11 +290,11 @@ export function DataConnections({
           <summary>
             <span className="tile tile--sm"><Radio size={15} /></span>
             <span className="grow">
-              <span className="connection-card__title">日历订阅</span>
+              <span className="connection-card__title">日历订阅（.ics）</span>
               <span className="connection-card__detail">
                 {currentSubscription
                   ? `${currentSubscription.enabled ? "已开启" : "已关闭"} · ${matterLabel(matters, currentSubscription.matter_ids)}`
-                  : "将选定事项中的正式日程以只读日历提供。"}
+                  : "把选定事项的日程放进你的日历，只读。"}
               </span>
             </span>
             <Pill tone={currentSubscription?.enabled ? "green" : "neutral"}>
@@ -307,8 +307,8 @@ export function DataConnections({
             {currentSubscription ? (
               <p>
                 {currentSubscription.last_read_at
-                  ? `服务器最近收到订阅读取：${formatDateTime(currentSubscription.last_read_at)}。这不表示手机已完成同步。`
-                  : "服务器还没有收到过订阅读取。"}
+                  ? `最近一次读取：${formatDateTime(currentSubscription.last_read_at)}。手机端同步可能需要一点时间。`
+                  : "还没有读取记录。"}
               </p>
             ) : null}
             <div className="connection-matter-list">
@@ -343,7 +343,7 @@ export function DataConnections({
                 <p className="micro">{privateSubscription.feed_url}</p>
                 {/localhost|127\.0\.0\.1/i.test(privateSubscription.feed_url) ? (
                   <p className="micro danger-text">
-                    当前是本地调试地址，手机无法直接访问；需要服务端配置可供手机访问的公开基址后再订阅。
+                    当前是本地调试地址，手机暂时无法访问。
                   </p>
                 ) : null}
                 <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
@@ -375,11 +375,11 @@ export function DataConnections({
                   </button>
                 </div>
                 {openedSubscription ? (
-                  <p className="micro">已打开添加步骤，不等于手机已经订阅或同步。</p>
+                  <p className="micro">添加后，手机日历会自动读取。</p>
                 ) : null}
               </div>
             ) : currentSubscription ? (
-              <p className="micro">旧链接无法从状态查询找回；如手机端未保存，请重新生成。</p>
+              <p className="micro">旧链接不会再次显示；如未保存，请重新生成。</p>
             ) : null}
             <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
               {!currentSubscription ? (
@@ -422,7 +422,7 @@ export function DataConnections({
                 </>
               )}
             </div>
-            <p className="micro">订阅中的日程可只读查看，但没有生成提醒标记；不能保证锁屏通知准时出现。</p>
+            <p className="micro">订阅中的日程可以只读查看；提醒由日历应用负责。</p>
           </div>
         </details>
 
@@ -430,11 +430,11 @@ export function DataConnections({
           <summary>
             <span className="tile tile--sm"><Smartphone size={15} /></span>
             <span className="grow">
-              <span className="connection-card__title">手机资料上传</span>
+              <span className="connection-card__title">快捷指令连接</span>
               <span className="connection-card__detail">
                 {recentSync
                   ? `最近成功上传 ${formatDateTime(recentSync)}`
-                  : "通过快捷指令授权后，手动上传日历与提醒清单。"}
+                  : "用快捷指令手动上传日历与提醒清单。"}
               </span>
             </span>
             <Pill tone={uploadState === "已建立来源" ? "green" : uploadState === "读取失败" ? "red" : "neutral"}>
@@ -443,11 +443,10 @@ export function DataConnections({
           </summary>
           <div className="connection-card__body">
             <ol className="connection-steps">
-              <li>选择允许读取的日历与提醒清单；不要选择本应用的订阅日历，避免循环导入。</li>
-              <li>建立来源并生成一次性设备凭据，只把凭据填入快捷指令请求头
-                <code> X-Shortcut-Token</code>。</li>
-              <li>手动上传一次；只有来源显示最近成功上传时间后才算完成。</li>
-              <li>确认结果正确后，再按需设置定时运行。</li>
+              <li>选择允许读取的日历与提醒清单。</li>
+              <li>生成一次性设备连接码，按提示填入快捷指令。</li>
+              <li>手动上传一次，看到“最近成功上传”即完成。</li>
+              <li>确认结果后，可按需设置定时运行。</li>
             </ol>
             {shortcutSources.length > 0 ? (
               <label className="field">
@@ -496,31 +495,31 @@ export function DataConnections({
               disabled={shortcutBusy !== null}
             >
               {shortcutBusy === "create"
-                ? "正在生成凭据…"
+                ? "正在生成连接码…"
                 : shortcutSources.length > 0
-                  ? "生成一次性上传凭据"
-                  : "建立连接并生成凭据"}
+                  ? "生成一次性连接码"
+                  : "建立连接并生成连接码"}
             </button>
             {shortcutError ? <p className="danger-text">{shortcutError}</p> : null}
             {shortcutCredential ? (
               <div className="private-link-box">
-                <strong>设备凭据，仅本次显示</strong>
+                <strong>设备连接码，仅本次显示</strong>
                 <p className="micro">{shortcutCredential.credential}</p>
                 <button
                   type="button"
                   className="btn btn--quiet btn--small"
                   onClick={() => void copySecret("credential", shortcutCredential.credential)}
                 >
-                  <Clipboard size={13} /> {copiedSecret === "credential" ? "已复制" : "复制凭据"}
+                  <Clipboard size={13} /> {copiedSecret === "credential" ? "已复制" : "复制连接码"}
                 </button>
                 <button
                   type="button"
                   className="btn btn--quiet btn--small"
                   onClick={() => setShortcutCredential(null)}
                 >
-                  关闭并清除凭据
+                  关闭并清除连接码
                 </button>
-                <p className="micro">生成凭据不等于上传完成；关闭详情后无法再次查看。</p>
+                <p className="micro">连接码只显示一次，关闭后无法再次查看。</p>
               </div>
             ) : null}
             {(shortcutTokens.data ?? []).length > 0 ? (
@@ -557,20 +556,20 @@ export function DataConnections({
             ))}
             <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
               <Link href="/me/sources" className="btn btn--secondary btn--small">
-                管理来源与已上传副本
+                管理来源与上传记录
               </Link>
               <button type="button" className="btn btn--quiet btn--small" onClick={onRetry}>
                 重新读取连接状态
               </button>
             </div>
-            <p className="micro">当前没有可验证的快捷指令文件或下载地址，因此这里只提供配置步骤。</p>
-            <p className="micro">不会要求 Apple 账号密码；不要截图或分享设备凭据。稳定编号与更新时间是否可读取仍需手机验证，不表示完整双向同步。</p>
+            <p className="micro">按上面的步骤配置快捷指令即可。</p>
+            <p className="micro">我们不会要求 Apple 账号密码；请勿截图或分享设备连接码。</p>
           </div>
         </details>
       </div>
       <p className="micro" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
         <Database size={12} style={{ display: "inline", verticalAlign: "-2px" }} />{" "}
-        订阅、资料上传和苹果客户端回写是三种不同能力；任一步骤成功都不等于手机已经显示、刷新或提醒。
+        日历订阅和资料上传可以分别开启，互不影响。
       </p>
 
       <ConfirmDialog
@@ -578,8 +577,8 @@ export function DataConnections({
         title={confirmCalendarAction === "rotate" ? "重新生成订阅链接？" : "关闭日历订阅？"}
         body={
           confirmCalendarAction === "rotate"
-            ? "旧私人链接会立即失效，手机可能需要重新订阅；已下载的内容可能仍需手动移除。"
-            : "关闭后手机不能继续读取订阅；已经下载到手机的内容可能需要自行移除。"
+            ? "旧订阅链接会立即失效，手机可能需要重新订阅。"
+            : "关闭后手机不再读取订阅；已下载到手机的内容可能需要手动移除。"
         }
         confirmLabel={confirmCalendarAction === "rotate" ? "重新生成" : "关闭订阅"}
         danger={confirmCalendarAction === "close"}

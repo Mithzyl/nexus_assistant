@@ -37,7 +37,7 @@ with sync_playwright() as p:
     worker(); page.reload(wait_until='networkidle'); page.wait_for_timeout(2500)
     body=page.locator('body').inner_text()
     ok('completed result shown', '已完成' in body and '在有效期内' in body, body[:500])
-    ok('server route + mock labelled', '服务器路线查询' in body and '开发/测试数据' in body, body[:500])
+    ok('server route + mock labelled', '实时路线查询' in body and '开发/测试数据' in body, body[:500])
     ok('plan requirements prioritized', '计划要求' in body and '到达' in body and '检查' in body)
     page.screenshot(path=str(SHOTS)+'/phase4-current.png', full_page=True)
     # plan revision change -> old result not current

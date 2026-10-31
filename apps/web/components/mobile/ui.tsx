@@ -8,6 +8,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
@@ -151,7 +152,29 @@ export function EmptyState({
   );
 }
 
-export function LoadingCard({ label = "正在读取…" }: { label?: string }) {
+export function LoginRequired({
+  title = "登录后同步你的安排",
+  body = "登录账号后，今天的日程、提醒和通勤建议会同步到这里。",
+  actionLabel = "登录账号",
+}: {
+  title?: string;
+  body?: string;
+  actionLabel?: string;
+}) {
+  return (
+    <div className="empty login-required">
+      <p className="empty__title">{title}</p>
+      <p className="empty__body">{body}</p>
+      <div className="login-required__actions">
+        <Link href="/login" className="btn btn--primary">
+          {actionLabel}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export function LoadingCard({ label = "正在同步…" }: { label?: string }) {
   return (
     <div className="card card--tight">
       <div className="flex items-center gap-10">

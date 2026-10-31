@@ -1,7 +1,8 @@
 """Local account login and session lifecycle.
 
-Personal Assistant owns this entirely. A NexusPilot account is not required,
-created, or referenced anywhere in this flow.
+Personal Assistant owns this local flow. A NexusPilot account is not required;
+optional linked-account Nexus login lives in routers/nexus_login.py and issues
+the same independent Assistant session type.
 """
 
 from datetime import UTC, datetime, timedelta

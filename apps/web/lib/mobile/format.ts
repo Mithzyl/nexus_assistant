@@ -1,10 +1,26 @@
 /** Small formatting helpers shared by mobile screens. */
 
-const WEEKDAYS = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
-/** `10月24日 星期六` from the current local date. */
+/** `10月24日 周六` from the current local date. */
 export function todayLabel(date = new Date()): string {
   return `${date.getMonth() + 1}月${date.getDate()}日 ${WEEKDAYS[date.getDay()]}`;
+}
+
+/** `10月24日 周六` from a server `YYYY-MM-DD` service date. */
+export function formatServiceDate(value: string | null | undefined, fallback = new Date()): string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return todayLabel(fallback);
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${WEEKDAYS[date.getDay()]}`;
+}
+
+/** Persisted service dates stay ISO for the API, not for display. */
+export function timezoneLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (value === "Asia/Shanghai") return "北京时间 (GMT+8)";
+  const city = value.split("/").pop()?.replaceAll("_", " ");
+  return city ? `当地时间 · ${city}` : value;
 }
 
 /** `2026年10月24日` for an explicit service date. */
