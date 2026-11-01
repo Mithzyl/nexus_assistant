@@ -22,6 +22,8 @@ import {
   ApiError,
   fetchSession,
   login as loginRequest,
+  register as registerRequest,
+  type RegistrationInput,
   logoutSession,
   renewSession,
   type Me,
@@ -61,6 +63,7 @@ interface AuthValue {
   renewing: boolean;
   renewMessage: string | null;
   login: (email: string, password: string) => Promise<void>;
+  register: (input: RegistrationInput) => Promise<void>;
   logout: () => Promise<{ revoked: boolean }>;
   refresh: () => Promise<void>;
   renew: () => Promise<void>;
@@ -75,6 +78,7 @@ export function useAuth(): AuthValue {
   return value;
 }
 
+/** Restore and maintain cookie-backed sessions for login, registration and renewal. */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>("loading");
   const [user, setUser] = useState<Me | null>(null);
@@ -183,6 +187,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRenewMessage(null);
   }, []);
 
+  /** Adopt the new account only after the registration route has issued its cookies. */
+  const register = useCallback(async (input: RegistrationInput) => {
+    const result = await registerRequest(input);
+    rememberAccount(result.user.user_id);
+    setUser(result.user);
+    setExpiresAt(result.expires_at);
+    setState("signedIn");
+    setError(null);
+    setRenewMessage(null);
+  }, []);
+
   const logout = useCallback(async () => {
     let revoked = false;
     try {
@@ -225,6 +240,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       renewing,
       renewMessage,
       login,
+      register,
       logout,
       refresh,
       renew,
@@ -238,6 +254,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       renewing,
       renewMessage,
       login,
+      register,
       logout,
       refresh,
       renew,

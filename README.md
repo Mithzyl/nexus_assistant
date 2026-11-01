@@ -108,6 +108,21 @@ pnpm build:desktop  # Web 静态导出 + Electron 打包
 
 数据库：`db:migrate` / `db:generate` / `db:studio`（Prisma 命令）。
 
+### 邮箱注册（移动 Web）
+
+`/login` 在后端开放注册时显示“还没有账号？创建新账号”。填写邮箱、称呼、
+密码（8–256 字符）和确认密码；后端要求邀请码时额外显示邀请码字段。
+成功后自动登录并进入“今天”，不创建示例数据。
+
+- 浏览器调用 `GET /api/auth/register` 读取 `enabled`、`invite_required`；
+  `POST /api/auth/register` 提交 `email`、`display_name`、`password`、可选 `invite_code`。
+- Web 代理通过现有 `PA_API_URL` 调用后端同方法的 `/api/v1/auth/register`。
+  登录令牌只写入 httpOnly Cookie，不返回页面脚本。
+- 后端默认开放注册、无需邀请码；实际行为由 `ASSISTANT_REGISTER_ENABLED` 和
+  `ASSISTANT_REGISTER_INVITE_CODE` 决定。读取设置失败时显示提示，已有账号仍可登录。
+- 邮箱已注册、邀请码错误和注册关闭按后端结果提示；注册请求不会自动重试。
+  注册结果不确定时先尝试登录。本功能不发送邮箱验证码。
+
 ## 当前状态
 
 - **当前产品阶段**：Personal Assistant 移动 Web 的工作安排与计划接续。规划正文见 [`docs/产品规划-工作安排与计划接续.md`](docs/产品规划-工作安排与计划接续.md)，逐项进度见 [`docs/最新规划落地对照-现有能力与差距.md`](docs/最新规划落地对照-现有能力与差距.md)。

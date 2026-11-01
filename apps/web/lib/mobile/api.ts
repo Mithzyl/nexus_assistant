@@ -1086,3 +1086,28 @@ export interface RevertResponse {
   change_id: string;
   reverted_at: string;
 }
+
+
+/** Fields accepted by the local email registration endpoint. */
+export interface RegistrationInput {
+  email: string;
+  display_name: string;
+  password: string;
+  invite_code?: string;
+}
+
+/** Report whether account creation is enabled and requires an invite code. */
+export interface RegistrationOptions {
+  enabled: boolean;
+  invite_required: boolean;
+}
+
+/** Create an empty account; the same-origin route stores its session in cookies. */
+export function register(input: RegistrationInput): Promise<LoginResult> {
+  return apiRequest<LoginResult>("/api/auth/register", { method: "POST", body: input });
+}
+
+/** Read registration availability without requiring a signed-in session. */
+export function registrationOptions(): Promise<RegistrationOptions> {
+  return apiRequest<RegistrationOptions>("/api/auth/register");
+}
