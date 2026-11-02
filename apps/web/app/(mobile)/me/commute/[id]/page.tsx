@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CloudSun, Clock, FileClock, RefreshCw, Trash2 } from "lucide-react";
+import { Clock, Trash2 } from "lucide-react";
 
 import type {
   Advisory,
   CommuteCheck,
   CommutePlan,
   CommutePlanDraft,
+  PlanWeather,
 } from "@/lib/mobile/api";
 import { ApiError, apiRequest } from "@/lib/mobile/api";
 import { formatDateTime, formatServiceDate, uuid } from "@/lib/mobile/format";
@@ -25,7 +26,6 @@ import {
 import {
   advisoryApplicability,
   routeState,
-  usesClientSnapshot,
   routeUnconfigured,
 } from "@/lib/mobile/advisory";
 import {
@@ -41,13 +41,11 @@ import { useAuth, useUI } from "@/components/mobile/providers";
 import { AdvisoryCard } from "@/components/mobile/advisory-card";
 import { CommuteForm } from "@/components/mobile/commute-form";
 import { HistoryAdvisoryCard } from "@/components/mobile/history-advisory-card";
-import { LatestWeatherCard } from "@/components/mobile/latest-weather-card";
 import {
   ConfirmDialog,
   EmptyState,
   ErrorCard,
   LoadingCard,
-  Notice,
   PageShell,
   Pill,
 } from "@/components/mobile/ui";
@@ -70,13 +68,6 @@ function weekdayText(weekdays: number[]): string {
   }
   if (weekdays.length === 7) return "每天";
   return weekdays.map((day) => `周${WEEKDAYS[day - 1]}`).join("、");
-}
-
-function checkTone(status: PendingCommuteCheck["status"]): "fog" | "amber" | "green" | "red" {
-  if (status === "succeeded") return "green";
-  if (status === "degraded" || status === "uncertain") return "amber";
-  if (status === "failed" || status === "cancelled") return "red";
-  return "fog";
 }
 
 export default function CommuteDetailPage({ params }: { params: { id: string } }) {
@@ -102,7 +93,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
   const [tab, setTab] = useState<"advice" | "settings">("advice");
   const [polling, setPolling] = useState(false);
   const [pending, setPending] = useState<PendingCommuteCheck | null>(null);
-  const [viewMode, setViewMode] = useState<"latest" | "check" | null>(null);
+  const [, setViewMode] = useState<"latest" | "check" | null>(null);
   const [advisory, setAdvisory] = useState<Advisory | null>(null);
   const [history, setHistory] = useState<Advisory[]>([]);
   const [now, setNow] = useState(() => Date.now());
@@ -115,6 +106,14 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
   const [skipBusy, setSkipBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const weatherDate = advisory?.local_service_date ?? analysisTarget.data?.local_service_date;
+  const latestWeather = useApiResource<PlanWeather>(
+    signedIn && plan.data && weatherDate
+      ? `/api/pa/commute-plans/${plan.data.id}/weather?local_service_date=${weatherDate}&revision=${plan.data.revision}&check=${pending?.finishedAt ?? pending?.status ?? "initial"}`
+      : null,
+    { enabled: Boolean(signedIn && plan.data && weatherDate) },
+  );
 
   // The runtime endpoint is account-wide, but its status is shown only for the
   // current check. A plan/account switch resets the hook's key.
@@ -258,7 +257,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               current = {
                 ...current,
                 status: "unknown",
-                error: "云端暂时没有返回这次检查；任务记录仍保存在当前设备。",
+                error: "暂时没有收到这次结果，记录已保存在当前设备。",
                 errorCode: "check_not_found",
                 updatedAt: new Date().toISOString(),
               };
@@ -266,7 +265,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               await settle(current);
               return;
             }
-            setMessage("暂时无法读取检查状态。本次分析记录已保留，可以稍后继续同一次分析。");
+            setMessage("暂时无法读取分析状态，本次分析记录已保留。");
             return;
           }
           if (!mounted.current || pollToken.current !== token) return;
@@ -299,7 +298,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   : read.status === "failed"
                     ? read.error?.message || "分析失败。"
                     : read.status === "unknown"
-                      ? "尚未确认本次结果；任务已保存，稍后可以继续核对。"
+                      ? "暂时无法确认这次结果，稍后可以继续核对。"
                       : "这次分析已取消。",
             );
             return;
@@ -307,10 +306,10 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         }
         setMessage(
           current.status === "queued"
-            ? "仍在等待结果。这次分析已保存，稍后回到页面会继续查看。"
+            ? "还在等待结果，本次分析已保存，稍后可以继续查看。"
             : current.status === "running"
-              ? "仍在处理中。这次分析已保存，稍后回到页面会继续查看。"
-              : "还没有返回最终结果。这次分析已保存，稍后回到页面会继续查看。",
+              ? "还在处理中，本次分析已保存，稍后可以继续查看。"
+              : "还没有返回最终结果，本次分析已保存，稍后可以继续查看。",
         );
       } finally {
         pollingRef.current = false;
@@ -369,14 +368,14 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
           const next: PendingCommuteCheck = {
             ...record,
             status: "unknown",
-            error: "云端暂时没有返回这次检查；任务记录仍保存在当前设备。",
+            error: "暂时没有收到这次结果，记录已保存在当前设备。",
             errorCode: "check_not_found",
             updatedAt: new Date().toISOString(),
           };
           persist(next);
           await settle(next);
         } else {
-          setMessage("暂时无法读取检查状态；本次分析记录已保留。");
+          setMessage("暂时无法读取分析状态，本次分析记录已保留。");
         }
       } finally {
         if (mounted.current) setActionBusy(null);
@@ -403,7 +402,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       clearPendingCheck(accountId, plan.data.id);
       setPending(null);
       setViewMode(null);
-      setMessage("计划已更新，上次重新分析的状态已作废；现在只会读取已有建议。");
+      setMessage("计划已更新，上次分析已作废，现在显示已有建议。");
       void loadLatest();
       return;
     }
@@ -413,7 +412,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         ...stored,
         status: "uncertain",
         error:
-          "上次提交的结果不确定：请求可能已经发送。重试不会重复提交。",
+          "上次提交的结果不确定；重试不会重复提交。",
         updatedAt: new Date().toISOString(),
       };
       savePendingCheck(accountId, normalized);
@@ -494,7 +493,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
             ...record,
             status: "uncertain",
             error:
-              "提交结果暂不确定：请求可能已经发送。重试不会重复提交。",
+              "提交结果暂不确定；重试不会重复提交。",
             errorCode: "submission_uncertain",
             updatedAt: new Date().toISOString(),
           };
@@ -605,7 +604,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         clearPendingCheck(accountId, planId);
         setPending(null);
         setViewMode(null);
-        setMessage("计划已更新，上次分析状态已作废。");
+        setMessage("计划已更新，上次分析已作废。");
       }
       toast("通勤计划已保存");
       setTab("advice");
@@ -633,7 +632,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         headers: { "Idempotency-Key": uuid() },
         body: { action: "skip_today", installation_id: installationId() },
       });
-      toast("已跳过今天这条提醒");
+      toast("已跳过这次通勤提醒");
     } catch (caught) {
       toast(caught instanceof ApiError ? caught.message : "跳过未能完成");
     } finally {
@@ -698,9 +697,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     lastSuccessAt: runtime.lastSuccessAt,
     loading: runtime.loading,
   });
-  const runtimeNeedsAttention = runtimeView.kind !== "recent";
   const currentPhaseLabel = pending?.phase ? CHECK_PHASE_LABEL[pending.phase] : null;
-  const historyHasSnapshot = historyRows.some(usesClientSnapshot);
   const showCheckFailure =
     pending && (pending.status === "failed" || pending.status === "cancelled") && !advisory;
   const showCheckUnknown = pending?.status === "unknown" && !advisory;
@@ -712,23 +709,32 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
   const reanalyzeLabel = active
     ? "继续等待"
     : pending?.status === "uncertain"
-      ? "重试同一次分析"
-      : "重新分析";
+      ? "重试更新"
+      : "更新建议";
+
+  const openHistory = () => {
+    const node = document.getElementById("commute-history") as HTMLDetailsElement | null;
+    if (!node) {
+      void viewLatest();
+      return;
+    }
+    node.open = true;
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <PageShell
       title={plan.data?.name || "通勤计划"}
-      subtitle={plan.data ? `${plan.data.origin.label} → ${plan.data.destination.label}` : undefined}
       action={
         plan.data ? (
           <Pill tone={plan.data.enabled ? "fog" : "neutral"}>
-            {plan.data.enabled ? "启用" : "停用"}
+            {plan.data.enabled ? "已启用" : "已停用"}
           </Pill>
         ) : undefined
       }
     >
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后查看通勤计划" body="登录账号后可以查看已同步的通勤计划。">
+        <EmptyState title="登录后才能查看" body="通勤计划会同步到你的账号。">
           <Link href="/login" className="btn btn--primary">登录</Link>
         </EmptyState>
       ) : null}
@@ -761,417 +767,203 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
 
           {tab === "advice" ? (
             <div className="m-stack-14 mt-14">
-              <div className="card card--tight">
-                <div className="flex items-center justify-between gap-10">
-                  <span className="micro">计划要求</span>
-                  <span className="micro">云端保存</span>
-                </div>
-                <div className="mt-8" style={{ display: "grid", gap: 5 }}>
-                  <p>首次生效：{plan.data.effective_from ?? "未设置"}</p>
-                  {plan.data.matter_id ? <Link href={`/matters/${plan.data.matter_id}`}>查看关联事项与首日日程</Link> : null}
-                  <div className="flex items-start justify-between gap-12">
-                    <span className="micro">到达</span>
-                    <span style={{ fontSize: 13, textAlign: "right" }}>
-                      {plan.data.arrival_local_time} · {weekdayText(plan.data.weekdays)}
-                    </span>
-                  </div>
-                  <div className="flex items-start justify-between gap-12">
-                    <span className="micro">起终点</span>
-                    <span style={{ fontSize: 13, textAlign: "right", overflowWrap: "anywhere" }}>
-                      {plan.data.origin.label} → {plan.data.destination.label}
-                    </span>
-                  </div>
-                  <div className="flex items-start justify-between gap-12">
-                    <span className="micro">检查</span>
-                    <span style={{ fontSize: 13, textAlign: "right" }}>
-                      {plan.data.check_local_time} ·{" "}
-                      {plan.data.transport_mode === "driving" ? "驾车" : plan.data.transport_mode === "transit" ? "公交" : "步行"} · 缓冲{" "}
-                      {plan.data.buffer_minutes} 分钟
-                    </span>
-                  </div>
-                  <div className="flex items-start justify-between gap-12">
-                    <span className="micro">提醒</span>
-                    <span style={{ fontSize: 13 }}>
-                      {plan.data.notify_enabled ? "已开" : "已关"}
-                    </span>
-                  </div>
-                  <p className="micro" style={{ margin: "4px 0 0" }}>
-                    计划更新于 {formatDateTime(plan.data.updated_at)}。
-                  </p>
-                </div>
-              </div>
 
-              {/* A finished check may have refreshed the weather; remount
-                  once on completion instead of polling the weather endpoint. */}
-              <LatestWeatherCard
-                key={`${plan.data.revision}-${pending?.finishedAt ?? pending?.status ?? "initial"}`}
-                planId={plan.data.id}
-                advisory={advisory}
-              />
-
-              <div className="card card--tight">
-                <div className="flex items-center justify-between gap-10" style={{ flexWrap: "wrap" }}>
-                  <span className="flex items-center gap-6">
-                    <CloudSun size={15} className="fog" />
-                    <span className="micro">本次分析</span>
-                  </span>
-                  {pending ? (
-                    <Pill tone={checkTone(pending.status)}>
-                      {CHECK_STATUS_LABEL[pending.status]}
-                    </Pill>
-                  ) : viewMode === "latest" ? (
-                    <span className="micro">只读 · 已有建议</span>
-                  ) : null}
-                </div>
-
-                {active && pending?.status === "running" ? (
-                  <p className="caption mt-10" role="status" aria-live="polite">
-                    后台智能分析中。正在核对路线和天气，结果返回后会在这里更新，无需重复提交。
-                  </p>
-                ) : null}
-                <p className="caption mt-10">
-                  {analysisTarget.data ? `下一次可分析：${formatServiceDate(analysisTarget.data.local_service_date)}，目标 ${formatDateTime(analysisTarget.data.target_arrival_at)}。` : "按计划生效日期和星期规则选择下一次通勤。"}
-                  距目标到达不足 30 分钟会顺延；未来路况与天气仅为估算，不保证准点。
-                </p>
-                <div className="flex items-center gap-10 mt-10" style={{ flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className="btn btn--primary btn--small"
-                    onClick={() => void startAnalysis()}
-                    disabled={actionBusy !== null}
-                  >
-                    {actionBusy === "reanalyze" || actionBusy === "check" ? (
-                      <span className="spinner" style={{ width: 14, height: 14 }} />
-                    ) : (
-                      <RefreshCw size={13} />
-                    )}
-                    {reanalyzeLabel}
-                  </button>
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() => void viewLatest()}
-                    disabled={actionBusy !== null}
-                  >
-                    查看已有建议
-                  </button>
-                  {viewMode === "latest" && pending?.advisoryId ? (
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() => void viewCheckResult()}
-                    >
-                      <FileClock size={12} /> 本次分析结果
-                    </button>
-                  ) : null}
-                </div>
-
-                <p className="micro" style={{ margin: "10px 0 0", lineHeight: 1.6 }}>
-                  打开页面不会自动重新分析；点击“重新分析”才会开始新分析。
-                  路线与出发时间以最新结果为准。
-                </p>
-
-                {pending ? (
-                  <>
-                    {pending.serviceDate ? <p className="caption mt-8">本次分析日期：{pending.serviceDate}{pending.targetArrivalAt ? ` · 目标到达 ${formatDateTime(pending.targetArrivalAt)}` : ""}</p> : null}
-                    <div className="mt-8" style={{ display: "grid", gap: 4 }}>
-                      <div className="flex items-start justify-between gap-12">
-                        <span className="micro">本次操作状态</span>
-                        <span style={{ fontSize: 13 }}>{CHECK_STATUS_LABEL[pending.status]}</span>
-                      </div>
-                      {active && pending.phase ? (
-                        <div className="flex items-start justify-between gap-12">
-                          <span className="micro">当前步骤</span>
-                          <span style={{ fontSize: 13, textAlign: "right" }}>
-                            {CHECK_PHASE_LABEL[pending.phase]}
-                            {pending.phaseUpdatedAt
-                              ? ` · ${formatDateTime(pending.phaseUpdatedAt)}`
-                              : ""}
-                          </span>
-                        </div>
-                      ) : null}
-                      <div className="flex items-start justify-between gap-12">
-                        <span className="micro">云端创建</span>
-                        <span style={{ fontSize: 13, textAlign: "right" }}>
-                          {pending.serverCreatedAt
-                            ? formatDateTime(pending.serverCreatedAt)
-                            : formatDateTime(pending.createdAt)}
-                        </span>
-                      </div>
-                      <div className="flex items-start justify-between gap-12">
-                        <span className="micro">{pending.finishedAt ? "云端完成" : "当前设备更新"}</span>
-                        <span style={{ fontSize: 13, textAlign: "right" }}>
-                          {formatDateTime(pending.finishedAt || pending.updatedAt)}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-                      这次分析已保存在当前设备
-                      {pending.planRevision !== plan.data.revision ? " · 设置已更新" : ""}。
-                      状态以最新结果为准。
-                    </p>
-                  </>
-                ) : (
-                  <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-                    本次页面只读恢复，没有创建新的分析。记录以账号为准。
-                  </p>
-                )}
-
-                {message ? (
-                  <p className="micro amber" style={{ margin: "8px 0 0", lineHeight: 1.6 }}>
-                    {message}
-                  </p>
-                ) : null}
-
-                {adviceError ? (
-                  <p className="caption red" style={{ margin: "8px 0 0" }}>
-                    {adviceError}
-                  </p>
-                ) : null}
-              </div>
+              {adviceLoading ? <LoadingCard label="正在读取建议…" /> : null}
 
               {routeNeedsNotice ? (
-                <Notice
-                  tone="amber"
-                  title={
-                    routeProviderUnavailable || unconfiguredRoute
-                      ? "路线服务尚未开通"
-                      : "当前无法查询新路线"
-                  }
-                >
-                  {routeProviderUnavailable
-                    ? "暂时无法生成新的出发建议；云端仍保存计划，最新天气和历史建议仍可查看。"
-                    : unconfiguredRoute
-                      ? "路线服务暂时不可用，因此不能生成新的出发时间或路线；计划和天气仍可查看。"
-                      : "路线服务暂时不可用，因此不能生成新的出发时间或路线；计划和天气仍可查看。"}
-                  {historyRows.length > 0
-                    ? historyHasSnapshot
-                      ? ` 仍可查看此前保存的历史建议（${historyRows.length} 条）。`
-                      : ` 仍可查看已有历史建议（${historyRows.length} 条）；它们不是本轮新查询。`
-                    : " 目前没有可显示的历史建议。"}
-                </Notice>
-              ) : null}
-
-              {applicability ? (
-                <div className="card card--tight">
-                  <div className="flex items-center justify-between gap-10" style={{ flexWrap: "wrap" }}>
-                    <span className="micro">结果是否适用</span>
-                    <Pill tone={applicability.tone}>{applicability.label}</Pill>
-                  </div>
-                  <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-                    {applicability.detail}
-                  </p>
-                  <p className="micro" style={{ margin: "4px 0 0" }}>
-                    更新于 {formatDateTime(advisory!.generated_at)} · 有效至{" "}
-                    {formatDateTime(advisory!.expires_at)}
-                  </p>
+                <div className="notice notice--amber">
+                  路线服务暂时不可用，已有建议仍可查看。
                 </div>
               ) : null}
 
-              {adviceLoading ? <LoadingCard label="正在读取云端建议…" /> : null}
+              {currentAdvisory && !adviceLoading ? (
+                <AdvisoryCard
+                  advisory={currentAdvisory}
+                  onReanalyze={() => (active ? void viewCheckResult() : void startAnalysis())}
+                  onHistory={historyRows.length > 0 ? openHistory : undefined}
+                  reanalyzeLabel={reanalyzeLabel}
+                  busy={actionBusy !== null}
+                  latestWeather={latestWeather.data}
+                />
+              ) : null}
+
+              {active && pending ? (
+                <div className="card commute-runtime">
+                  <div className="commute-runtime__title">
+                    {polling ? <span className="spinner" /> : <Clock size={15} />}
+                    正在更新建议
+                  </div>
+                  <p className="commute-runtime__detail">
+                    {CHECK_STATUS_LABEL[pending.status]}
+                    {currentPhaseLabel ? ` · ${currentPhaseLabel}` : ""}
+                  </p>
+                  <p className="commute-runtime__detail">{runtimeView.label}</p>
+                  <p className="commute-runtime__detail">{runtimeView.detail}</p>
+                  {runtimeView.kind === "unavailable" && runtime.lastSuccessAt ? (
+                    <p className="commute-runtime__detail">
+                      上次成功查询 {formatDateTime(new Date(runtime.lastSuccessAt).toISOString())}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="link-button mt-6"
+                    onClick={() => {
+                      runtime.refresh();
+                      void viewCheckResult();
+                    }}
+                    disabled={actionBusy !== null}
+                  >
+                    继续核对
+                  </button>
+                </div>
+              ) : null}
+
+              <section className="card commute-plan">
+                <div className="commute-plan__head">
+                  <h2>通勤计划</h2>
+                  <button type="button" className="link-button link-button--inline" onClick={() => setTab("settings")}>
+                    编辑
+                  </button>
+                </div>
+                <div className="commute-plan__row">
+                  <span className="k">时间</span>
+                  <span className="v">
+                    {weekdayText(plan.data.weekdays)} · {plan.data.arrival_local_time} 到达
+                  </span>
+                </div>
+                <div className="commute-plan__row">
+                  <span className="k">路线</span>
+                  <span className="v">
+                    {plan.data.origin.label} → {plan.data.destination.label}
+                  </span>
+                </div>
+                <div className="commute-plan__row">
+                  <span className="k">提醒</span>
+                  <span className="v">
+                    {plan.data.check_local_time} 查看路况 · {plan.data.notify_enabled ? "已开启" : "已关闭"}
+                    <small>
+                      {plan.data.transport_mode === "driving" ? "驾车" : plan.data.transport_mode === "transit" ? "公交" : "步行"}
+                      {" · "}预留 {plan.data.buffer_minutes} 分钟
+                    </small>
+                  </span>
+                </div>
+                <div className="commute-plan__sync">
+                  <span className="ok"><i />已同步</span>
+                  <span>更新于 {formatDateTime(plan.data.updated_at)}</span>
+                </div>
+                {plan.data.matter_id ? (
+                  <Link href={`/matters/${plan.data.matter_id}`} className="micro" style={{ display: "inline-block", marginTop: 8 }}>
+                    查看关联事项
+                  </Link>
+                ) : null}
+                {currentAdvisory ? (
+                  <button
+                    type="button"
+                    className="commute-plan__skip"
+                    onClick={() => void skipToday()}
+                    disabled={skipBusy}
+                  >
+                    {skipBusy ? "正在记录…" : `跳过 ${formatServiceDate(currentAdvisory.local_service_date)} 这次提醒`}
+                  </button>
+                ) : null}
+              </section>
+
+              {message ? <p className="micro amber" style={{ margin: 0 }}>{message}</p> : null}
+              {adviceError ? <p className="caption red" style={{ margin: 0 }}>{adviceError}</p> : null}
 
               {noAdviceResult ? (
                 <div className="card card--amber">
-                  <p className="card-title amber" style={{ fontSize: 15 }}>
-                    检查完成，但没有关联建议
-                  </p>
-                  <p className="caption" style={{ margin: "4px 0 0" }}>
-                    这次分析已完成，但还没有返回可用建议。
-                  </p>
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() => void viewLatest()}
-                  >
-                    查看已有建议
-                  </button>
+                  <p className="card-title amber" style={{ fontSize: 15 }}>这次没有生成可用建议</p>
+                  <p className="caption" style={{ margin: "4px 0 0" }}>可以更新建议，或查看历史建议。</p>
+                  <div className="ask-actions">
+                    <button type="button" className="link-button" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
+                      {reanalyzeLabel}
+                    </button>
+                    {historyRows.length > 0 ? (
+                      <button type="button" className="link-button" onClick={openHistory}>历史建议</button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
 
               {showCheckUnknown ? (
                 <div className="card card--amber">
-                  <p className="card-title amber" style={{ fontSize: 15 }}>
-                    尚未确认本次结果
-                  </p>
+                  <p className="card-title amber" style={{ fontSize: 15 }}>暂时无法确认这次结果</p>
                   <p className="caption" style={{ margin: "4px 0 0" }}>
-                    {pending?.error || "任务记录已保存，但不能把未知当作成功或失败。"}
+                    {pending?.error || "记录已保存，可以继续核对。"}
                   </p>
                   <div className="ask-actions">
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() => void viewCheckResult()}
-                      disabled={actionBusy !== null}
-                    >
+                    <button type="button" className="link-button" onClick={() => void viewCheckResult()} disabled={actionBusy !== null}>
                       继续核对
                     </button>
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() => void viewLatest()}
-                    >
-                      查看已有建议
-                    </button>
+                    {historyRows.length > 0 ? (
+                      <button type="button" className="link-button" onClick={openHistory}>历史建议</button>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
 
               {showCheckFailure ? (
                 <div className="card card--red">
-                  <p className="card-title red" style={{ fontSize: 15 }}>
-                    这次重新分析没有完成
-                  </p>
+                  <p className="card-title red" style={{ fontSize: 15 }}>这次更新没有完成</p>
                   <p className="caption red" style={{ margin: "4px 0 0" }}>
-                    {pending?.error || "云端未返回可用建议。"}
+                    {pending?.error || "暂时没有生成新的建议，请稍后再试。"}
                   </p>
-                  {pending?.errorCode === "provider_not_configured" ||
-                  pending?.errorCode === "eta_not_configured" ? (
-                    <p className="micro red" style={{ margin: "6px 0 0" }}>
-                      路线服务尚未开通；本次没有生成新的出发时间。
-                    </p>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="link-button"
-                    style={{ color: "var(--m-red)" }}
-                    onClick={() => void viewLatest()}
-                  >
-                    查看已有建议
-                  </button>
-                </div>
-              ) : null}
-
-              {currentAdvisory && !adviceLoading ? (
-                <>
-                  <div className="flex items-center justify-between gap-10">
-                    <span className="micro">
-                      {viewMode === "check" ? "本次重新分析的建议" : "已有最新建议"}
-                    </span>
-                    {viewMode === "check" && pending?.status === "degraded" ? (
-                      <Pill tone="amber">数据不完整</Pill>
+                  <div className="ask-actions">
+                    <button type="button" className="link-button" style={{ color: "var(--m-red)" }} onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
+                      {reanalyzeLabel}
+                    </button>
+                    {historyRows.length > 0 ? (
+                      <button type="button" className="link-button" style={{ color: "var(--m-red)" }} onClick={openHistory}>
+                        历史建议
+                      </button>
                     ) : null}
                   </div>
-                  <AdvisoryCard
-                    advisory={currentAdvisory}
-                    onSkip={() => void skipToday()}
-                    skipBusy={skipBusy}
-                  />
-                  <p className="micro" style={{ margin: 0, lineHeight: 1.6 }}>
-                    建议只对应这次分析；同时有其他分析在跑时，这里会显示本次结果，不会改用另一条
-                    latest。过期或属于修改前计划的记录放进下方历史区，云端记录不删除。
-                  </p>
-                </>
+                </div>
               ) : null}
 
-              {active ? (
-                <div className={`card ${runtimeNeedsAttention ? "card--amber" : "card--tight"}`}>
-                  <div className="ask-status">
-                    {polling && runtimeView.kind === "recent" ? (
-                      <span className="spinner" />
-                    ) : (
-                      <Clock size={17} className="muted" />
-                    )}
-                    <span style={{ fontSize: 15 }}>
-                      任务“{CHECK_STATUS_LABEL[pending.status]}”
-                      {currentPhaseLabel ? `；当前步骤：${currentPhaseLabel}` : "；云端尚未返回具体步骤"}。
-                    </span>
-                  </div>
-                  <p
-                    className="micro"
-                    style={{
-                      margin: "6px 0 0",
-                      lineHeight: 1.6,
-                      color: runtimeNeedsAttention ? "var(--m-amber)" : undefined,
-                    }}
-                  >
-                    {runtimeView.label}
-                    {runtimeView.kind === "unavailable" && runtime.lastSuccessAt
-                      ? ` · 上次成功查询 ${formatDateTime(
-                          new Date(runtime.lastSuccessAt).toISOString(),
-                        )}`
-                      : ""}
-                  </p>
-                  <p className="micro" style={{ margin: "3px 0 0", lineHeight: 1.6 }}>
-                    {runtimeView.detail}
-                  </p>
-                  <p className="micro" style={{ margin: "4px 0 0", lineHeight: 1.6 }}>
-                    这次操作已保存在当前设备；刷新页面会继续查看同一次分析，不会重复提交，
-                    也不会取消云端任务。
-                  </p>
-                  {!polling ? (
-                    <button
-                      type="button"
-                      className="link-button mt-6"
-                      onClick={() => {
-                        runtime.refresh();
-                        void viewCheckResult();
-                      }}
-                      disabled={actionBusy !== null}
-                    >
-                      继续核对
-                    </button>
-                  ) : null}
-                </div>
+              {!currentAdvisory && analysisTarget.data && !active ? (
+                <p className="micro" style={{ margin: 0 }}>
+                  下次通勤：{formatServiceDate(analysisTarget.data.local_service_date)}，{formatDateTime(analysisTarget.data.target_arrival_at)} 到达
+                </p>
               ) : null}
 
               {!advisory && !adviceLoading && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !active && !adviceError && !routeNeedsNotice && historyRows.length === 0 ? (
-                <EmptyState
-                  title="今天还没有通勤建议"
-                  body="建议由云端检查生成；浏览器不会自行推算出发时间或天气。可以读取已有建议，或主动重新分析。"
-                >
-                  <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={() => void startAnalysis()}
-                    disabled={actionBusy !== null}
-                  >
+                <EmptyState title="还没有通勤建议" body="更新建议后，这里会显示出发时间、天气和路线。">
+                  <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
                     {reanalyzeLabel}
                   </button>
                 </EmptyState>
               ) : null}
 
               {!currentAdvisory && !adviceLoading && !active && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !adviceError && historyRows.length > 0 ? (
-                <EmptyState
-                  title="当前没有未过期建议"
-                  body="云端最新记录已过期或属于修改前的计划版本，已放入下方历史区；云端记录不会被删除。可以主动重新分析，查看本次结果。"
-                >
-                  <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={() => void startAnalysis()}
-                    disabled={actionBusy !== null}
-                  >
+                <EmptyState title="当前没有可用建议" body="历史建议在下方，更新后会显示最新结果。">
+                  <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
                     {reanalyzeLabel}
                   </button>
                 </EmptyState>
               ) : null}
 
               {historyRows.length > 0 ? (
-                <div className="mt-16">
-                  <div className="flex items-center justify-between gap-10">
-                    <h2 style={{ margin: 0, fontSize: 16 }}>历史建议</h2>
-                    <Pill tone="neutral">{historyRows.length} 条</Pill>
+                <details id="commute-history" className="card commute-history">
+                  <summary>
+                    <span>历史建议</span>
+                    <span>{historyRows.length} 条 · 查看</span>
+                  </summary>
+                  <div className="commute-history__body">
+                    <p className="micro">当前设备已查看过的建议，可能不是完整历史。</p>
+                    <div className="m-stack-10">
+                      {historyRows.map((item) => (
+                        <HistoryAdvisoryCard
+                          key={item.id}
+                          advisory={item}
+                          planRevision={planRevision ?? item.plan_revision}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  <p className="micro" style={{ margin: "4px 0 8px", lineHeight: 1.6 }}>
-                    这里显示当前设备已加载过的记录，可能不是完整历史；
-                    因此这里不是完整历史，也不会删除云端记录。
-                  </p>
-                  <div className="m-stack-10">
-                    {historyRows.map((item) => (
-                      <HistoryAdvisoryCard
-                        key={item.id}
-                        advisory={item}
-                        planRevision={planRevision ?? item.plan_revision}
-                      />
-                    ))}
-                  </div>
-                </div>
+                </details>
               ) : null}
-
-              <Notice>
-                账号会保存计划与分析状态；推送需要先在 Bark 里绑定并使用自动提醒。
-                页面关闭后浏览器不再轮询，推送状态以账号记录为准。
-              </Notice>
             </div>
           ) : (
             <div className="mt-14">
@@ -1203,7 +995,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       <ConfirmDialog
         open={confirmDelete}
         title="删除这个通勤计划？"
-        body="删除后不再按这个计划生成检查与提醒。已生成的历史记录仍留在云端上。"
+        body="删除后不再生成提醒；历史建议会保留。"
         confirmLabel="删除计划"
         danger
         busy={deleting}
