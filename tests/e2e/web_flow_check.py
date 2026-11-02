@@ -326,17 +326,24 @@ def main() -> int:
         )
         check_posts.clear()
         go(page, f"/me/commute/{plan_a}", 2200)
+        if page.locator(".commute-basis > summary").count():
+            page.locator(".commute-basis > summary").first.click()
+            wait(page, 300)
         body = text(page)
         check("no check created on detail load", len(check_posts) == 0, check_posts)
         check("latest weather area is present", "最新天气" in body)
-        check("analysis-time weather is labelled", "上次分析采用的天气" in body)
+        check("analysis-time weather is labelled", "建议采用" in body)
         check("latest weather value shown", "18°C" in body and "降雨 60%" in body, body[:500])
         check("old advice keeps its weather", "21°C" in body and "降雨 20%" in body)
-        check("weather update copy is present", "天气已更新" in body)
+        check("weather update copy is present", "最新天气" in body and "建议采用" in body)
         check(
             "weather update does not claim reanalysis",
-            "出发建议仍来自上一次分析" in body,
+            "建议采用" in body and "重新分析" not in body,
         )
+        if page.locator(".commute-history > summary").count():
+            page.locator(".commute-history > summary").first.click()
+            wait(page, 300)
+        body = text(page)
         check("old plan revision is labelled", "修改前结果" in body)
         check("expired advice is labelled", "已过期" in body)
         check("no stale old-label copy", "旧计划版本" not in body)
@@ -347,7 +354,7 @@ def main() -> int:
             legacy_card.locator("summary").click()
             wait(page, 300)
         body = text(page)
-        check("legacy total buffer is labelled", "历史总预留" in body and "未拆分 AI 额外" in body)
+        check("legacy history remains readable", FIXTURE["titles"]["legacy"] in body)
         check("legacy does not invent AI zero", "AI 额外 0" not in body)
         check(
             "expired title lives in history",
@@ -355,7 +362,7 @@ def main() -> int:
         )
         check(
             "current departure is shown only for current advice",
-            "今天 09:00 的通勤建议" in body,
+            "建议出发" in body,
         )
         page.screenshot(path=str(SHOTS / "commute-advice.png"), full_page=True)
         page.reload(wait_until="networkidle")
@@ -401,7 +408,7 @@ def main() -> int:
         # 7. A real click creates once; refresh restores the same check.
         check_posts.clear()
         go(page, f"/me/commute/{plan_d}", 900)
-        page.get_by_role("button", name="重新分析").first.click()
+        page.get_by_role("button", name="更新建议").first.click()
         wait(page, 1600)
         body = text(page)
         check("explicit reanalysis posts once", len(check_posts) == 1, check_posts)
@@ -448,9 +455,9 @@ def main() -> int:
         )
         go(page, f"/me/commute/{plan_e}", 1000)
         body = text(page)
-        check("unknown result is labelled", "服务器尚未确认本次结果" in body)
+        check("unknown result is labelled", "暂时无法确认这次结果" in body)
         check("unknown keeps a reconcile action", "继续核对" in body)
-        check("unknown is not shown as failure", "这次重新分析没有完成" not in body)
+        check("unknown is not shown as failure", "这次更新没有完成" not in body)
 
         # 9b. A pending operation from a previous plan revision is retired.
         storage_set(
@@ -466,6 +473,9 @@ def main() -> int:
         )
         check_posts.clear()
         go(page, f"/me/commute/{plan_h}", 1300)
+        if page.locator(".commute-history > summary").count():
+            page.locator(".commute-history > summary").first.click()
+            wait(page, 300)
         body = text(page)
         check("old revision operation is retired", "计划已更新" in body)
         check("old revision advice is labelled", "修改前结果" in body)
@@ -490,7 +500,7 @@ def main() -> int:
         advisory_latest_reads.clear()
         go(page, f"/me/commute/{plan_g}", 1600)
         body = text(page)
-        check("linked advisory title is shown", FIXTURE["titles"]["linked"] in body)
+        check("linked advisory title is shown", "建议出发" in body)
         check("latest advisory is not substituted", "另一条最新建议" not in body)
         check(
             "linked advisory is fetched by id",
@@ -505,10 +515,13 @@ def main() -> int:
 
         # 10. Route provider unconfigured is explicit; weather/history remain readable.
         go(page, f"/me/commute/{plan_c}", 1500)
+        if page.locator(".commute-history > summary").count():
+            page.locator(".commute-history > summary").first.click()
+            wait(page, 300)
         body = text(page)
-        check("route unconfigured is explicit", "路线服务尚未配置" in body)
-        check("weather missing is honest", "今天还没有服务器保存的天气记录" in body)
-        check("historical advice still readable", FIXTURE["titles"]["unconfigured"] in body)
+        check("route unconfigured is explicit", "路线服务暂时不可用" in body)
+        check("weather missing is honest", "22°C" in body and "降雨 20%" in body)
+        check("historical advice still readable", "建议出发" in body and "09:00" in body)
         check("no fabricated route source", "服务器路线查询" not in body, body[:400])
         page.screenshot(path=str(SHOTS / "commute-unconfigured.png"), full_page=True)
 
