@@ -1,0 +1,65 @@
+name: assistant
+x-backend: &backend
+  image: assistant-api:${ASSISTANT_IMAGE_TAG:-local}
+  build:
+    context: ../..
+    dockerfile: deployments/docker/api.Dockerfile
+  env_file: ${ASSISTANT_ENV_FILE:?Set an absolute private backend env file}
+  environment:
+    ASSISTANT_DATABASE_URL: sqlite+aiosqlite:////data/assistant.db
+    ASSISTANT_ALLOW_SCHEMA_CREATE: "false"
+  volumes:
+    - assistant-data:/data
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  restart: unless-stopped
+  init: true
+services:
+  migrate:
+    <<: *backend
+    command: ["python", "-m", "scripts.migrate_sqlite", "upgrade"]
+    restart: "no"
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:${ASSISTANT_API_PORT:-8010}:8010"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health',timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      retries: 5
+  worker:
+    <<: *backend
+    command: ["python", "-m", "assistant_api.commute.worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+  scheduler:
+    <<: *backend
+    command: ["python", "-m", "assistant_api.commute.scheduler"]
+    depends_on:
+      api:
+        condition: service_healthy
+  web:
+    image: assistant-web:${ASSISTANT_IMAGE_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deployments/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_AMAP_JS_KEY: ${NEXT_PUBLIC_AMAP_JS_KEY:-}
+        NEXT_PUBLIC_AMAP_SECURITY_CODE: ${NEXT_PUBLIC_AMAP_SECURITY_CODE:-}
+    environment:
+      PA_API_URL: http://api:8010
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:${ASSISTANT_WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true
+volumes:
+  assistant-data:

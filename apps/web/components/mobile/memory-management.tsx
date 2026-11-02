@@ -1,4 +1,5 @@
 "use client";
+import { MemoryHistory } from "./memory-history";
 import { useEffect, useRef, useState } from "react";
 import { apiRequest, pa, ApiError } from "@/lib/mobile/api";
 type Typed = Record<string, string | number | number[]> & {
@@ -38,6 +39,7 @@ const options: Record<string, string[]> = { coordinate_system: ["WGS84", "GCJ02"
 const optionLabels: Record<string, string> = { walk: "步行", bicycle: "骑行", transit: "公共交通", drive: "驾车" };
 /** Manage Nexus-owned memory with retained retry keys and exact applied-version undo. */
 export function MemoryManagement() {
+    const [historyId, setHistoryId] = useState<string | null>(null);
     const [page, setPage] = useState<Page | null>(null), [settings, setSettings] = useState<Settings | null>(null), [offset, setOffset] = useState(0);
     const [error, setError] = useState(""), [notice, setNotice] = useState(""), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
     const [editing, setEditing] = useState<Entry | null>(null), [text, setText] = useState(""), [kind, setKind] = useState("");
@@ -129,6 +131,7 @@ export function MemoryManagement() {
         void mutate({ action: editing ? 'correct' : 'save', text, confirmed_sensitive: sensitive, ...(typed ? { typed_data: typed, confirmed_type: confirmedType } : {}), ...(editing ? { entry_id: editing.entry_id, expected_version: editing.version, ...(editing.app_data ? { app_data: editing.app_data } : {}) } : {}) });
     }
     return <div className="m-stack-14">
+  {historyId ? <MemoryHistory key={historyId} entryId={historyId} onClose={() => setHistoryId(null)} /> : null}
   <section className="card m-stack-10" aria-label="个人记忆管理">
    <p>开启时，助手可按当前任务需要读取和保存本应用记忆。关闭后保留记录，停止自动读取和保存。</p>
    {settings ? <button className="btn btn--secondary" disabled={busy || loading} onClick={() => { if (window.confirm(settings.enabled ? '关闭自动读取和保存？已有记忆会保留。' : '开启本应用记忆？'))
@@ -139,7 +142,7 @@ export function MemoryManagement() {
    {loading ? <p role="status">正在读取记忆…</p> : page ? <>
     {!page.items.length ? <p>当前页没有记忆。</p> : page.items.map(entry => <article key={entry.entry_id} className="m-stack-10" style={{ overflowWrap: 'anywhere' }}>
      <p>{entry.text}</p><p className="caption">{entry.status === 'active' ? '有效记忆' : entry.status === 'candidate' ? '待确认' : '已忘记'} · 版本 {entry.version}</p>
-     <div className="flex gap-10"><button className="link-button" disabled={busy} onClick={() => edit(entry)}>纠正</button><button className="link-button" disabled={busy} onClick={() => { if (window.confirm('忘记这条记忆？聊天、日历和事项不会删除。'))
+     <div className="flex gap-10"><button className="link-button" onClick={() => setHistoryId(entry.entry_id)}>历史</button><button className="link-button" disabled={busy} onClick={() => edit(entry)}>纠正</button><button className="link-button" disabled={busy} onClick={() => { if (window.confirm('忘记这条记忆？聊天、日历和事项不会删除。'))
                 void mutate({ action: 'forget', entry_id: entry.entry_id, expected_version: entry.version }); }}>忘记</button><button className="link-button" disabled={busy} onClick={() => setShareEntry(entry)}>共享</button></div>
     </article>)}
     <div className="flex gap-10"><button disabled={busy || offset === 0} onClick={() => void load(Math.max(0, offset - 20)).catch(e => setError(e.message))}>上一页</button><button disabled={busy || page.next_offset === null} onClick={() => void load(page.next_offset!).catch(e => setError(e.message))}>下一页</button></div>

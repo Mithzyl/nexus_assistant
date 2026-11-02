@@ -842,11 +842,23 @@ export interface IntakePendingContext {
   error?: string;
 }
 
+export interface WorkflowError {
+  error_code: string;
+  error_type: string;
+  public_message: string;
+  is_retryable: boolean;
+  outcome_is_known: boolean;
+  details_reference_id: string | null;
+}
+
 export interface MatterIntakeResponse {
+  error?: WorkflowError | null;
+  workflow_execution_id?: string | null;
+  status?: string;
   draft: MatterDraft | null;
   replayed: boolean;
   intent: "matter" | "question";
-  outcome: "answer" | "draft" | "needs_clarification" | "processing" | "unknown";
+  outcome: "answer" | "draft" | "needs_clarification" | "processing" | "unknown" | "failed" | "cancelled";
   message: string | null;
   answer: string | null;
   clarify: string | null;
@@ -856,6 +868,8 @@ export interface MatterIntakeResponse {
 }
 
 export interface MatterIntakeResult {
+  error?: WorkflowError | null;
+  workflow_execution_id?: string | null;
   confirm_status: "confirmed" | "unconfirmed" | "unknown";
   target_lifecycle: "active" | "archived" | "deleted" | "source_revoked" | null;
   target_title: string | null;

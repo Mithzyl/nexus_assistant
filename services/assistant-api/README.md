@@ -276,7 +276,7 @@ PKCE S256属于标准认证校验，没有引入业务内容哈希。
   SQLite 和私有运行配置保存在系统临时目录 `nexus-identity-acceptance-j4asfw92` 及
   `/tmp/assistant-memory-acceptance/state.json`；其中凭据不得提交或复制到文档。
   MySQL/MinIO 合成数据未删除，没有启用自动删除。本次没有修改 Nexus 工作区。
-- 未验证真实供应商的语义提取／去重、手机端，以及 App 完整历史（Nexus 尚无对应接口）。
+- 未验证真实供应商的语义提取／去重、手机端，；App 历史与自动写入回执的后续接入见下节。
   未从自动工具状态推断“已保存”，未实现业务确认后的独立静默写入。
 
 本次修改清单（相对仓库根；这些文件中的既有登录、通勤等差异不归为本次修改）：
@@ -304,3 +304,161 @@ BFF 继续使用已有 `/api/pa/[...path]` 的 memory 路径和会话 Cookie 转
 事项输入原文和授权结构修改后的直接回归：
 `services/assistant-api/.venv/bin/python -m pytest -q services/assistant-api/tests/test_matters.py services/assistant-api/tests/test_matters_v1_rules.py`
 结果为 14 项通过。后端两组共 41 项通过；最后错误码类型校验调整后，记忆相关 7 项再次通过。
+
+
+### 2026-11-01 续接：版本历史与自动写入回执
+
+基于 Nexus 当前工作区已提供的 `history_entry_id` 和 diagnostics `memory_write`，
+Assistant 新增无 Run 历史代理、按当前会话及本地 Run 归属查询回执的代理。
+个人记忆页可分页查看版本；问助手的新、旧问答记录均可展示真实回执并精确撤销。
+回执仅返回条目 ID、写入/当前版本、状态及撤销资格，不下发其他诊断字段。
+未取得回执不宣称保存成功；候选不算有效记忆；撤销始终使用 applied_version。
+
+本轮改动：`routers/memory.py`、`tests/test_memory_management.py`、
+`apps/web/components/mobile/memory-management.tsx`、新增 `memory-history.tsx` 与
+`memory-write-receipts.tsx`、`apps/web/app/(mobile)/ask/page.tsx` 及本说明。
+
+必要验证：
+- `services/assistant-api/.venv/bin/python -m pytest -q services/assistant-api/tests/test_memory_management.py services/assistant-api/tests/test_product_memory_bridge.py`：9 项通过。
+  模拟 HTTP 仅证明会话身份、Run 归属、回执字段白名单、分页和错误传播；不作为真实存储证据。
+- `cd apps/web && npx tsc --noEmit`：通过。
+- 恢复原隔离数据与固定模型服务，没有新建账号或新增模型请求。Chrome 3308 页面读取
+  5 个真实历史版本；打开既有固定模型对话，显示服务端保存回执，点击撤销后版本由 1
+  增至 2、状态为 forgotten，旧回执撤销按钮消失。截图在仓库根
+  `output/playwright/memory-history-20261101.png` 和 `memory-undo-20261101.png`。
+- `verify-browser-undo.py` 再经真实 Assistant/Nexus API 核对 MySQL/MinIO 持久化结果：
+  applied_version 仍为 1、current_version 为 2、can_undo=false；旧版本撤销返回 409；
+  合成账号 B 读取账号 A 历史和回执均被拒绝。没有模型调用。
+- 本轮未重跑已通过的双端共享、解绑和指令测试；原双端浏览器证据见上节。
+
+依赖与边界：Nexus 对应历史/回执实现仍是其已有未提交改动，本轮只读使用，没有修改 Nexus。
+业务确认后的独立静默保存仍需 Nexus 提供可信来源与授权衔接，不能伪造 Run 或确认字段。
+真实供应商语义提取/去重未验证。无回执时允许用户重新核对，不把模型自然语言当成功证据。
+隔离服务继续保留在 3308/3309、18308/18309，仅本机使用；正式服务未切换。
+测试数据和原工作区改动保留；本轮不提交、不推送、不部署。
+
+## Docker 部署
+
+仓库根 `deployments/docker/compose.yml` 包含 Web、API、Worker、Scheduler 和一次性 SQLite 迁移服务。
+后端使用同一个持久卷；API 就绪后启动消费者，容器异常退出自动重启。
+现有数据库迁移前应先做 SQLite 在线备份，不把本机测试库复制到正式环境。
+
+```bash
+# ASSISTANT_ENV_FILE 指向宿主私有后端环境文件（绝对路径），不加入 Git。
+export ASSISTANT_ENV_FILE=/absolute/private/assistant.env
+# 容器中的 Nexus 地址不能使用指向容器自身的 127.0.0.1。
+# Mac 本机 Nexus 可使用 http://host.docker.internal:8000，须核对其监听与可达性。
+docker compose -f deployments/docker/compose.yml build
+docker compose -f deployments/docker/compose.yml up -d
+docker compose -f deployments/docker/compose.yml ps
+```
+
+端口默认仅绑定宿主回环地址 3000/8010，可用 `ASSISTANT_WEB_PORT`、`ASSISTANT_API_PORT` 调整。
+公网使用需由已有 HTTPS 反向代理转发 Web；生产会话 Cookie 为 Secure。
+本机验证可另设 Compose project 名与端口，使用独立数据卷；不覆盖既有服务。
+地图 JS Key 为公开构建参数；生产 overlay 使用 `NEXT_PUBLIC_AMAP_SERVICE_HOST=/_AMapService`，
+地图安全密钥由私有 Nginx 配置追加，不编译进浏览器。Web 服务 Key 与应用凭据仅供后端使用。
+
+2026-11-01 最小 Docker 验证：两镜像构建成功；独立 `assistant-validation` 项目使用
+空数据卷，初始化 39 张表、0 账号。API 健康 200、Web `/login` 200、
+Web BFF `/api/auth/nexus` 200，Worker/Scheduler 心跳均存在。
+验证端口为 13000/18010；没有执行回归、模型调用或额外哈希校验。
+验证配置仅使用临时随机应用令牌，尚未接入正式 Nexus 应用身份，不能作为正式业务部署。
+正式目标主机、访问地址及其私有配置需明确后切换。
+
+
+### 2026-11-01 服务器部署记录
+
+- Assistant 发布目录 `/opt/assistant/releases/20261101-memory`，`/opt/assistant/current` 指向该目录。
+  镜像 `assistant-api:20261101-memory`、`assistant-web:20261101-memory` 由当前含未提交改动的源码快照在服务器 AMD64 构建；未提交或推送。
+- 正式入口 `https://43.134.11.254:8444`，沿用服务器现有自签公网证书。
+  API/Web 回环端口 18011/13001，外部仅 Nginx 8444；主机 UFW 已按用户明确授权放行 TCP 8444。
+- Web、API、Worker、Scheduler 与一次性迁移由本仓库 Compose 管理，数据卷 `assistant_assistant-data`；
+  空库初始化后 0 账号，两个后台组件心跳正常。未导入本机测试库或真实用户数据。
+- 私有配置 `/etc/assistant/api.env`、`compose.env`、`nginx.conf`，均不纳入源码。
+  自助注册需要邀请码，存于 `/etc/assistant/registration-invite.txt`（0600）；不在日志或文档展示。
+- Nexus 原业务镜像保持 `20261101-15dbeae`；本地后续提交仅部署文档，相关记忆接口已在线。
+  仅增加 `personal_assistant` 登记与回调配置，保留其他应用与数据；原配置备份
+  `/opt/assistant/backups/20261101-before`。未复制本机 Nexus 或修改其源码。
+- Nexus 回调使用 Docker 私网 `https://assistant-gateway`，内部证书在服务器生成，
+  保持 TLS 校验；Nexus API/Worker 通过 `/etc/assistant/nexus-overlay.yml` 挂载扩展信任文件。
+  持久化 systemd drop-in 位于 `nexuspilot-runtime-clients.service.d/assistant-ca.conf`，
+  后续维护须保留该 overlay；公网 `/internal/nexus/tools` 返回 404，私网回调正常。
+- 模型绑定生产已启用的 `deepseek/deepseek-flash`，自动付费 AI 调度保持关闭。
+  此次无供应商模型请求；只验证构建、迁移、进程、HTTPS、BFF、应用凭据与回调连通性，未跑回归或额外哈希检查。
+- 后端应用凭据正常识别：缺少外部用户主体时返回 422，未创建虚构用户映射。
+  Nexus→Assistant 私网 HTTPS 健康请求返回 200，Web/API 容器正常。
+- 原始部署日志在服务器 `/tmp/assistant-api-build.log`、`assistant-web-build.log`、
+  `assistant-web-start.log`、`assistant-nexus-private-connect.log`；不输出或复制秘密。
+- 回滚代码时保留数据卷；不可用旧版本覆盖已经产生的新业务数据。
+  内部证书有效期 365 天，届时需更新证书及 Nexus 信任挂载后平稳重启相关服务。
+- 最终公网检查：MacBook Air 直接连接（禁用环境代理、使用服务器公开证书验证）
+  `/login` 返回 200，`/api/auth/nexus` 返回 200 且 enabled=true，
+  `/internal/nexus/tools` 返回 404。原 Nexus 8443 同期返回 200。
+  最初 8444 外部 TLS 失败，腾讯云控制台确认缺少端口规则；用户授权后通过真实 Chrome
+  在指定实例新增唯一 TCP 8444/全部 IPv4/允许规则（Assistant HTTPS），随后上述请求通过。
+  没有修改其他云防火墙规则，截图 `output/playwright/assistant-cloud-port-8444.png`。
+- 浏览器沿用现有自签证书，未替用户绕过浏览器安全警告；如出现警告需用户自行处理信任。
+  生产登录、注册与业务语义未重跑，首个正式账号留待用户建立。
+
+### 2026-11-01 通勤表单地点搜索修复
+
+通勤新建/编辑表单的起终点各使用一个地点搜索框，停止输入 600ms 后从服务端查询高德候选。
+选择候选后整体写入名称、城市、坐标和坐标系；改写名称立即清除旧坐标，避免名称与位置不一致。
+城市和手填坐标收进高级选项；同名地点由用户选择，不自动选第一项。
+后端新增登录态 `GET /api/v1/commute/places?query=...`，复用现有地点 Provider，
+不创建事项草稿或模型 Run；原事项草稿地点接口保持原权限校验。
+必要检查仅包含前端类型检查、一个隔离搜索权限/无副作用测试及实际网页搜索与选择；
+不运行回归、不做额外哈希、不保存测试通勤计划。
+发布镜像标签 `20261101-places`，保留上一版本与数据卷；本次不更改 Nexus。
+- 本次已切换至 `/opt/assistant/releases/20261101-places`，API/Web/Worker/Scheduler
+  使用 `20261101-places` 镜像；切换前 SQLite 在线备份位于数据卷
+  `/data/backups/20261101-before-places.db`，原数据保留。
+- 必要网页验证：正式 Chrome 新建页输入公开地点“柳州市博物馆”，自动返回 5 个真实高德候选，
+  点击“柳州博物馆 · 柳州市 · 解放北路37号”后显示“已确认地点 · 柳州市”；未提交保存计划。
+  截图 `output/playwright/commute-place-candidates.png`。未调用模型，没有运行回归或哈希检查。
+- 必要上线检查发现共享 Docker 网络的 `web` 名称与 Nexus 重名，已在生产 overlay
+  为 Assistant Web 配置唯一 `assistant-web` 别名，私有 Nginx 上游改为同名地址。
+  后续发布应保持此别名，避免误路由到 Nexus Web；没有改动 Nexus 业务代码。
+
+### 2026-11-01 流式错误与 Worker 终态修复
+
+正式发布 `/opt/assistant/releases/20261101-stream`，镜像标签 `20261101-stream`。
+此次仅修改 Assistant，不修改 Nexus 源码。SQLite 在线备份保留于
+`/data/backups/20261101-before-stream.db`，原发布配置与旧镜像保留。
+
+- SSE `error` 帧返回 `error`（Nexus WorkflowErrorRead 六字段）、`status`、`outcome`、
+  `local_run_id`、`workflow_execution_id`。保留已知失败/结果未知/已取消的区别，不回传原始异常。
+- 六字段为 `error_code`、`error_type`、`public_message`、`is_retryable`、
+  `outcome_is_known`、`details_reference_id`；仅传上游实际提供的公开错误，不从文字猜账务状态。
+- Worker 启动的有限事件回放结束后，通过同一工作流 events 与 after_sequence 续读。
+  只首次 POST 创建工作流；后续全为 GET，整体受流式超时约束。
+- 历史读取仅对尚未确定终态的当前用户记录查询已有 Nexus 工作流，不重新运行模型。
+  网页显示真实失败及错误码，未知请求不再显示“修改是否保存”的无关提示。
+- `tests/test_intake_stream_errors.py` 三项必要确定性检查通过，前端类型检查与生产构建通过。
+  HTTP 模拟只证明错误字段、有限事件续读无二次 POST、历史核对与账号隔离，不代表供应商联调。
+- 正式 Chrome 读取此前两次“你好”，实际显示处理失败及 invalid_request；没有发送新消息。
+  截图 `output/playwright/assistant-stream-failure-state.png`。
+- OpenCode Go 切换已获用户授权并完成，实际配置与限制见下节。
+- 本次没有付费模型调用、回归或额外内容哈希检查，没有提交或推送。
+
+
+### 2026-11-01 OpenCode Go 生产绑定
+
+用户明确批准复制本机已有 OpenCode Go API Key 至指定服务器私有配置，并登记 Go 端点。
+实际启用：`opencode / deepseek-v4.1-flash`，Base URL 为
+`https://opencode.ai/inference/go/openai/v1`。Assistant 的 controller 绑定已切换；
+其他供应商配置保留。Nexus API/Worker 和 Assistant API/Worker/Scheduler 已重载配置。
+没有重建镜像、修改 Nexus 源码或运行本地开发专用注册命令。
+
+端点经过现有 URL 校验，模型及能力快照经 Nexus 当前模型目录服务登记，复用本机已有的
+来源元数据；能力快照保持 `live_generation_verified=false`，不是本次真实供应商验证。
+私有配置仅记录在服务器 `/etc/nexuspilot/config/api.env`、`/etc/assistant/api.env`；
+切换前备份为 `/opt/assistant/backups/20261101-opencode`（0700），配置文件0600。
+日志不输出 Key 或完整私密绑定字段，核验只输出是否匹配目标的布尔值。
+
+实际核对：Nexus 已加载 Key、允许指定模型，数据库中端点启用、模型 enabled；
+Assistant 运行时绑定与目标匹配，API 健康、后台组件运行、Nexus systemd 单元 active。
+本次无供应商模型调用，没有付费验证、回归或额外哈希检查；凭据是否被供应商接受及
+真实生成质量未在本次验证。切换作用于之后创建的 Run，历史失败记录与固定绑定不改写，
+不会自动重跑旧失败请求。未提交或推送代码。

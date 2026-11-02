@@ -3,6 +3,7 @@
 /** Editable commute plan form with the same validation as the server schema. */
 
 import { useState } from "react";
+import { CommutePlaceInput } from "./commute-place-input";
 
 import type { CommutePlanDraft } from "@/lib/mobile/api";
 
@@ -56,7 +57,7 @@ function validate(draft: CommutePlanDraft): string | null {
   }
   for (const point of [draft.origin, draft.destination]) {
     if (point.latitude === 0 && point.longitude === 0) {
-      return "请手动填写起点和终点的真实经纬度；浏览器不会自动定位，也不会生成占位坐标。";
+      return "请搜索并选择起点和终点，也可以使用当前位置。";
     }
     if (point.latitude < -90 || point.latitude > 90) return "纬度应在 -90–90。";
     if (point.longitude < -180 || point.longitude > 180) return "经度应在 -180–180。";
@@ -117,7 +118,7 @@ export function CommuteForm({
       },
       () => {
         setGeoBusy(null);
-        setGeoError("没有取得当前位置。拒绝定位不影响使用已保存地点或手动填写坐标。");
+        setGeoError("没有取得当前位置。仍可搜索并选择地点。");
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
@@ -302,57 +303,12 @@ export function CommuteForm({
             </div>
           ) : (
             <p className="field__hint" style={{ marginTop: 4 }}>
-              还没有已保存地点；请手动填写，或使用当前位置。
+              搜索具体地点，或使用当前位置。
             </p>
           )}
 
-          <label className="field">
-            <span className="field__label">城市（公交使用；留空时按坐标查询）</span>
-            <input className="input" value={draft[key].city ?? ""}
-              onChange={(event) => set(key, { ...draft[key], city: event.target.value.trim() || null })} />
-          </label>
-          <label className="field" htmlFor={`${key}-label`}>
-            <input
-              id={`${key}-label`}
-              className="input"
-              value={draft[key].label}
-              placeholder="地点名称（仅你可见）"
-              onChange={(event) =>
-                set(key, { ...draft[key], label: event.target.value })
-              }
-            />
-          </label>
-          <p className="field__hint" style={{ marginTop: -4 }}>
-            浏览器没有地图选点，请输入真实坐标。
-          </p>
-          <div className="flex gap-10">
-            <label className="field grow" htmlFor={`${key}-lat`}>
-              <span className="field__label">纬度</span>
-              <input
-                id={`${key}-lat`}
-                className="input"
-                type="number"
-                step="0.000001"
-                value={draft[key].latitude}
-                onChange={(event) =>
-                  set(key, { ...draft[key], latitude: Number(event.target.value) })
-                }
-              />
-            </label>
-            <label className="field grow" htmlFor={`${key}-lng`}>
-              <span className="field__label">经度</span>
-              <input
-                id={`${key}-lng`}
-                className="input"
-                type="number"
-                step="0.000001"
-                value={draft[key].longitude}
-                onChange={(event) =>
-                  set(key, { ...draft[key], longitude: Number(event.target.value) })
-                }
-              />
-            </label>
-          </div>
+          <CommutePlaceInput id={key} title={key === "origin" ? "起点" : "终点"}
+            value={draft[key]} onChange={point => set(key, point)} />
         </div>
       ))}
 
@@ -382,7 +338,7 @@ export function CommuteForm({
       <div className="notice mt-12">
         <strong>路线与出发时间</strong>
         <p style={{ margin: "4px 0 0" }}>
-          填写起终点与坐标后，路线和出发时间会由服务计算；也可以直接手动填写常用地点。
+          选择起点和终点后，路线和建议出发时间由服务器测算。
         </p>
       </div>
 

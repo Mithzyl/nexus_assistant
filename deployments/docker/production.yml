@@ -1,0 +1,35 @@
+services:
+  api:
+    networks:
+      default:
+      nexus:
+        aliases: [assistant-api]
+  worker:
+    networks: [default, nexus]
+  scheduler:
+    networks: [default, nexus]
+  web:
+    networks:
+      default:
+        aliases: [assistant-web]
+    build:
+      args:
+        NEXT_PUBLIC_AMAP_SERVICE_HOST: /_AMapService
+        NEXT_PUBLIC_AMAP_SECURITY_CODE: ""
+  nginx:
+    image: nginx:1.28-alpine
+    ports: ["8444:443"]
+    volumes:
+      - ${ASSISTANT_NGINX_CONFIG:?Set private nginx config}:/etc/nginx/conf.d/default.conf:ro
+      - /etc/nexuspilot/tls:/etc/nginx/tls:ro
+      - /etc/assistant/tls:/etc/assistant/tls:ro
+    depends_on: [web, api]
+    restart: unless-stopped
+    networks:
+      default:
+      nexus:
+        aliases: [assistant-gateway]
+networks:
+  nexus:
+    external: true
+    name: nexuspilot_application

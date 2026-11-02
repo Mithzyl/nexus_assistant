@@ -121,3 +121,56 @@ async def test_shared_consent_precedes_workflow_and_cannot_change_on_retry(harne
         assert r.status_code==409
     finally:
         await nexus._client.aclose();nexus._client=old
+
+@pytest.mark.asyncio
+async def test_history_and_receipts_are_scoped_and_projected(harness):
+    h=harness; calls=[]
+    async def upstream(request):
+        calls.append(request)
+        assert request.headers['x-external-user-id']==h.user_a
+        return httpx.Response(200,json={'entry_id':str(uuid4()),'current_version':2,'items':[],'next_offset':None})
+    nexus=h.app.state.nexus_client;old=nexus._client
+    nexus._client=httpx.AsyncClient(base_url='http://nexus.test',transport=httpx.MockTransport(upstream))
+    try:
+        response=await h.client.get('/api/v1/memory/history/'+str(uuid4())+'?offset=20',headers=auth(h.token_a))
+        assert response.status_code==200
+        assert calls[-1].url.params['offset']=='20'
+        assert 'history_entry_id' in calls[-1].url.params
+        count=len(calls)
+        response=await h.client.get('/api/v1/memory/writes/'+str(uuid4()),headers=auth(h.token_a))
+        assert response.status_code==404 and len(calls)==count
+    finally:
+        await nexus._client.aclose();nexus._client=old
+
+
+@pytest.mark.asyncio
+async def test_receipts_hide_diagnostics_and_reject_other_run_owner(harness):
+    from assistant_api.models import NexusRun
+    h = harness
+    local, remote, entry = str(uuid4()), str(uuid4()), str(uuid4())
+    async with h.app.state.session_factory() as db:
+        db.add(NexusRun(local_run_id=local, nexus_run_id=remote, user_id=h.user_a,
+                        idempotency_key='receipt-test', request_text='fixture'))
+        await db.commit()
+    calls = []
+    receipt = dict(entry_id=entry, applied_version=1, current_version=2,
+                   status='active', can_undo=False)
+    async def upstream(request):
+        calls.append(request)
+        assert request.headers['x-external-user-id'] == h.user_a
+        assert request.url.path == f'/api/v1/app/runs/{remote}/diagnostics'
+        assert request.url.params['after_tool_call_id'] == 'cursor'
+        return httpx.Response(200, json={'private': 'hidden', 'tools': {
+            'items': [{'tool_call_id': 'write', 'status': 'failed',
+                       'memory_write': {**receipt, 'private': 'hidden'}, 'arguments': 'hidden'},
+                      {'tool_call_id': 'read', 'result': 'hidden'}], 'next_cursor': 'next'}})
+    nexus = h.app.state.nexus_client; old = nexus._client
+    nexus._client = httpx.AsyncClient(base_url='http://nexus.test', transport=httpx.MockTransport(upstream))
+    try:
+        r = await h.client.get(f'/api/v1/memory/writes/{local}', headers=auth(h.token_b))
+        assert r.status_code == 404 and not calls
+        r = await h.client.get(f'/api/v1/memory/writes/{local}?after_tool_call_id=cursor', headers=auth(h.token_a))
+        assert r.status_code == 200
+        assert r.json() == {'items': [{'tool_call_id': 'write', **receipt}], 'next_cursor': 'next'}
+    finally:
+        await nexus._client.aclose(); nexus._client = old

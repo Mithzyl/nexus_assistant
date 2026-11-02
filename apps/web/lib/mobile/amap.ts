@@ -83,7 +83,7 @@ declare global {
 const SCRIPT_ID = "superapp-amap-jsapi";
 
 /** Read the public browser map settings without exposing them in error text. */
-function amapConfig(): { key: string; securityJsCode: string } {
+function amapConfig(): { key: string; securityJsCode?: string; serviceHost?: string } {
   const key = process.env.NEXT_PUBLIC_AMAP_JS_KEY?.trim() ?? "";
   const securityJsCode =
     process.env.NEXT_PUBLIC_AMAP_SECURITY_CODE?.trim() ?? "";
@@ -92,12 +92,14 @@ function amapConfig(): { key: string; securityJsCode: string } {
       "地图配置缺失：需要 Web 端 JS API Key（NEXT_PUBLIC_AMAP_JS_KEY）。",
     );
   }
-  if (!securityJsCode) {
+  const serviceHost = process.env.NEXT_PUBLIC_AMAP_SERVICE_HOST?.trim();
+  if (serviceHost && !/^\/(?!\/)[A-Za-z0-9/_-]+$/.test(serviceHost)) throw new Error("地图代理地址无效。");
+  if (!securityJsCode && !serviceHost) {
     throw new Error(
       "地图配置缺失：需要与该 Key 配套的 Web 端安全密钥（NEXT_PUBLIC_AMAP_SECURITY_CODE）。",
     );
   }
-  return { key, securityJsCode };
+  return { key, ...(serviceHost ? {serviceHost} : {securityJsCode}) };
 }
 
 /**
@@ -114,14 +116,14 @@ export function loadAmap(): Promise<AMapNamespace> {
   if (window.AMap) return Promise.resolve(window.AMap);
   if (window.__superappAmapLoader) return window.__superappAmapLoader;
 
-  let config: { key: string; securityJsCode: string };
+  let config: { key: string; securityJsCode?: string; serviceHost?: string };
   try {
     config = amapConfig();
   } catch (caught) {
     return Promise.reject(caught);
   }
-  const { key, securityJsCode } = config;
-  window._AMapSecurityConfig = { securityJsCode };
+  const { key, securityJsCode, serviceHost } = config;
+  window._AMapSecurityConfig = serviceHost ? { serviceHost: window.location.origin + serviceHost } : { securityJsCode };
 
   const promise = new Promise<AMapNamespace>((resolve, reject) => {
     const existing = document.getElementById(SCRIPT_ID) as

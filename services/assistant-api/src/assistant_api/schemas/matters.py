@@ -309,11 +309,14 @@ class IntakeRequest(BaseModel):
 
 
 class IntakeResponse(BaseModel):
+    status: str | None = None
+    error: dict | None = None
+    workflow_execution_id: str | None = None
     draft: DraftRead | None = None
     replayed: bool = False
     intent: Literal["matter", "question"] = "matter"
     outcome: Literal[
-        "answer", "draft", "needs_clarification", "processing", "unknown"
+        "answer", "draft", "needs_clarification", "processing", "unknown", "failed", "cancelled"
     ] = "draft"
     message: str | None = None
     answer: str | None = None
@@ -324,6 +327,8 @@ class IntakeResponse(BaseModel):
 
 
 class IntakeResultRead(BaseModel):
+    error: dict | None = None
+    workflow_execution_id: str | None = None
     confirm_status: Literal["confirmed", "unconfirmed", "unknown"] = "unknown"
     target_lifecycle: Literal["active", "archived", "deleted", "source_revoked"] | None = None
     target_title: str | None = None

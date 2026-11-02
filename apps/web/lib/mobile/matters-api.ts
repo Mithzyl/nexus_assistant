@@ -2,6 +2,8 @@
 
 import {
   apiRequest,
+  ApiError,
+  type WorkflowError,
   pa,
   type DraftConfirmInput,
   type DraftConfirmResponse,
@@ -346,6 +348,27 @@ export function newOperationKey(prefix: string): string {
   return `${prefix}-${random}`.slice(0, 128);
 }
 
+export class IntakeStreamError extends ApiError {
+  localRunId: string | null;
+  workflowExecutionId: string | null;
+  outcome: string;
+  workflowError: WorkflowError;
+  constructor(data: {error: WorkflowError; local_run_id?: string | null; workflow_execution_id?: string | null; outcome?: string}) {
+    const e = data.error;
+    super(e.outcome_is_known ? 502 : 504, e.error_code, e.public_message, e.is_retryable);
+    this.workflowError = e;
+    this.localRunId = data.local_run_id ?? null;
+    this.workflowExecutionId = data.workflow_execution_id ?? null;
+    this.outcome = data.outcome ?? (e.outcome_is_known ? "failed" : "unknown");
+  }
+}
+
+function interruptedStream(): IntakeStreamError {
+  return new IntakeStreamError({error:{error_code:"assistant_stream_interrupted",error_type:"transport_error",
+    public_message:"连接已中断，暂未取得最终结果。输入已保留，请核对本次请求。",
+    is_retryable:false,outcome_is_known:false,details_reference_id:null}});
+}
+
 export async function streamIntakeMatter(text: string, idempotencyKey: string,
   continuationRunId: string | null | undefined,
   memoryDisclosures: import("@/components/mobile/account-memory").SelectedMemory[],
@@ -355,7 +378,12 @@ export async function streamIntakeMatter(text: string, idempotencyKey: string,
     body: JSON.stringify({ text, idempotency_key: idempotencyKey,
       continuation_run_id: continuationRunId, memory_disclosures: memoryDisclosures }),
   });
-  if (!response.ok || !response.body) throw new Error("暂时无法连接助手，请保留本次输入重试。");
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new ApiError(response.status, body?.error?.code ?? "assistant_connection_failed",
+      body?.error?.message ?? "暂时无法连接助手，请保留本次输入。", body?.error?.retryable === true);
+  }
+  if (!response.body) throw interruptedStream();
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -372,9 +400,15 @@ export async function streamIntakeMatter(text: string, idempotencyKey: string,
         const data = JSON.parse(raw);
         if (type === "answer") onAnswer(data.text);
         if (type === "result") return data as MatterIntakeResponse;
-        if (type === "error") throw new Error(data.message);
+        if (type === "error") {
+          if (data.error) throw new IntakeStreamError(data);
+          throw interruptedStream();
+        }
       }
-      if (done) throw new Error("连接已中断，输入和操作标识已保留，请核对原结果或重试同一次操作。");
+      if (done) throw interruptedStream();
     }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw interruptedStream();
   } finally { reader.releaseLock(); }
 }

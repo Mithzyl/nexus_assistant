@@ -71,6 +71,16 @@ class WorkflowCreateRequest(StrictRequest):
     stream: bool = True
 
 
+class WorkflowErrorRead(UpstreamModel):
+    """Nexus public error contract; never expose raw provider error bodies."""
+    error_code: str
+    error_type: str = "workflow_error"
+    public_message: str = "AI 服务未能完成这次请求。"
+    is_retryable: bool = False
+    outcome_is_known: bool = False
+    details_reference_id: str | None = None
+
+
 class WorkflowView(UpstreamModel):
     """Workflow identity and status; other summary fields are deliberately ignored."""
 
@@ -78,6 +88,7 @@ class WorkflowView(UpstreamModel):
     run_id: str
     status: str
     completed_at: datetime | None = None
+    error: WorkflowErrorRead | None = None
 
 
 class WorkflowResultView(UpstreamModel):
@@ -87,7 +98,7 @@ class WorkflowResultView(UpstreamModel):
     run_id: str
     status: RemoteWorkflowStatus
     final_output: dict | None = None
-    error: dict | None = None
+    error: WorkflowErrorRead | None = None
 
 
 class MemoryQueryRequest(StrictRequest):

@@ -11,6 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { MemoryWriteReceipts } from "@/components/mobile/memory-write-receipts";
 import type { AskItem } from "@/components/mobile/ask-store";
 import { isVisibleChat, useAskStore } from "@/components/mobile/ask-store";
 import { Markdown } from "@/components/mobile/markdown";
@@ -29,6 +30,7 @@ import {
   confirmSummary,
   getIntakeResult,
   streamIntakeMatter,
+  IntakeStreamError,
   listDrafts,
   listIntakeResults,
   newOperationKey,
@@ -499,6 +501,13 @@ export default function AskPage() {
       }
     } catch (caught) {
       setDraft(value);
+      if (caught instanceof IntakeStreamError) {
+        if (caught.localRunId) setRecoveryRunId(caught.localRunId);
+        if (caught.workflowError.outcome_is_known) setComposerError(caught.message);
+        else setOperationFailure(caught.message);
+        void refreshServerIntake();
+        return;
+      }
       if (
         caught instanceof ApiError &&
         (caught.status >= 500 ||
@@ -720,8 +729,10 @@ export default function AskPage() {
                 <div className="mt-8">
                   {historyNote ? <p className="body-text" style={{ margin: 0 }}>{historyNote}</p> : null}
                   {historyNote && serverItem && item.history_target_id ? <Link href={`/matters/${item.history_target_id}`} className="micro">{lifecycle === "archived" ? "查看归档记录" : "查看事项"}</Link> : null}
-                  {outcome === "unknown" && !historyLabel ? <><p>未能确认这次调整是否保存，请前往「今天」或「事项」页核对最新安排</p><Link href="/today">去核对</Link></> : null}
+                  {outcome === "unknown" && !historyLabel ? <><p>本次请求暂未取得最终结果。输入已保留，请核对本次请求。</p></> : null}
+                  {serverItem && item.error && (outcome === "failed" || outcome === "unknown") ? <div role="status"><p>{item.error.public_message}</p><span className="micro">错误码：{item.error.error_code}{item.error.is_retryable ? " · 可稍后重试" : ""}</span></div> : null}
                   {answer ? <Markdown source={answer} /> : null}
+                  {serverRunId && serverItem && item.status !== "pending" && item.status !== "running" ? <MemoryWriteReceipts runId={serverRunId} /> : null}
                   {clarify ? <p className="body-text" style={{ margin: 0 }}>{clarify}</p> : null}
                   {pendingContext?.missing_information?.length ? (
                     <div className="chip-row mt-8">
@@ -877,6 +888,7 @@ export default function AskPage() {
                       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
                     }}
                   />
+                  {!concealed && item.serverId && ["succeeded", "failed", "cancelled"].includes(item.phase) ? <MemoryWriteReceipts runId={item.serverId} /> : null}
                 </div>
               </div>
             );

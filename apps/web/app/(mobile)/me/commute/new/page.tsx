@@ -55,7 +55,7 @@ export default function NewCommutePage() {
   };
 
   return (
-    <PageShell title="新建通勤计划" subtitle="地点坐标需手动填写；浏览器不生成路线。">
+    <PageShell title="新建通勤计划" subtitle="搜索并选择起点、终点，服务器将据此测算通勤路线。">
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录后保存通勤计划" body="登录账号后，通勤计划会同步到云端。">
           <Link href="/login" className="btn btn--primary">登录</Link>

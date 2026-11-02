@@ -23,7 +23,9 @@ from assistant_api.core.deps import (
 )
 from assistant_api.schemas import matters as schemas
 from assistant_api.core.errors import InvalidRequestError, NotFoundError
-from assistant_api.models import ScheduleEvent
+from assistant_api.models import ScheduleEvent, NexusRun
+from assistant_api.services.intake_failures import public_failure
+from assistant_api.services import run_service
 from assistant_api.services import commute_estimate, commute_places, matters, schedule_routes, commute_bundle
 
 router = APIRouter(prefix="/api/v1", tags=["matters"])
@@ -43,7 +45,18 @@ def _intake_response(
         response.status_code = 200
     elif outcome == "draft":
         response.status_code = 201
+    elif outcome == "failed":
+        response.status_code = 502
+    elif outcome == "unknown":
+        response.status_code = 504
+    elif outcome == "processing":
+        response.status_code = 202
+    elif outcome == "cancelled":
+        response.status_code = 200
     return {
+        "error": result.get("error"),
+        "status": result.get("status"),
+        "workflow_execution_id": result.get("workflow_execution_id"),
         "draft": result.get("draft"),
         "replayed": bool(result.get("replayed")),
         "intent": result.get("intent", "matter"),
@@ -67,20 +80,21 @@ def _intake_response(
 async def list_intake_results(
     db: DatabaseSession,
     user: CurrentUser,
+    client: NexusClient,
     limit: int = Query(default=20, ge=1, le=50),
 ) -> list[dict]:
     """List the caller's unified input operations, including unfinished runs."""
 
-    return await matters.list_intake_results(db, user, limit=limit)
+    return await matters.list_intake_results(db, user, limit=limit, client=client)
 
 
 @router.get("/matters/intake/{local_run_id}", response_model=schemas.IntakeResultRead)
 async def get_intake_result(
-    local_run_id: str, db: DatabaseSession, user: CurrentUser
+    local_run_id: str, db: DatabaseSession, user: CurrentUser, client: NexusClient
 ) -> dict:
     """Reload one answer, clarification, draft or unresolved processing state."""
 
-    return await matters.get_intake_result(db, user, local_run_id)
+    return await matters.get_intake_result(db, user, local_run_id, client=client)
 
 
 @router.post("/matters/intake/stream")
@@ -110,9 +124,23 @@ async def intake_stream(request: Request, payload: schemas.IntakeRequest,
                     text=payload.text, idempotency_key=payload.idempotency_key,
                     continuation_run_id=payload.continuation_run_id,
                     memory_disclosures=[item.model_dump() for item in payload.memory_disclosures])
-                queue.put_nowait(("result", _intake_response(result=result, response=Response())))
-        except Exception:
-            queue.put_nowait(("error", {"message": "本次连接未能取得完整结果，请用同一次操作核对或重试。"}))
+                if result["outcome"] in {"failed", "unknown", "cancelled"}:
+                    queue.put_nowait(("error", {k: result.get(k) for k in ("error", "status", "outcome", "local_run_id", "workflow_execution_id")}))
+                else:
+                    queue.put_nowait(("result", _intake_response(result=result, response=Response())))
+        except Exception as exc:
+            failure = public_failure(None, exc)
+            try:
+                async with request.app.state.session_factory() as db:
+                    row = await db.scalar(select(NexusRun).where(
+                        NexusRun.user_id == user.user_id,
+                        NexusRun.idempotency_key == f"matter-intake:{payload.idempotency_key}"))
+                    if row is not None and row.workflow_execution_id and row.status in {"pending", "running", "unknown"}:
+                        row = await run_service.refresh_run(db, client, user=user, row=row)
+                    failure = public_failure(row, exc)
+            except Exception:
+                pass  # Preserve the structured unknown result if reconciliation also fails.
+            queue.put_nowait(("error", failure))
         finally:
             sink.reset(token)
             queue.put_nowait(None)

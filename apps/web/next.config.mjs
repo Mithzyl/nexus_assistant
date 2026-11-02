@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Phase 1: dev mode only, no static export yet
-  // output: 'export', // Will enable after Phase 1 for Web standalone build
+  output: 'standalone',
+  experimental: { outputFileTracingRoot: new URL('../..', import.meta.url).pathname },
   images: {
     unoptimized: true, // Required for static export later
   },

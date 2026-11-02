@@ -126,7 +126,7 @@ export default function CommutePage() {
             </div>
 
             <Notice title="使用提示">
-              网页版支持地点候选、驾车与公交路线；手动新建计划时需要填写地点坐标。
+              支持搜索地点候选、驾车与公交路线；新建计划时请选择具体起点和终点。
             </Notice>
           </>
         ) : null}

@@ -682,6 +682,9 @@ async def _consume_workflow(
         if workflow_id is None:
             raise NexusProtocolError("workflow stream did not expose a workflow id")
         if terminal_status not in TERMINAL_STATUSES:
+            summary = await client.get_workflow_summary(external_user_id, workflow_id)
+            terminal_status = map_workflow_status(summary.status)
+        if terminal_status not in TERMINAL_STATUSES:
             async with session_factory() as db:
                 await record_progress(
                     db,
@@ -824,7 +827,11 @@ async def _persist_result(
     payload: dict[str, Any] = {"workflow_status": result.status}
     if isinstance(final_text, str) and final_text:
         payload["final_text"] = final_text
-    error = result.error if isinstance(result.error, dict) else None
+    error = result.error.model_dump() if result.error is not None else None
+    if error:
+        payload["error"] = error
+    elif row.status in {"succeeded", "failed", "cancelled"}:
+        row.error_code = None
     if error and isinstance(error.get("error_code"), str):
         row.error_code = error["error_code"]
         payload["error_code"] = error["error_code"]

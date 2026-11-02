@@ -45,6 +45,7 @@ from assistant_api.models.base import new_id
 from assistant_api.nexus_client import NexusPilotClient
 from assistant_api.schemas import matters as schemas
 from assistant_api.services import ai_tasks, matter_plan, run_service, schedule_routes
+from assistant_api.services.intake_failures import public_failure
 from assistant_api.services.matter_conflicts import can_edit_schedule, evaluate_conflict
 
 
@@ -1393,7 +1394,7 @@ def _resolved_outcome(run: NexusRun, resolution: dict, draft: MatterDraft | None
 
 
 async def get_intake_result(
-    db: AsyncSession, user: User, local_run_id: str
+    db: AsyncSession, user: User, local_run_id: str, *, client=None
 ) -> dict:
     run = await db.scalar(
         select(NexusRun).where(
@@ -1404,6 +1405,8 @@ async def get_intake_result(
     )
     if run is None:
         raise NotFoundError("intake_result_not_found", "统一输入结果不存在。")
+    if client is not None and run.workflow_execution_id and run.status in {"unknown", "pending", "running"}:
+        run = await run_service.refresh_run(db, client, user=user, row=run)
     draft = await _visible_intake_draft(db, user, run.local_run_id)
     resolution = _intake_resolution(run)
     outcome = _resolved_outcome(run, resolution, draft)
@@ -1442,6 +1445,8 @@ async def get_intake_result(
         "intent": resolution.get("intent") or "matter",
         "outcome": outcome,
         "status": run.status,
+        "workflow_execution_id": run.workflow_execution_id,
+        "error": public_failure(run)["error"] if outcome in {"failed", "unknown", "cancelled"} else None,
         "answer": resolution.get("answer") if outcome == "answer" else None,
         "clarify": (
             None
@@ -1473,7 +1478,7 @@ async def get_intake_result(
 
 
 async def list_intake_results(
-    db: AsyncSession, user: User, *, limit: int = 20
+    db: AsyncSession, user: User, *, limit: int = 20, client=None
 ) -> list[dict]:
     runs = (
         await db.scalars(
@@ -1486,7 +1491,7 @@ async def list_intake_results(
             .limit(limit)
         )
     ).all()
-    return [await get_intake_result(db, user, run.local_run_id) for run in runs]
+    return [await get_intake_result(db, user, run.local_run_id, client=client) for run in runs]
 
 
 async def _continuation_context(
@@ -1752,7 +1757,7 @@ async def intake(
         error.retryable = True
         raise error
     if run.status != "succeeded":
-        raise AssistantError("matter_ai_failed", "事项整理失败，请稍后重试。", 502)
+        return await get_intake_result(db, user, run.local_run_id)
 
     assert context is not None
     try:

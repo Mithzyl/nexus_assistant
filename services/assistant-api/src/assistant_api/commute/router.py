@@ -65,6 +65,22 @@ def _etag(revision: int) -> str:
     return f'"{revision}"'
 
 
+
+@router.get("/commute/places")
+async def search_commute_plan_places(
+    runtime: CommuteRuntimeDependency,
+    settings: SettingsDependency,
+    user: CurrentUser,
+    query: str = Query(min_length=2, max_length=255),
+) -> dict:
+    """Search plan locations without creating a matter draft or model Run."""
+    from assistant_api.services.commute_places import search_places
+    return await search_places(
+        runtime, secret=settings.tool_callback_token.get_secret_value(),
+        user_id=user.user_id, draft_id="commute-plan-location", query=query,
+        city=None, search_type="place", limit=5,
+    )
+
 @router.get("/commute/runtime", response_model=RuntimeRead)
 async def get_commute_runtime(
     db: DatabaseSession,

@@ -163,3 +163,38 @@ async def disclose_shared(payload: SharedDisclosureCommand, db: DatabaseSession,
     run_id = await resolve_memory_run(db, user.user_id, payload.local_run_id)
     return await client._post(f"/api/v1/app/runs/{run_id}/shared-memory-disclosures",
                              payload.model_dump(exclude={"local_run_id"}), external_user_id=user.user_id)
+
+
+@router.get("/history/{entry_id}")
+async def memory_history(user: CurrentUser, client: NexusClient,
+                         entry_id: str, offset: int = Query(0, ge=0, le=10000),
+                         limit: int = Query(20, ge=1, le=50)):
+    """Read Nexus-owned history without provisioning a Run or accepting an owner."""
+    from uuid import UUID
+    try:
+        UUID(entry_id)
+    except ValueError:
+        from assistant_api.core.errors import InvalidRequestError
+        raise InvalidRequestError("invalid_memory_id", "记忆编号无效。") from None
+    return await client._get("/api/v1/app/me/user-memories?" + urlencode({
+        "history_entry_id": entry_id, "offset": offset, "limit": limit}), external_user_id=user.user_id)
+
+
+@router.get("/writes/{local_run_id}")
+async def memory_writes(local_run_id: str, db: DatabaseSession, user: CurrentUser,
+                        client: NexusClient, after_tool_call_id: str | None = Query(None, max_length=128)):
+    """Expose only committed write receipts, not diagnostics or model-generated claims."""
+    run_id = await resolve_memory_run(db, user.user_id, local_run_id)
+    params = {"limit": 20}
+    if after_tool_call_id:
+        params["after_tool_call_id"] = after_tool_call_id
+    result = await client._get(f"/api/v1/app/runs/{run_id}/diagnostics?" + urlencode(params), external_user_id=user.user_id)
+    page = result.get("tools") or {}
+    receipts = []
+    for tool in page.get("items", []):
+        write = tool.get("memory_write")
+        if not isinstance(write, dict):
+            continue
+        receipts.append({"tool_call_id": tool["tool_call_id"], **{
+            k: write.get(k) for k in ("entry_id", "applied_version", "current_version", "status", "can_undo")}})
+    return {"items": receipts, "next_cursor": page.get("next_cursor")}
