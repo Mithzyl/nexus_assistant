@@ -52,14 +52,14 @@ export const CHECK_STATUS_LABEL: Record<PendingState, string> = {
 
 /** Keep phase text factual; a missing phase is not "analyzing". */
 export const CHECK_PHASE_LABEL: Record<CheckPhase, string> = {
-  queued: "等待后台领取",
-  fetching_route: "正在等待路线结果",
+  queued: "已提交，马上开始",
+  fetching_route: "正在查路线和路况",
   fetching_weather: "正在核对通勤时段天气",
-  analyzing: "正在整理出发建议",
-  saving: "保存结果",
-  retry_wait: "数据暂未返回，后台正在安排重试",
-  done: "已结束",
-  failed: "已失败",
+  analyzing: "正在整理出发时间",
+  saving: "正在保存这次结果",
+  retry_wait: "路线数据还没回来，稍后自动重试",
+  done: "已经完成",
+  failed: "没有完成",
   cancelled: "已取消",
 };
 

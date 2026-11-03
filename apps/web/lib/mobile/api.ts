@@ -835,7 +835,27 @@ export interface IntakeScheduleCandidate {
   location: string | null;
 }
 
+export interface ResponseImage { src: string; alt: string; caption?: string }
+export interface ResponseField { label: string; value: string | number | boolean | null; format?: "text" | "datetime" | "date" | "time" | "number" }
+export interface ResponseTimelineItem {
+  title: string; subtitle?: string; time?: string; description?: string; category?: string;
+  image?: ResponseImage; fields?: ResponseField[]; link?: { label: string; href: string }; connector?: string;
+}
+export type ResponseBlock =
+  | { type: "text"; text: string }
+  | { type: "fields"; items: ResponseField[] }
+  | ({ type: "image" } & ResponseImage)
+  | { type: "timeline"; items: ResponseTimelineItem[] };
+export interface EmbeddedCard {
+  kind: "result" | "plan" | "info"; title: string; subtitle?: string;
+  status: "completed" | "failed" | "unknown" | "suggestion" | "info";
+  blocks: ResponseBlock[];
+}
+
 export interface IntakePendingContext {
+  cards?: EmbeddedCard[];
+  choices?: string[];
+  execution_result?: { status: "succeeded" | "failed" | "unknown"; http_status: number; data: unknown } | null;
   missing_information?: string[];
   schedule_candidates?: IntakeScheduleCandidate[];
   pending?: Record<string, unknown>;
@@ -851,7 +871,83 @@ export interface WorkflowError {
   details_reference_id: string | null;
 }
 
+export type IntakeSource = "chat" | "follow_up";
+
+export interface FollowUpReference {
+  name: string;
+  operation_id: string;
+  path_parameters: Record<string, unknown>;
+  query_parameters: Record<string, unknown>;
+  result_pointer: string;
+  match: Record<string, string | number | boolean>;
+}
+
+export interface FollowUpTrigger {
+  kind: "time" | "record_changed";
+  at?: string | null;
+  source?: { reference: string; field: string } | null;
+  offset_seconds?: number;
+  reference?: string | null;
+  fields?: string[];
+}
+
+export interface FollowUpStopCondition {
+  reference: string;
+  field: string;
+  operator: "eq" | "ne";
+  value: string | number | boolean | null;
+}
+
+export type FollowUpState = "enabled" | "paused" | "closed";
+export type FollowUpExecutionState =
+  | "queued"
+  | "running"
+  | "waiting_user"
+  | "succeeded"
+  | "failed"
+  | "unknown"
+  | "skipped";
+
+export interface FollowUpRead {
+  follow_up_id: string;
+  matter_id: string;
+  title: string;
+  instruction: string;
+  state: FollowUpState;
+  version: number;
+  execution_mode: "evaluate" | "execute";
+  references: FollowUpReference[];
+  trigger: FollowUpTrigger;
+  stop_when: FollowUpStopCondition[];
+  next_trigger_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FollowUpExecutionRead {
+  execution_id: string;
+  follow_up_id: string;
+  state: FollowUpExecutionState;
+  local_run_id: string | null;
+  created_at: string;
+}
+
+export interface FollowUpPatchInput {
+  expected_version: number;
+  title?: string;
+  instruction?: string;
+  state?: FollowUpState;
+  execution_mode?: "evaluate" | "execute";
+  trigger?: FollowUpTrigger;
+  references?: FollowUpReference[];
+  stop_when?: FollowUpStopCondition[];
+}
+
 export interface MatterIntakeResponse {
+  source?: IntakeSource;
+  matter_id?: string | null;
+  follow_up_id?: string | null;
+  follow_up_execution_id?: string | null;
   error?: WorkflowError | null;
   workflow_execution_id?: string | null;
   status?: string;
@@ -868,6 +964,9 @@ export interface MatterIntakeResponse {
 }
 
 export interface MatterIntakeResult {
+  source?: IntakeSource;
+  follow_up_id?: string | null;
+  follow_up_execution_id?: string | null;
   error?: WorkflowError | null;
   workflow_execution_id?: string | null;
   confirm_status: "confirmed" | "unconfirmed" | "unknown";

@@ -19,6 +19,7 @@ const TABS = [
 ];
 
 function isActive(pathname: string, href: string): boolean {
+  if (pathname.startsWith("/me/commute")) return href === "/today";
   if (href === "/today") return pathname === "/today" || pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
 }

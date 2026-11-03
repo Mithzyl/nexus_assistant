@@ -179,8 +179,8 @@ def main() -> int:
 
         # 1. Route is available, worker never reported, task still queued.
         body = text(page)
-        check("not_seen is labelled separately", "尚未收到执行程序的响应" in body)
-        check("queued task remains waiting", "等待处理" in body and "等待后台领取" in body)
+        check("not_seen is labelled separately", "后台还没有开始处理" in body)
+        check("queued task remains waiting", "已提交，马上开始" in body)
         check("route availability is not confused with heartbeat", "路线服务尚未配置" not in body)
         check("not_seen is not shown as recent", "最近有响应" not in body)
         page.screenshot(path=str(SHOTS / "runtime-not-seen.png"), full_page=True)
@@ -190,8 +190,8 @@ def main() -> int:
         page.reload(wait_until="networkidle")
         wait(page, 1200)
         body = text(page)
-        check("recent heartbeat is worded as recent", "最近有响应" in body)
-        check("recent heartbeat keeps queued task waiting", "等待处理" in body)
+        check("recent heartbeat is not exposed as debug", "最近有响应" not in body)
+        check("recent heartbeat keeps queued task waiting", "已提交，马上开始" in body)
         check("recent heartbeat is not called permanently online", "后台执行程序在线" not in body)
         page.screenshot(path=str(SHOTS / "runtime-recent.png"), full_page=True)
 
@@ -200,23 +200,23 @@ def main() -> int:
         page.reload(wait_until="networkidle")
         wait(page, 1200)
         body = text(page)
-        check("old heartbeat is aged to stale", "近期未响应" in body)
+        check("old heartbeat is aged to stale", "后台暂时没有响应" in body)
         check("stale heartbeat does not fail the task", "失败" not in body.split("本次操作状态")[-1][:20])
-        check("stale heartbeat keeps the task queued", "等待处理" in body)
+        check("stale heartbeat keeps the task queued", "已提交，马上开始" in body)
         page.screenshot(path=str(SHOTS / "runtime-stale.png"), full_page=True)
 
         # 4. A failed refresh must not keep the previous online claim.
         mode.update(state="online", offset=5, stale=60, kind="ok")
         page.reload(wait_until="networkidle")
         wait(page, 1000)
-        check("precondition: recent before failure", "最近有响应" in text(page))
+        check("precondition: update card before failure", "正在更新建议" in text(page) or "这次更新还在继续" in text(page))
         mode.update(kind="fail")
         set_visibility(page, "visible")
         wait(page, 1200)
         body = text(page)
-        check("failed runtime query is explicit", "暂时无法获取后台状态" in body)
+        check("failed runtime query is explicit", "后台状态暂时无法读取" in body)
         check("failed query does not keep recent claim", "最近有响应" not in body)
-        check("failed query shows last successful query", "上次成功查询" in body)
+        check("failed query keeps task saved", "任务已保存" in body)
         check("failed query does not claim worker offline", "近期未响应" not in body and "尚未收到" not in body)
         page.screenshot(path=str(SHOTS / "runtime-unavailable.png"), full_page=True)
 
@@ -224,9 +224,9 @@ def main() -> int:
         mode.update(state="online", offset=0, stale=2, kind="ok")
         page.reload(wait_until="networkidle")
         wait(page, 1000)
-        check("fresh heartbeat starts recent", "最近有响应" in text(page))
+        check("fresh heartbeat does not expose debug", "最近有响应" not in text(page) and "已提交，马上开始" in text(page))
         wait(page, 6500)  # clock ticks every 5s; stale_after is 2s
-        check("long-open page ages recent to stale", "近期未响应" in text(page))
+        check("long-open page ages recent to stale", "后台暂时没有响应" in text(page))
 
         # 6. Hidden pages do not poll; returning refreshes immediately.
         mode.update(state="online", offset=0, stale=60, kind="ok")
@@ -254,7 +254,7 @@ def main() -> int:
         page.goto(BASE + f"/me/commute/{FIXTURE['plan_b']}", wait_until="networkidle")
         wait(page, 1200)
         body = text(page)
-        check("account B sees its own not_seen state", "尚未收到执行程序的响应" in body)
+        check("account B sees its own not_seen state", "后台还没有开始处理" in body)
         check("account B does not inherit A recent state", "最近有响应" not in body)
 
         check("runtime checks created no checks", not check_posts, check_posts)

@@ -1,15 +1,133 @@
 "use client";
-import {useEffect,useRef,useState} from 'react';
-import {apiRequest,pa,ApiError} from '@/lib/mobile/api';
-import {MemoryHistory} from './memory-history';
-interface Receipt {tool_call_id:string;entry_id:string;applied_version:number;current_version:number;status:string;can_undo:boolean}
-interface WritePage {items:Receipt[];next_cursor:string|null}
-/** Only durable Nexus receipts authorize success text and exact-version undo. */
-export function MemoryWriteReceipts({runId}:{runId:string}) {
- const [rows,setRows]=useState<Receipt[]>([]),[cursor,setCursor]=useState<string|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[history,setHistory]=useState<string|null>(null);
- const lock=useRef(false),operation=useRef<{signature:string;key:string}|null>(null);
- async function load(after?:string|null){const r=await apiRequest<WritePage>(pa(`/memory/writes/${encodeURIComponent(runId)}${after?'?after_tool_call_id='+encodeURIComponent(after):''}`));setRows(old=>after?[...old.filter(x=>!r.items.some(y=>x.tool_call_id===y.tool_call_id)),...r.items]:r.items);setCursor(r.next_cursor)}
- useEffect(()=>{let alive=true;apiRequest<WritePage>(pa(`/memory/writes/${encodeURIComponent(runId)}`)).then(r=>{if(alive){setRows(r.items);setCursor(r.next_cursor)}}).catch(e=>{if(alive)setError(e.message)});return()=>{alive=false}},[runId]);
- async function undo(r:Receipt){if(lock.current)return;lock.current=true;setBusy(true);setError('');const signature=r.entry_id+':'+r.applied_version;if(operation.current?.signature!==signature)operation.current={signature,key:crypto.randomUUID()};try{await apiRequest(pa('/memory/commands'),{method:'POST',body:{action:'undo',entry_id:r.entry_id,expected_version:r.applied_version,key:operation.current.key}});operation.current=null;setNotice('已撤销这次记忆改动；聊天和事项不受影响。');await load()}catch(e){setError(e instanceof Error?e.message:'撤销结果未知');if(e instanceof ApiError&&e.status===409){operation.current=null;await load().catch(()=>{})}}finally{lock.current=false;setBusy(false)}}
- return <div className="m-stack-8">{rows.map(r=><div key={r.tool_call_id}><p className="micro">{r.status==='active'?'本次已保存／更新个人记忆':r.status==='candidate'?'记忆候选待确认，尚未生效':r.status==='forgotten'?'本次已忘记个人记忆':'记忆操作已记录'} · 写入版本 {r.applied_version}</p><button className="link-button" onClick={()=>setHistory(r.entry_id)}>查看历史</button>{r.can_undo&&r.applied_version===r.current_version?<button className="link-button" disabled={busy} onClick={()=>void undo(r)}>撤销本次记忆改动</button>:<span className="micro">已有后续版本，不能撤销这次旧改动。</span>}</div>)}{error?<p role="alert">记忆变更核对失败：{error}</p>:null}{notice?<p role="status">{notice}</p>:null}<button className="link-button" disabled={busy} onClick={()=>{setError('');void load().catch(e=>setError(e.message))}}>核对本次记忆变更</button>{cursor?<button onClick={()=>void load(cursor).catch(e=>setError(e.message))}>更多记忆变更</button>:null}{history?<MemoryHistory entryId={history} onClose={()=>setHistory(null)}/>:null}</div>
+
+import { useEffect, useRef, useState } from "react";
+import { Sparkles } from "lucide-react";
+
+import { apiRequest, pa, ApiError } from "@/lib/mobile/api";
+import { MemoryHistory } from "./memory-history";
+
+interface Receipt {
+  tool_call_id: string;
+  entry_id: string;
+  applied_version: number;
+  current_version: number;
+  status: string;
+  can_undo: boolean;
+}
+
+interface WritePage {
+  items: Receipt[];
+}
+
+/** Show a memory change only when a durable receipt exists. */
+export function MemoryWriteReceipts({ runId }: { runId: string }) {
+  const [rows, setRows] = useState<Receipt[]>([]);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<string | null>(null);
+  const lock = useRef(false);
+  const operation = useRef<{ signature: string; key: string } | null>(null);
+
+  const load = async () => {
+    const page = await apiRequest<WritePage>(
+      pa(`/memory/writes/${encodeURIComponent(runId)}`),
+    );
+    setRows(page.items);
+  };
+
+  useEffect(() => {
+    let alive = true;
+    apiRequest<WritePage>(pa(`/memory/writes/${encodeURIComponent(runId)}`))
+      .then((page) => {
+        if (alive) setRows(page.items);
+      })
+      .catch(() => {
+        if (alive) setError("记忆状态暂时无法读取。");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [runId]);
+
+  const undo = async (row: Receipt) => {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    const signature = `${row.entry_id}:${row.applied_version}`;
+    if (operation.current?.signature !== signature) {
+      operation.current = { signature, key: crypto.randomUUID() };
+    }
+    try {
+      await apiRequest(pa("/memory/commands"), {
+        method: "POST",
+        body: {
+          action: "undo",
+          entry_id: row.entry_id,
+          expected_version: row.applied_version,
+          key: operation.current.key,
+        },
+      });
+      operation.current = null;
+      setNotice("已撤销这次记忆改动；聊天和事项不受影响。");
+      await load();
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) {
+        operation.current = null;
+        await load().catch(() => {});
+      } else {
+        setError("这次撤销没有完成，可以再试一次。");
+      }
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+
+  if (rows.length === 0 && !notice) return null;
+
+  const undoable = rows.find(
+    (row) => row.can_undo && row.applied_version === row.current_version,
+  );
+  const activeCount = rows.filter((row) => row.status === "active").length;
+  const candidateCount = rows.filter((row) => row.status === "candidate").length;
+  const forgottenCount = rows.filter((row) => row.status === "forgotten").length;
+  const summary =
+    activeCount > 0
+      ? `已记住 ${activeCount} 条内容`
+      : candidateCount > 0
+        ? `有 ${candidateCount} 条记忆待确认`
+        : forgottenCount > 0
+          ? `已忘记 ${forgottenCount} 条内容`
+          : `已更新 ${rows.length} 条记忆`;
+
+  return (
+    <div className="ask-memory">
+      <span className="ask-memory__summary">
+        <Sparkles size={12} strokeWidth={1.5} aria-hidden="true" />
+        {summary}
+      </span>
+      {undoable ? (
+        <button type="button" className="ask-memory__link" disabled={busy} onClick={() => void undo(undoable)}>
+          {busy ? "撤销中…" : "撤销"}
+        </button>
+      ) : null}
+      {rows[0] ? (
+        <button type="button" className="ask-memory__link" onClick={() => setHistory(rows[0].entry_id)}>
+          查看
+        </button>
+      ) : null}
+      {notice ? <span className="ask-memory__notice">{notice}</span> : null}
+      {error ? (
+        <>
+          <span className="ask-memory__notice">{error}</span>
+          <button type="button" className="ask-memory__link" onClick={() => void load().catch(() => setError("记忆状态暂时无法读取。"))}>
+            重试
+          </button>
+        </>
+      ) : null}
+      {history ? <MemoryHistory entryId={history} onClose={() => setHistory(null)} /> : null}
+    </div>
+  );
 }

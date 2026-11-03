@@ -10,14 +10,11 @@ import type {
   CommuteCheck,
   CommutePlan,
   CommutePlanDraft,
-  PlanWeather,
 } from "@/lib/mobile/api";
 import { ApiError, apiRequest } from "@/lib/mobile/api";
-import { formatDateTime, formatServiceDate, uuid } from "@/lib/mobile/format";
-import { installationId } from "@/lib/mobile/storage";
+import { formatDateTime, formatServiceDate, formatTime, uuid } from "@/lib/mobile/format";
 import {
   CHECK_PHASE_LABEL,
-  CHECK_STATUS_LABEL,
   clearPendingCheck,
   loadPendingCheck,
   savePendingCheck,
@@ -53,7 +50,8 @@ import {
 const TERMINAL = new Set(["succeeded", "degraded", "failed", "cancelled", "unknown"]);
 // The worker may queue a manual task behind scheduled work. Poll slower after
 // the first few reads and never keep a spinner alive indefinitely.
-const POLL_DELAYS = [1200, 2000, 3000, 5000, 8000, 12000];
+const POLL_DELAYS = [1200, 2000, 3000, 5000, 8000, 12000, 15000, 20000, 30000];
+const POLL_DEADLINE_MS = 150_000;
 
 function toDraft(plan: CommutePlan): CommutePlanDraft {
   const { id: _id, revision: _revision, created_at: _created, updated_at: _updated, matter_id: _matter, first_schedule_id: _schedule, ...draft } = plan;
@@ -103,17 +101,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [skipBusy, setSkipBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  const weatherDate = advisory?.local_service_date ?? analysisTarget.data?.local_service_date;
-  const latestWeather = useApiResource<PlanWeather>(
-    signedIn && plan.data && weatherDate
-      ? `/api/pa/commute-plans/${plan.data.id}/weather?local_service_date=${weatherDate}&revision=${plan.data.revision}&check=${pending?.finishedAt ?? pending?.status ?? "initial"}`
-      : null,
-    { enabled: Boolean(signedIn && plan.data && weatherDate) },
-  );
 
   // The runtime endpoint is account-wide, but its status is shown only for the
   // current check. A plan/account switch resets the hook's key.
@@ -142,6 +131,12 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
 
   useEffect(() => {
     if (!accountId || !planId) {
@@ -241,8 +236,11 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       setActionBusy("check");
       setMessage(null);
       let current = record;
+      const startedAt = Date.now();
+      let delay = POLL_DELAYS[0];
+      let delayIndex = 0;
       try {
-        for (const delay of POLL_DELAYS) {
+        while (Date.now() - startedAt < POLL_DEADLINE_MS) {
           await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
           if (!mounted.current || pollToken.current !== token) return;
           let read: CommuteCheck;
@@ -303,13 +301,18 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
             );
             return;
           }
+          const retryAt = read.next_attempt_at ? Date.parse(read.next_attempt_at) : NaN;
+          if (Number.isFinite(retryAt)) {
+            delay = Math.max(2000, Math.min(30000, retryAt - Date.now() + 500));
+          } else {
+            delayIndex = Math.min(delayIndex + 1, POLL_DELAYS.length - 1);
+            delay = POLL_DELAYS[delayIndex];
+          }
         }
         setMessage(
           current.status === "queued"
-            ? "还在等待结果，本次分析已保存，稍后可以继续查看。"
-            : current.status === "running"
-              ? "还在处理中，本次分析已保存，稍后可以继续查看。"
-              : "还没有返回最终结果，本次分析已保存，稍后可以继续查看。",
+            ? "这次更新还在排队，记录已保存；可以继续核对。"
+            : "这次更新比平时久一些，记录已保存；可以继续核对。",
         );
       } finally {
         pollingRef.current = false;
@@ -588,6 +591,23 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     }
   }, [accountId, planId, refreshCheck]);
 
+  useEffect(() => {
+    const resume = () => {
+      if (document.visibilityState === "hidden") return;
+      const current = pendingRef.current;
+      if (!current?.checkId || TERMINAL.has(current.status) || pollingRef.current) {
+        return;
+      }
+      void refreshCheck(current);
+    };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("focus", resume);
+    return () => {
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("focus", resume);
+    };
+  }, [refreshCheck]);
+
   const savePlan = async (draft: CommutePlanDraft) => {
     if (!plan.data) return;
     setSaving(true);
@@ -620,23 +640,6 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       }
     } finally {
       setSaving(false);
-    }
-  };
-
-  const skipToday = async () => {
-    if (!advisory) return;
-    setSkipBusy(true);
-    try {
-      await apiRequest(`/api/pa/advisories/${advisory.id}/actions`, {
-        method: "POST",
-        headers: { "Idempotency-Key": uuid() },
-        body: { action: "skip_today", installation_id: installationId() },
-      });
-      toast("已跳过这次通勤提醒");
-    } catch (caught) {
-      toast(caught instanceof ApiError ? caught.message : "跳过未能完成");
-    } finally {
-      setSkipBusy(false);
     }
   };
 
@@ -698,6 +701,34 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     loading: runtime.loading,
   });
   const currentPhaseLabel = pending?.phase ? CHECK_PHASE_LABEL[pending.phase] : null;
+  const checkStartedAt = pending
+    ? Date.parse(pending.serverCreatedAt || pending.createdAt)
+    : NaN;
+  const checkElapsedSeconds =
+    Number.isFinite(checkStartedAt) && pending
+      ? Math.max(1, Math.floor((now - checkStartedAt) / 1000))
+      : 0;
+  const elapsedLabel =
+    checkElapsedSeconds < 60
+      ? `${checkElapsedSeconds} 秒`
+      : `${Math.floor(checkElapsedSeconds / 60)} 分钟`;
+  const checkPhaseText =
+    currentPhaseLabel ||
+    (pending?.status === "submitting"
+      ? "正在提交这次更新。"
+      : pending?.status === "uncertain"
+        ? "正在确认提交结果。"
+        : "正在整理出发时间、路上时间和到达时间。");
+  const workerHint =
+    runtimeView.kind === "unavailable"
+      ? "后台状态暂时无法读取，任务已保存；可以稍后继续核对。"
+      : runtimeView.kind === "not_seen"
+        ? "后台还没有开始处理，任务已保存；可以稍后继续核对。"
+        : runtimeView.kind === "stale"
+          ? "后台暂时没有响应，任务已保存；可以稍后继续核对。"
+          : null;
+  const lastCheckText = pending?.updatedAt ? formatTime(pending.updatedAt) : null;
+  const nextAttemptText = pending?.nextAttemptAt ? formatTime(pending.nextAttemptAt) : null;
   const showCheckFailure =
     pending && (pending.status === "failed" || pending.status === "cancelled") && !advisory;
   const showCheckUnknown = pending?.status === "unknown" && !advisory;
@@ -706,11 +737,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     (pending.status === "succeeded" || pending.status === "degraded") &&
     !pending.advisoryId &&
     !active;
-  const reanalyzeLabel = active
-    ? "继续等待"
-    : pending?.status === "uncertain"
-      ? "重试更新"
-      : "更新建议";
+  const reanalyzeLabel = active ? "继续等待" : "刷新路线";
 
   const openHistory = () => {
     const node = document.getElementById("commute-history") as HTMLDetailsElement | null;
@@ -724,7 +751,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
 
   return (
     <PageShell
-      title={plan.data?.name || "通勤计划"}
+      title="上班通勤"
       action={
         plan.data ? (
           <Pill tone={plan.data.enabled ? "fog" : "neutral"}>
@@ -744,20 +771,20 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
 
       {plan.data ? (
         <>
-          <div className="chip-row" role="tablist" aria-label="通勤视图">
+          <div className="commute-tabs" role="tablist" aria-label="通勤视图">
             <button
               type="button"
               role="tab"
-              className="chip"
+              className="commute-tab"
               aria-pressed={tab === "advice"}
               onClick={() => setTab("advice")}
             >
-              建议
+              出行方案
             </button>
             <button
               type="button"
               role="tab"
-              className="chip"
+              className="commute-tab"
               aria-pressed={tab === "settings"}
               onClick={() => setTab("settings")}
             >
@@ -766,204 +793,186 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
           </div>
 
           {tab === "advice" ? (
-            <div className="m-stack-14 mt-14">
+            <div className="commute-detail">
+              <div className="commute-layout">
+                <div className="commute-main">
+                  {adviceLoading ? <LoadingCard label="正在读取建议…" /> : null}
 
-              {adviceLoading ? <LoadingCard label="正在读取建议…" /> : null}
+                  {routeNeedsNotice ? (
+                    <div className="notice notice--amber">
+                      路线服务暂时不可用，已有建议仍可查看。
+                    </div>
+                  ) : null}
 
-              {routeNeedsNotice ? (
-                <div className="notice notice--amber">
-                  路线服务暂时不可用，已有建议仍可查看。
-                </div>
-              ) : null}
+                  {currentAdvisory && !adviceLoading ? (
+                    <AdvisoryCard
+                      advisory={currentAdvisory}
+                      plan={plan.data}
+                      onReanalyze={() => (active ? void viewCheckResult() : void startAnalysis())}
+                      reanalyzeLabel={reanalyzeLabel}
+                      busy={actionBusy !== null}
+                    />
+                  ) : null}
 
-              {currentAdvisory && !adviceLoading ? (
-                <AdvisoryCard
-                  advisory={currentAdvisory}
-                  onReanalyze={() => (active ? void viewCheckResult() : void startAnalysis())}
-                  onHistory={historyRows.length > 0 ? openHistory : undefined}
-                  reanalyzeLabel={reanalyzeLabel}
-                  busy={actionBusy !== null}
-                  latestWeather={latestWeather.data}
-                />
-              ) : null}
+                  {active && pending ? (
+                    <div className="card commute-runtime">
+                      <div className="commute-runtime__head">
+                        {polling ? <span className="spinner" /> : <Clock size={15} />}
+                        <div className="grow">
+                          <p className="commute-runtime__title">
+                            {polling ? "正在更新建议" : "这次更新还在继续"}
+                          </p>
+                          <p className="commute-runtime__subtitle">{checkPhaseText}</p>
+                        </div>
+                      </div>
+                      <div className="commute-runtime__facts">
+                        <span>已等待 {elapsedLabel}</span>
+                        {pending.attemptCount ? <span>第 {pending.attemptCount} 次尝试</span> : null}
+                        {lastCheckText ? <span>最近核对 {lastCheckText}</span> : null}
+                        {nextAttemptText ? <span>下次重试 {nextAttemptText}</span> : null}
+                      </div>
+                      <p className="commute-runtime__hint">
+                        {workerHint ||
+                          (polling
+                            ? "完成后会自动换成新的出发建议。"
+                            : "任务已保存，可以继续核对。")}
+                      </p>
+                      <button
+                        type="button"
+                        className="link-button mt-6"
+                        onClick={() => {
+                          runtime.refresh();
+                          void viewCheckResult();
+                        }}
+                        disabled={actionBusy !== null}
+                      >
+                        继续核对
+                      </button>
+                    </div>
+                  ) : null}
 
-              {active && pending ? (
-                <div className="card commute-runtime">
-                  <div className="commute-runtime__title">
-                    {polling ? <span className="spinner" /> : <Clock size={15} />}
-                    正在更新建议
-                  </div>
-                  <p className="commute-runtime__detail">
-                    {CHECK_STATUS_LABEL[pending.status]}
-                    {currentPhaseLabel ? ` · ${currentPhaseLabel}` : ""}
-                  </p>
-                  <p className="commute-runtime__detail">{runtimeView.label}</p>
-                  <p className="commute-runtime__detail">{runtimeView.detail}</p>
-                  {runtimeView.kind === "unavailable" && runtime.lastSuccessAt ? (
-                    <p className="commute-runtime__detail">
-                      上次成功查询 {formatDateTime(new Date(runtime.lastSuccessAt).toISOString())}
+                  {message ? <p className="micro amber" style={{ margin: 0 }}>{message}</p> : null}
+                  {adviceError ? <p className="caption red" style={{ margin: 0 }}>{adviceError}</p> : null}
+
+                  {noAdviceResult ? (
+                    <div className="card card--amber">
+                      <p className="card-title amber" style={{ fontSize: 15 }}>这次没有生成可用建议</p>
+                      <p className="caption" style={{ margin: "4px 0 0" }}>可以刷新路线，或查看历史记录。</p>
+                      <div className="ask-actions">
+                        <button type="button" className="link-button" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
+                          {reanalyzeLabel}
+                        </button>
+                        {historyRows.length > 0 ? (
+                          <button type="button" className="link-button" onClick={openHistory}>历史记录</button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showCheckUnknown ? (
+                    <div className="card card--amber">
+                      <p className="card-title amber" style={{ fontSize: 15 }}>暂时无法确认这次结果</p>
+                      <p className="caption" style={{ margin: "4px 0 0" }}>
+                        {pending?.error || "记录已保存，可以继续核对。"}
+                      </p>
+                      <div className="ask-actions">
+                        <button type="button" className="link-button" onClick={() => void viewCheckResult()} disabled={actionBusy !== null}>
+                          继续核对
+                        </button>
+                        {historyRows.length > 0 ? (
+                          <button type="button" className="link-button" onClick={openHistory}>历史记录</button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showCheckFailure ? (
+                    <div className="card card--red">
+                      <p className="card-title red" style={{ fontSize: 15 }}>这次更新没有完成</p>
+                      <p className="caption red" style={{ margin: "4px 0 0" }}>
+                        {pending?.error || "暂时没有生成新的建议，请稍后再试。"}
+                      </p>
+                      <div className="ask-actions">
+                        <button type="button" className="link-button" style={{ color: "var(--m-red)" }} onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
+                          {reanalyzeLabel}
+                        </button>
+                        {historyRows.length > 0 ? (
+                          <button type="button" className="link-button" style={{ color: "var(--m-red)" }} onClick={openHistory}>
+                            历史记录
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!currentAdvisory && analysisTarget.data && !active ? (
+                    <p className="micro" style={{ margin: 0 }}>
+                      下次通勤：{formatServiceDate(analysisTarget.data.local_service_date)}，{formatDateTime(analysisTarget.data.target_arrival_at)} 到岗
                     </p>
                   ) : null}
-                  <button
-                    type="button"
-                    className="link-button mt-6"
-                    onClick={() => {
-                      runtime.refresh();
-                      void viewCheckResult();
-                    }}
-                    disabled={actionBusy !== null}
-                  >
-                    继续核对
-                  </button>
-                </div>
-              ) : null}
 
-              <section className="card commute-plan">
-                <div className="commute-plan__head">
-                  <h2>通勤计划</h2>
-                  <button type="button" className="link-button link-button--inline" onClick={() => setTab("settings")}>
-                    编辑
-                  </button>
-                </div>
-                <div className="commute-plan__row">
-                  <span className="k">时间</span>
-                  <span className="v">
-                    {weekdayText(plan.data.weekdays)} · {plan.data.arrival_local_time} 到达
-                  </span>
-                </div>
-                <div className="commute-plan__row">
-                  <span className="k">路线</span>
-                  <span className="v">
-                    {plan.data.origin.label} → {plan.data.destination.label}
-                  </span>
-                </div>
-                <div className="commute-plan__row">
-                  <span className="k">提醒</span>
-                  <span className="v">
-                    {plan.data.check_local_time} 查看路况 · {plan.data.notify_enabled ? "已开启" : "已关闭"}
-                    <small>
-                      {plan.data.transport_mode === "driving" ? "驾车" : plan.data.transport_mode === "transit" ? "公交" : "步行"}
-                      {" · "}预留 {plan.data.buffer_minutes} 分钟
-                    </small>
-                  </span>
-                </div>
-                <div className="commute-plan__sync">
-                  <span className="ok"><i />已同步</span>
-                  <span>更新于 {formatDateTime(plan.data.updated_at)}</span>
-                </div>
-                {plan.data.matter_id ? (
-                  <Link href={`/matters/${plan.data.matter_id}`} className="micro" style={{ display: "inline-block", marginTop: 8 }}>
-                    查看关联事项
-                  </Link>
-                ) : null}
-                {currentAdvisory ? (
-                  <button
-                    type="button"
-                    className="commute-plan__skip"
-                    onClick={() => void skipToday()}
-                    disabled={skipBusy}
-                  >
-                    {skipBusy ? "正在记录…" : `跳过 ${formatServiceDate(currentAdvisory.local_service_date)} 这次提醒`}
-                  </button>
-                ) : null}
-              </section>
-
-              {message ? <p className="micro amber" style={{ margin: 0 }}>{message}</p> : null}
-              {adviceError ? <p className="caption red" style={{ margin: 0 }}>{adviceError}</p> : null}
-
-              {noAdviceResult ? (
-                <div className="card card--amber">
-                  <p className="card-title amber" style={{ fontSize: 15 }}>这次没有生成可用建议</p>
-                  <p className="caption" style={{ margin: "4px 0 0" }}>可以更新建议，或查看历史建议。</p>
-                  <div className="ask-actions">
-                    <button type="button" className="link-button" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
-                      {reanalyzeLabel}
-                    </button>
-                    {historyRows.length > 0 ? (
-                      <button type="button" className="link-button" onClick={openHistory}>历史建议</button>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-
-              {showCheckUnknown ? (
-                <div className="card card--amber">
-                  <p className="card-title amber" style={{ fontSize: 15 }}>暂时无法确认这次结果</p>
-                  <p className="caption" style={{ margin: "4px 0 0" }}>
-                    {pending?.error || "记录已保存，可以继续核对。"}
-                  </p>
-                  <div className="ask-actions">
-                    <button type="button" className="link-button" onClick={() => void viewCheckResult()} disabled={actionBusy !== null}>
-                      继续核对
-                    </button>
-                    {historyRows.length > 0 ? (
-                      <button type="button" className="link-button" onClick={openHistory}>历史建议</button>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-
-              {showCheckFailure ? (
-                <div className="card card--red">
-                  <p className="card-title red" style={{ fontSize: 15 }}>这次更新没有完成</p>
-                  <p className="caption red" style={{ margin: "4px 0 0" }}>
-                    {pending?.error || "暂时没有生成新的建议，请稍后再试。"}
-                  </p>
-                  <div className="ask-actions">
-                    <button type="button" className="link-button" style={{ color: "var(--m-red)" }} onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
-                      {reanalyzeLabel}
-                    </button>
-                    {historyRows.length > 0 ? (
-                      <button type="button" className="link-button" style={{ color: "var(--m-red)" }} onClick={openHistory}>
-                        历史建议
+                  {!advisory && !adviceLoading && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !active && !adviceError && !routeNeedsNotice && historyRows.length === 0 ? (
+                    <EmptyState title="还没有通勤建议" body="刷新路线后，这里会显示出发时间、路线和天气。">
+                      <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
+                        {reanalyzeLabel}
                       </button>
-                    ) : null}
-                  </div>
+                    </EmptyState>
+                  ) : null}
+
+                  {!currentAdvisory && !adviceLoading && !active && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !adviceError && historyRows.length > 0 ? (
+                    <EmptyState title="当前没有可用建议" body="刷新路线后，这里会显示最新结果。">
+                      <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
+                        {reanalyzeLabel}
+                      </button>
+                    </EmptyState>
+                  ) : null}
                 </div>
-              ) : null}
 
-              {!currentAdvisory && analysisTarget.data && !active ? (
-                <p className="micro" style={{ margin: 0 }}>
-                  下次通勤：{formatServiceDate(analysisTarget.data.local_service_date)}，{formatDateTime(analysisTarget.data.target_arrival_at)} 到达
-                </p>
-              ) : null}
-
-              {!advisory && !adviceLoading && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !active && !adviceError && !routeNeedsNotice && historyRows.length === 0 ? (
-                <EmptyState title="还没有通勤建议" body="更新建议后，这里会显示出发时间、天气和路线。">
-                  <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
-                    {reanalyzeLabel}
-                  </button>
-                </EmptyState>
-              ) : null}
-
-              {!currentAdvisory && !adviceLoading && !active && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !adviceError && historyRows.length > 0 ? (
-                <EmptyState title="当前没有可用建议" body="历史建议在下方，更新后会显示最新结果。">
-                  <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
-                    {reanalyzeLabel}
-                  </button>
-                </EmptyState>
-              ) : null}
-
-              {historyRows.length > 0 ? (
-                <details id="commute-history" className="card commute-history">
-                  <summary>
-                    <span>历史建议</span>
-                    <span>{historyRows.length} 条 · 查看</span>
-                  </summary>
-                  <div className="commute-history__body">
-                    <p className="micro">当前设备已查看过的建议，可能不是完整历史。</p>
-                    <div className="m-stack-10">
-                      {historyRows.map((item) => (
-                        <HistoryAdvisoryCard
-                          key={item.id}
-                          advisory={item}
-                          planRevision={planRevision ?? item.plan_revision}
-                        />
-                      ))}
+                <aside className="commute-side">
+                  <section className="card commute-config">
+                    <div className="commute-config__head">
+                      <h2>通勤安排</h2>
+                      <button type="button" className="commute-link" onClick={() => setTab("settings")}>
+                        调整计划
+                      </button>
                     </div>
-                  </div>
-                </details>
-              ) : null}
+                    <div className="commute-config__rows">
+                      <div className="commute-config__row">
+                        <span>时间</span>
+                        <b>{weekdayText(plan.data.weekdays)} · {plan.data.arrival_local_time} 到岗</b>
+                      </div>
+                      <div className="commute-config__row">
+                        <span>路线</span>
+                        <b>{plan.data.origin.label} → {plan.data.destination.label}</b>
+                      </div>
+                      <div className="commute-config__row">
+                        <span>提醒</span>
+                        <b>{plan.data.check_local_time} 查看路况 · {plan.data.notify_enabled ? "已开启" : "已关闭"}</b>
+                      </div>
+                    </div>
+                  </section>
+
+                  {historyRows.length > 0 ? (
+                    <details id="commute-history" className="card commute-archive">
+                      <summary>
+                        <span>历史记录</span>
+                        <span>{historyRows.length} 条 <i aria-hidden="true">›</i></span>
+                      </summary>
+                      <div className="commute-archive__body">
+                        <div className="m-stack-10">
+                          {historyRows.map((item) => (
+                            <HistoryAdvisoryCard
+                              key={item.id}
+                              advisory={item}
+                              planRevision={planRevision ?? item.plan_revision}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </details>
+                  ) : null}
+                </aside>
+              </div>
             </div>
           ) : (
             <div className="mt-14">

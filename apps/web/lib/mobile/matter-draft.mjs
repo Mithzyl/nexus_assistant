@@ -124,13 +124,9 @@ function formatInstant(value) {
   if (!value) return "未设置";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${hours}:${minutes}`;
 }
 
 /**
@@ -255,9 +251,13 @@ export function summarizeMatterChange(change) {
               affected.starts_at || affected.after_starts_at || null,
             after_ends_at: affected.ends_at || affected.after_ends_at || null,
           };
-      lines.push(
-        `${source}${affectedScheduleSummary(presented)}。`,
-      );
+      if (formatInstant(presented.before_starts_at) !== formatInstant(presented.after_starts_at)) {
+        lines.push(`${source}${affectedScheduleSummary(presented)}。`);
+      } else if (after.schedule) {
+        lines.push(`日程：${scheduleSummary(after.schedule)}`);
+      } else {
+        lines.push("更新事项内容");
+      }
     } else {
       lines.push(`${source}关联日程已调整。`);
     }
@@ -275,7 +275,9 @@ export function summarizeMatterChange(change) {
     lines.push(`日程：${scheduleSummary(after.schedule)}`);
   }
   for (const affected of after.affected || after.adjacent_schedules || []) {
-    lines.push(affectedScheduleSummary(affected));
+    if (formatInstant(affected.before_starts_at) !== formatInstant(affected.after_starts_at)) {
+      lines.push(affectedScheduleSummary(affected));
+    }
   }
   if (after.completed_todo_ids?.length) {
     lines.push(`完成 ${after.completed_todo_ids.length} 项待办`);

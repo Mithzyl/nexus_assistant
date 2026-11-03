@@ -78,17 +78,17 @@ export function RouteTextCard({
         ? "步行"
         : mode === "transit"
           ? "公共交通"
-          : "出行方式未返回";
+          : "出行方式待确认";
   const stateLabel =
     state === "enough"
-      ? "时间充裕"
+      ? "时间充足"
       : state === "verified"
-        ? "路线已核实"
-      : state === "tight"
-        ? "可能赶不上"
-        : state === "unverified"
-          ? "路线未核实"
-          : "路线不可用";
+        ? "路线已确认"
+        : state === "tight"
+          ? "时间可能不够"
+          : state === "unverified"
+            ? "待补充路线"
+            : "暂时无法测算";
   const fareLabel =
     mode === "transit" || fareKind === "amap_transit_fare"
       ? "公交票价"
@@ -97,9 +97,9 @@ export function RouteTextCard({
         : "费用估计";
   const timingNotice =
     timingBasis === "planned_time_not_live_forecast"
-      ? "按计划时间估算，不等同于实时路况预测。"
+      ? "按计划时间估算。"
       : timingBasis === "provider_departure_time"
-        ? "按当前条件估算，实际到达时间会随路况变化。"
+        ? "按当前路况估算，实际到达时间会随路况变化。"
         : null;
   const address = [mapTarget?.city, mapTarget?.address, mapTarget?.label]
     .filter(Boolean)
@@ -141,13 +141,33 @@ export function RouteTextCard({
     }
   };
 
+  const missingOrigin =
+    !originLabel ||
+    originLabel === "出发地待补充" ||
+    originLabel === "出发地未提供";
+  if (missingOrigin && (state === "unverified" || state === "unavailable")) {
+    return (
+      <section className={`route-text-card route-text-card--prompt${embedded ? " route-text-card--embedded" : ""}`}>
+        <p className="route-text-card__prompt-title">你还没说从哪出发。</p>
+        <p className="route-text-card__prompt-body">补上之后，我按路程倒推出门时间。</p>
+        {onPlanRoute ? (
+          <button type="button" className="btn btn--primary btn--small" onClick={onPlanRoute}>
+            填出发点
+          </button>
+        ) : replanHref ? (
+          <a className="btn btn--primary btn--small" href={replanHref}>填出发点</a>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <section className={`route-text-card${embedded ? " route-text-card--embedded" : ""}`}>
       <div className="flex items-start justify-between gap-10">
         <div className="grow">
-          <p className="route-text-card__eyebrow">路线文字摘要</p>
+          <p className="route-text-card__eyebrow">路线</p>
           <p className="route-text-card__title">
-            {originLabel || "出发地未提供"} <span aria-hidden="true">→</span>{" "}
+            {originLabel || "出发地待补充"} <span aria-hidden="true">→</span>{" "}
             {destinationLabel || "目的地待确认"}
           </p>
         </div>
@@ -160,9 +180,9 @@ export function RouteTextCard({
         <span>
           {arrivalAt
             ? `${arrivalLabel} ${formatDateTime(arrivalAt)}`
-            : `${arrivalLabel}时间未提供`}
+            : `${arrivalLabel}时间待补充`}
         </span>
-        <span>{durationSeconds !== null && durationSeconds !== undefined ? formatDuration(durationSeconds) : "预计耗时未返回"}</span>
+        <span>{durationSeconds !== null && durationSeconds !== undefined ? formatDuration(durationSeconds) : "时间待补充"}</span>
         {mode !== "transit" &&
         distanceMeters !== null &&
         distanceMeters !== undefined ? (
@@ -186,7 +206,7 @@ export function RouteTextCard({
       accuracyNotice ||
       (state === "verified" && notice) ? (
         <details className="route-text-card__details">
-          <summary>查看费用与判断说明</summary>
+          <summary>查看明细</summary>
           {instruction ? <p>{instruction}</p> : null}
           {transfersSummary ? <p>换乘：{transfersSummary}</p> : null}
           {mode === "transit" &&
@@ -206,7 +226,7 @@ export function RouteTextCard({
           {timingNotice ? <p>{timingNotice}</p> : null}
           {accuracyNotice ? <p>{accuracyNotice}</p> : null}
           {state === "verified" ? (
-            <p>路线为云端测算结果，不代表实际到达时间。</p>
+            <p>路线结果仅供参考。</p>
           ) : null}
           {state === "verified" && notice ? <p>{notice}</p> : null}
         </details>
@@ -214,10 +234,10 @@ export function RouteTextCard({
       {state !== "verified" && notice ? (
         <p className="route-text-card__notice">{notice}</p>
       ) : null}
-      {(!originLabel || originLabel === "出发地未提供") &&
+      {(!originLabel || originLabel === "出发地待补充") &&
       (state === "unverified" || state === "unavailable") ? (
         <p className="route-text-card__notice">
-          需要先确认从哪里出发；起点未确认时不能计算可用耗时。
+          补上出发地后，就能算出出门时间和到达时间。
         </p>
       ) : null}
       {weatherLine ? <p className="route-text-card__weather">{weatherLine}</p> : null}
@@ -226,7 +246,7 @@ export function RouteTextCard({
         {onPlanRoute ? (
           <button type="button" className="link-button" onClick={onPlanRoute}>
             <Clock3 size={13} />{" "}
-            {state === "verified" ? "重新测算路线" : "补充起点并测算路线"}
+            {state === "verified" ? "刷新路线" : "填出发点"}
           </button>
         ) : null}
         {onViewRoute ? (
@@ -246,7 +266,7 @@ export function RouteTextCard({
             target="_blank"
             rel="noreferrer"
           >
-            <ExternalLink size={13} /> 在外部地图打开
+            <ExternalLink size={13} /> 打开地图
           </a>
         ) : null}
         {address || mapTarget?.label ? (
@@ -256,17 +276,6 @@ export function RouteTextCard({
         ) : (
           <span className="micro"><MapPin size={12} /> 地点尚未确认，暂不能打开地图</span>
         )}
-        {mapUrl &&
-        (mapTarget?.coordinateSystem === "gcj02" ||
-          mapTarget?.coordinateSystem === "wgs84") ? (
-          <span className="micro">
-            {mapTarget.coordinateSystem === "gcj02"
-              ? "使用高德 GCJ-02 坐标打开高德地图，不做坐标系转换。"
-              : "使用 WGS-84 坐标打开 Apple 地图，不做坐标系转换。"}
-          </span>
-        ) : address ? (
-          <span className="micro">坐标来源不兼容，按地址打开搜索。</span>
-        ) : null}
       </div>
     </section>
   );

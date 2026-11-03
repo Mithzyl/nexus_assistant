@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Circle, Pencil, RefreshCw, Trash2, Undo2 } from "lucide-react";
+import { Check, Circle, Pencil, Trash2, Undo2 } from "lucide-react";
 
 import type {
   DraftConfirmResponse,
   IntakePendingContext,
+  MatterIntakeResponse,
   MatterChange,
   MatterDetail,
   MatterReminder,
@@ -16,6 +17,7 @@ import type {
   TodayRoute,
 } from "@/lib/mobile/api";
 import { ApiError } from "@/lib/mobile/api";
+import { formatDateTime } from "@/lib/mobile/format";
 import {
   archiveMatter,
   cancelDraft,
@@ -42,9 +44,10 @@ import {
   isRecordChangedError,
   summarizeMatterChange,
 } from "@/lib/mobile/matter-draft.mjs";
-import { dateTimeLabel } from "@/lib/mobile/work-plan";
 import { useAuth, useUI } from "./providers";
 import { MatterDraftSheet } from "./matter-draft-sheet";
+import { ApiOperationCard } from "./api-operation-card";
+import { MatterFollowUps } from "./matter-follow-ups";
 import { RouteTextCard } from "./route-text-card";
 import { RoutePlannerSheet } from "./route-planner-sheet";
 import { RouteMapSheet } from "./route-map-sheet";
@@ -64,18 +67,27 @@ function syncLabel(record: MatterSchedule | MatterReminder): string {
   const source = record.source;
   const status = record.sync_status;
   if (source === "ios_eventkit" || source === "ios_reminders") {
-    return status === "ios_synced" ? "来自苹果端的已同步副本" : "来自苹果端 · 待核对";
+    return status === "ios_synced" ? "已从日历同步" : "等待同步确认";
   }
   if (status === "pending_ios") {
-    return reminder ? "应用内提醒（待 iOS 客户端同步）" : "已记入应用内日程（待 iOS 客户端同步）";
+    return reminder ? "提醒已保存，等待同步到手机" : "已加入日程，等待同步到手机";
   }
-  if (status === "ios_synced") return "已同步（有苹果端凭据）";
-  if (!reminder) return "已记入应用内日程";
+  if (status === "ios_synced") return "已同步";
+  if (!reminder) return "已加入日程";
   const reminderStatus = (record as MatterReminder).status;
-  if (reminderStatus === "due") return "应用内提醒 · 已到点";
-  if (reminderStatus === "acknowledged") return "应用内提醒 · 已知晓";
-  if (reminderStatus === "cancelled") return "应用内提醒 · 已取消";
-  return "应用内提醒 · 已保存待触发";
+  if (reminderStatus === "due") return "已到提醒时间";
+  if (reminderStatus === "acknowledged") return "已确认";
+  if (reminderStatus === "cancelled") return "提醒已取消";
+  return "提醒已保存";
+}
+
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+function whenLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return formatDateTime(value);
+  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${WEEKDAYS[date.getDay()]} ${time}`;
 }
 
 /**
@@ -130,8 +142,8 @@ function TodoRow({
       <span className="grow" style={{ textAlign: "left" }}>
         <span style={{ display: "block" }}>{todo.title}</span>
         <span className="micro">
-          {todo.due_at ? `截止 ${dateTimeLabel(todo.due_at)}` : "未设截止"}
-          {todo.reminder_at ? ` · 提醒 ${dateTimeLabel(todo.reminder_at)}` : " · 未设提醒"}
+          {todo.due_at ? `截止 ${formatDateTime(todo.due_at)}` : "未设截止"}
+          {todo.reminder_at ? ` · 提醒 ${formatDateTime(todo.reminder_at)}` : " · 未设提醒"}
           {todo.status === "done" ? " · 已完成" : ""}
         </span>
       </span>
@@ -142,6 +154,7 @@ function TodoRow({
   );
 }
 
+/** Display real matter data and the results of API operations from progress input. */
 export function MatterRealDetail({ id }: { id: string }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -161,7 +174,7 @@ export function MatterRealDetail({ id }: { id: string }) {
     useState<IntakePendingContext>({});
   const [progressContinuationRunId, setProgressContinuationRunId] =
     useState<string | null>(null);
-  const [progressAnswer, setProgressAnswer] = useState<{ question: string; answer: string } | null>(null);
+  const [progressAnswer, setProgressAnswer] = useState<{ question: string; result: MatterIntakeResponse } | null>(null);
   const [editingDraft, setEditingDraft] = useState<Awaited<ReturnType<typeof intakeMatterProgress>>["draft"] | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveCancelSchedules, setArchiveCancelSchedules] = useState(true);
@@ -212,7 +225,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       setChangesError(
         changesResult.reason instanceof Error
           ? changesResult.reason.message
-          : "读取变更历史失败",
+          : "读取调整记录失败",
       );
     }
     setLoading(false);
@@ -322,6 +335,7 @@ export function MatterRealDetail({ id }: { id: string }) {
     });
   };
 
+  /** Submit progress, retain missing-information prompts and refresh actual data after execution. */
   const startProgress = async (
     text: string,
     continuationOverride?: string | null,
@@ -352,12 +366,13 @@ export function MatterRealDetail({ id }: { id: string }) {
         progressOperation.current.key,
         activeContinuation,
       );
-      if (result.intent === "question" && result.answer) {
+      if (result.outcome === "answer" || ((result.outcome === "failed" || result.outcome === "unknown") && result.pending_context?.execution_result)) {
         setProgressOpen(false);
         setProgressContinuationRunId(null);
         setProgressPendingContext({});
         progressOperation.current = null;
-        setProgressAnswer({ question: text, answer: result.answer });
+        setProgressAnswer({ question: text, result });
+        if (result.pending_context?.execution_result) await load();
         return;
       }
       if (result.draft) {
@@ -376,7 +391,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       setProgressError(
         result.clarify ||
           result.message ||
-          "云端还需要更具体的信息。请补充后再提交。",
+          "还需要更具体的信息，请补充后再提交。",
       );
     } catch (caught) {
       if (
@@ -441,7 +456,7 @@ export function MatterRealDetail({ id }: { id: string }) {
     setRevertTarget(null);
     await run("revert", async () => {
       await revertMatterChange(matter.matter_id, change.change_id, matter.version);
-      toast("云端已撤回这条变更");
+      toast("已撤回这次调整");
       await load();
       requestTodayRefresh();
     });
@@ -465,7 +480,7 @@ export function MatterRealDetail({ id }: { id: string }) {
         delete next[scheduleId];
         return next;
       });
-      throw new Error("云端尚未把路线结果关联到当前日程，请刷新后重试。");
+      throw new Error("路线结果还没有关联到这条日程，请刷新后重试。");
     }
     setRouteDetails((current) => ({ ...current, [scheduleId]: result }));
     setRouteBySchedule((current) => ({ ...current, ...summaries }));
@@ -543,10 +558,10 @@ export function MatterRealDetail({ id }: { id: string }) {
       !schedule.deleted_at && schedule.status === "scheduled" &&
       new Date(schedule.starts_at).getTime() > Date.now(),
   );
+  const primarySchedule = futureSchedules[0] ?? matter.schedules.find((schedule) => !schedule.deleted_at) ?? null;
   return (
     <PageShell
       title="事项详情"
-      subtitle="云端保存"
       fallbackHref="/matters"
       action={
         <button
@@ -566,37 +581,21 @@ export function MatterRealDetail({ id }: { id: string }) {
       }
     >
       <div className="work-detail">
-        <section className="card">
-          <div className="flex items-start gap-10">
-            <div className="grow">
-              <p className="micro" style={{ margin: 0 }}>
-                {matter.status === "active" ? "正在推进" : matter.status === "waiting" ? "等待外部反馈" : "已完成／归档"}
-              </p>
-              <h2 className="serif-title" style={{ margin: "4px 0 0", fontSize: 22 }}>{matter.title}</h2>
-            </div>
-            <button type="button" className="link-button" onClick={() => {
-              setTitle(matter.title); setGoal(matter.goal); setNextStep(matter.next_step ?? ""); setEditError(null); setEditOpen(true);
-            }}>纠正</button>
-          </div>
-          <p className="micro" style={{ margin: "10px 0 0" }}>目标与背景</p>
-          <p className="caption" style={{ margin: "3px 0 0" }}>{matter.goal || "尚未填写目标。"}</p>
-          <hr className="divider" />
-          <p className="micro" style={{ margin: 0 }}>最新进展</p>
-          <p className="body-text" style={{ margin: "4px 0 0" }}>{matter.latest_progress || "还没有进展记录。"}</p>
-          <p className="caption" style={{ margin: "8px 0 0" }}>
-            下一步：{matter.next_step || "尚未填写"}
-          </p>
-          <div className="flex items-center gap-8 mt-10" style={{ flexWrap: "wrap" }}>
-            <Pill tone="fog">{matter.open_todos} 项待办</Pill>
-            {matter.last_progress_at ? <span className="micro">最近进展 {dateTimeLabel(matter.last_progress_at)}</span> : null}
-            <button type="button" className="link-button" onClick={() => void load()} disabled={loading}>
-              <RefreshCw size={12} /> 刷新
-            </button>
-          </div>
+        <section className="matter-head">
+          <Pill tone={matter.status === "active" ? "green" : matter.status === "waiting" ? "amber" : "neutral"}>
+            {matter.status === "active" ? "正在推进" : matter.status === "waiting" ? "等待外部反馈" : "已归档"}
+          </Pill>
+          <h2 className="serif-title matter-head__title">{matter.title}</h2>
+          {primarySchedule ? (
+            <>
+              <p className="matter-head__when">{whenLabel(primarySchedule.starts_at)}</p>
+              {primarySchedule.location ? <p className="matter-head__where">{primarySchedule.location}</p> : null}
+            </>
+          ) : null}
         </section>
 
         <section>
-          <h2 className="section-title" style={{ marginBottom: 8 }}>已确定安排</h2>
+          <h2 className="section-title" style={{ marginBottom: 8 }}>安排</h2>
           <div className="card card--tight">
             {matter.schedules.length === 0 &&
             openReminders.length === 0 ? (
@@ -607,7 +606,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                   <div key={schedule.schedule_id} className="schedule-block">
                     <p className="card-title" style={{ fontSize: 15 }}>{schedule.title}</p>
                     <p className="caption" style={{ margin: "2px 0 0" }}>
-                      {dateTimeLabel(schedule.starts_at)}
+                      {formatDateTime(schedule.starts_at)}
                       {schedule.ends_at ? `–${new Date(schedule.ends_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}` : ""}
                       {schedule.location ? ` · ${schedule.location}` : ""}
                     </p>
@@ -632,7 +631,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                           ? "从上一项安排出发"
                           : routeBySchedule[schedule.schedule_id]?.origin_basis === "user_confirmed"
                             ? "从已确认起点出发"
-                            : "出发地未提供"
+                            : "出发地待补充"
                       }
                       destinationLabel={schedule.location || schedule.title}
                       arrivalAt={schedule.starts_at}
@@ -670,10 +669,10 @@ export function MatterRealDetail({ id }: { id: string }) {
                       notice={
                         routeBySchedule[schedule.schedule_id]?.status === "available"
                           ? routeBySchedule[schedule.schedule_id]?.fetched_at
-                            ? `路线结果取得于 ${dateTimeLabel(routeBySchedule[schedule.schedule_id].fetched_at || "")}`
-                            : "路线结果由云端返回。"
+                            ? `路线结果取得于 ${formatDateTime(routeBySchedule[schedule.schedule_id].fetched_at || "")}`
+                            : "路线结果已保存。"
                           : routeBySchedule[schedule.schedule_id]?.message ||
-                            "云端尚未把这条日程关联到路线结果，不能沿用独立通勤建议。"
+                            "这条日程还没有关联路线结果，不能沿用其他通勤建议。"
                       }
                       mapTarget={{
                         label: schedule.location_address || schedule.location,
@@ -695,14 +694,14 @@ export function MatterRealDetail({ id }: { id: string }) {
                 ))}
                 {openReminders.map((reminder) => (
                   <p key={reminder.reminder_id} className="caption" style={{ margin: "4px 0 0" }}>
-                    提醒：{reminder.title} · {dateTimeLabel(reminder.trigger_at)} · {syncLabel(reminder)}
-                    {reminder.status === "due" ? " · 已到点，待确认知晓" : ""}
+                    提醒：{reminder.title} · {formatDateTime(reminder.trigger_at)} · {syncLabel(reminder)}
+                    {reminder.status === "due" ? " · 等待你确认" : ""}
                   </p>
                 ))}
               </div>
             )}
             <p className="micro" style={{ margin: "10px 0 0" }}>
-              “调整”会读取云端里的当前日程并生成结构化预览；只有再次确认后才会改写正式安排。
+              调整后会先生成预览，确认后才会修改安排。
             </p>
             <button type="button" className="link-button mt-6" onClick={() => {
               setProgressError(null);
@@ -711,13 +710,13 @@ export function MatterRealDetail({ id }: { id: string }) {
               progressOperation.current = null;
               setProgressOpen(true);
             }}>
-              用一句话补充安排变化
+              补充安排
             </button>
           </div>
         </section>
 
         <section>
-          <h2 className="section-title" style={{ marginBottom: 8 }}>待处理清单</h2>
+          <h2 className="section-title" style={{ marginBottom: 8 }}>待办</h2>
           <div className="card card--tight">
             {matter.todos.length === 0 ? (
               <p className="caption" style={{ margin: 0 }}>没有待办子项。</p>
@@ -737,106 +736,101 @@ export function MatterRealDetail({ id }: { id: string }) {
           </div>
         </section>
 
+        <MatterFollowUps matterId={matter.matter_id} onChanged={() => void load()} />
+
         <section>
-          <h2 className="section-title" style={{ marginBottom: 8 }}>跟进记录</h2>
-          <div className="m-stack-8">
-            {matter.progress.length === 0 ? (
-              <p className="caption">还没有云端跟进记录。</p>
-            ) : (
-              matter.progress.map((entry) => (
-                <details key={entry.progress_id} className="history-item">
-                  <summary>
-                    <span>{dateTimeLabel(entry.created_at)}</span>
-                    <span className="history-item__preview">{entry.text}</span>
-                  </summary>
-                  <p className="body-text" style={{ margin: "8px 0 0" }}>{entry.text}</p>
-                </details>
-              ))
-            )}
+          <div className="matter-section-head">
+            <h2 className="section-title">进展</h2>
+            <span className="micro">{matter.progress.length > 0 ? `全部 ${matter.progress.length} 条 ›` : "暂无"}</span>
           </div>
+          {matter.progress.length === 0 ? (
+            <p className="caption">还没有进展记录。</p>
+          ) : (
+            <div className="card card--tight">
+              <div className="matter-log">
+                {matter.progress.map((entry) => {
+                  const [date, time] = formatDateTime(entry.created_at).split(" ");
+                  return (
+                    <div key={entry.progress_id} className="matter-log__item">
+                      <span className="matter-log__time">{date}<br />{time}</span>
+                      <span className="matter-log__text">{entry.text}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </section>
 
         <section id="changes">
           <div className="flex items-center justify-between gap-12" style={{ marginBottom: 8 }}>
-            <h2 className="section-title">变更历史</h2>
-            <span className="micro">已生效</span>
+            <h2 className="section-title">调整记录</h2>
+            <span className="micro">已保存</span>
           </div>
           {changesLoading ? (
-            <LoadingCard label="正在读取变更历史…" />
+            <LoadingCard label="正在读取调整记录…" />
           ) : changesError ? (
             <ErrorCard message={changesError} onRetry={() => void load()} />
           ) : changes.length === 0 ? (
-            <p className="caption">云端还没有记录这条事项的变更。</p>
+            <p className="caption">还没有调整记录。</p>
           ) : (
             <div className="card card--tight">
-              {changes.map((change, index) => {
-                const reason = change.revertable
-                  ? null
-                  : changeReasonText(change.reason_code, change.reason);
-                return (
-                  <div key={change.change_id}>
-                    {index > 0 ? <hr className="divider" /> : null}
-                    <div className="change-history-item">
-                      <div className="flex items-start justify-between gap-10">
-                        <div className="grow">
-                          <p className="micro" style={{ margin: 0 }}>
-                            {dateTimeLabel(change.created_at)} · 已生效
-                          </p>
-                          <p className="body-text" style={{ margin: "4px 0 0" }}>
-                            {summarizeMatterChange(change)}
-                          </p>
-                        </div>
-                        {change.revertable ? (
-                          <button
-                            type="button"
-                            className="link-button"
-                            onClick={() => setRevertTarget(change)}
-                            disabled={Boolean(busy)}
-                          >
-                            <Undo2 size={13} /> 撤回
-                          </button>
-                        ) : null}
-                        {change.initial_delete_allowed ? (
-                          <button
-                            type="button"
-                            className="link-button danger-text"
-                            onClick={() => setInitialDeleteTarget(change)}
-                            disabled={Boolean(busy)}
-                          >
-                            <Trash2 size={13} /> 删除新事项
-                          </button>
-                        ) : null}
-                      </div>
-                      {reason ? (
-                        <p className="micro" style={{ margin: "6px 0 0" }}>
-                          {reason}
-                        </p>
-                      ) : null}
-                      {change.relation === "affected" ? (
-                        <button
-                          type="button"
-                          className="link-button mt-6"
-                          onClick={() =>
-                            router.push(`/matters/${change.source_matter_id}#changes`)
-                          }
-                        >
-                          到「{change.source_matter_title || "来源事项"}」查看并处理
-                        </button>
-                      ) : null}
+              <div className="matter-log">
+                {changes.map((change) => {
+                  const reason = change.revertable
+                    ? null
+                    : changeReasonText(change.reason_code, change.reason);
+                  const [date, time] = formatDateTime(change.created_at).split(" ");
+                  return (
+                    <div key={change.change_id} className="matter-log__item">
+                      <span className="matter-log__time">{date}<br />{time}</span>
+                      <span className="matter-log__text">
+                        {summarizeMatterChange(change)}
+                        {reason ? <span className="matter-log__reason">{reason}</span> : null}
+                        <span className="matter-log__actions">
+                          {change.revertable ? (
+                            <button
+                              type="button"
+                              className="link-button"
+                              onClick={() => setRevertTarget(change)}
+                              disabled={Boolean(busy)}
+                            >
+                              <Undo2 size={13} /> 撤回
+                            </button>
+                          ) : null}
+                          {change.initial_delete_allowed ? (
+                            <button
+                              type="button"
+                              className="link-button danger-text"
+                              onClick={() => setInitialDeleteTarget(change)}
+                              disabled={Boolean(busy)}
+                            >
+                              <Trash2 size={13} /> 删除新事项
+                            </button>
+                          ) : null}
+                          {change.relation === "affected" ? (
+                            <button
+                              type="button"
+                              className="link-button"
+                              onClick={() =>
+                                router.push(`/matters/${change.source_matter_id}#changes`)
+                              }
+                            >
+                              到「{change.source_matter_title || "来源事项"}」查看并处理
+                            </button>
+                          ) : null}
+                        </span>
+                      </span>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
           <p className="micro" style={{ margin: "8px 0 0" }}>
-            只有云端标记为可撤回的最近变更才显示撤回操作；初始新建事项的连带删除也以云端返回的资格为准。
+            只有最近一次调整可以撤回。
           </p>
         </section>
-
-        <p className="micro text-center" style={{ marginTop: 0 }}>
-          停止跟进的范围以确认面板中的云端数据为准；提醒只表示云端已有记录，不代表已经送达。
-        </p>
 
         <div className="work-actions">
           <button type="button" className="btn btn--primary grow" onClick={() => {
@@ -858,7 +852,7 @@ export function MatterRealDetail({ id }: { id: string }) {
             </button>
           ) : (
             <button type="button" className="btn btn--secondary" onClick={() => setReopenOpen(true)} disabled={Boolean(busy)}>
-              重新打开
+              恢复跟进
             </button>
           )}
           <button type="button" className="btn btn--quiet danger-text" onClick={() => setDeleteOpen(true)} disabled={Boolean(busy)}>
@@ -870,28 +864,28 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ProgressSheet
         open={progressOpen}
         title={matter.title}
-        note="提交后由云端生成待确认草稿；确认前不会写正式进展或日程。"
+        note="提交后会先生成待确认草稿；确认前不会修改正式进展或日程。"
         stayOpenOnSubmit
         busy={busy === "progress"}
         error={progressError}
-        choices={(progressPendingContext.schedule_candidates ?? []).map((candidate) => ({
+        choices={[...(progressPendingContext.choices ?? []).map((choice, index) => ({ id: `clarify-${index}`, title: choice, detail: "", onSelect: () => void startProgress(choice, progressContinuationRunId) })), ...(progressPendingContext.schedule_candidates ?? []).map((candidate) => ({
           id: candidate.schedule_id,
           title: candidate.title,
-          detail: `${dateTimeLabel(candidate.starts_at)}${
+          detail: `${formatDateTime(candidate.starts_at)}${
             candidate.location ? ` · ${candidate.location}` : ""
-          } · 只用于继续整理，不会直接保存`,
+          }`,
           onSelect: () => {
             const runId = progressContinuationRunId;
             setProgressError(null);
             setProgressPendingContext({});
             void startProgress(
-              `选择「${candidate.title}」（${dateTimeLabel(candidate.starts_at)}${
+              `选择「${candidate.title}」（${formatDateTime(candidate.starts_at)}${
                 candidate.location ? `，地点：${candidate.location}` : ""
               }）`,
               runId,
             );
           },
-        }))}
+        }))]}
         submitLabel="交给助手整理"
         onClose={() => {
           setProgressOpen(false);
@@ -909,7 +903,7 @@ export function MatterRealDetail({ id }: { id: string }) {
             <input className="input" value={title} onChange={(event) => setTitle(event.target.value)} />
           </label>
           <label className="field">
-            <span className="field__label">目标与背景</span>
+            <span className="field__label">背景</span>
             <textarea className="input" rows={3} value={goal} onChange={(event) => setGoal(event.target.value)} />
           </label>
           <label className="field">
@@ -1000,7 +994,7 @@ export function MatterRealDetail({ id }: { id: string }) {
         fallbackFareKind={routeMapDetails?.fare_kind}
         fallbackNotice={
           routeMapSummary?.fetched_at
-            ? `路线结果取得于 ${dateTimeLabel(routeMapSummary.fetched_at)}`
+            ? `路线结果取得于 ${formatDateTime(routeMapSummary.fetched_at)}`
             : null
         }
         onClose={() => setRouteMapScheduleId(null)}
@@ -1017,12 +1011,10 @@ export function MatterRealDetail({ id }: { id: string }) {
             </p>
             <div className="card">
               <p className="body-text" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                {progressAnswer.answer}
+                {progressAnswer.result.answer || progressAnswer.result.clarify}
               </p>
             </div>
-            <p className="micro" style={{ margin: 0 }}>
-              云端在事项整理中直接返回了这份回答；没有再次发起普通问答，也没有创建草稿。
-            </p>
+            <ApiOperationCard context={progressAnswer.result.pending_context ?? {}} />
             <button
               type="button"
               className="btn btn--primary"
@@ -1038,7 +1030,7 @@ export function MatterRealDetail({ id }: { id: string }) {
         title="撤回这条变更？"
         body={
           revertTarget
-            ? `云端会${describeRevert(revertTarget)}。撤回后事项、历史和今天的安排会重新读取。`
+            ? `${describeRevert(revertTarget)}。撤回后事项、历史和今天的安排会重新读取。`
             : ""
         }
         confirmLabel="确认撤回"
@@ -1050,7 +1042,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ConfirmDialog
         open={Boolean(initialDeleteTarget)}
         title="删除这个新事项？"
-        body="云端会再次核对资格，并在同一事务中软删该事项及本次新建的日程、待办和提醒；其他事项、参考日程和苹果导入副本不受影响。"
+        body="删除前会再次核对资格，并移除该事项及本次新建的日程、待办和提醒；其他事项、参考日程和苹果导入副本不受影响。"
         confirmLabel="删除新事项"
         danger
         onCancel={() => setInitialDeleteTarget(null)}
@@ -1084,7 +1076,7 @@ export function MatterRealDetail({ id }: { id: string }) {
               <div className="m-stack-8 mt-8">
                 {pendingReminders.map((reminder) => (
                   <p key={reminder.reminder_id} className="caption" style={{ margin: 0 }}>
-                    {reminder.title} · {dateTimeLabel(reminder.trigger_at)}
+                    {reminder.title} · {formatDateTime(reminder.trigger_at)}
                   </p>
                 ))}
               </div>
@@ -1119,7 +1111,7 @@ export function MatterRealDetail({ id }: { id: string }) {
               <ul className="compact-list">
                 {futureSchedules.map((schedule) => (
                   <li key={schedule.schedule_id}>
-                    {schedule.title} · {dateTimeLabel(schedule.starts_at)}
+                    {schedule.title} · {formatDateTime(schedule.starts_at)}
                     {schedule.source === "ios_eventkit" ? " · 苹果端日程需在苹果设备处理" : ""}
                   </li>
                 ))}
@@ -1156,16 +1148,16 @@ export function MatterRealDetail({ id }: { id: string }) {
       </Sheet>
       <ConfirmSheet
         open={reopenOpen}
-        title="重新打开这件事？"
-        body="云端会把状态改回正在推进，并重新出现在列表。"
-        confirmLabel="重新打开"
+        title="恢复跟进这件事？"
+        body="恢复后会重新出现在进行中的事项里。"
+        confirmLabel="恢复跟进"
         onClose={() => setReopenOpen(false)}
         onConfirm={() => {
           setReopenOpen(false);
           void run("reopen", async () => {
             await reopenMatter(matter.matter_id, { expected_version: matter.version });
             await load();
-            toast("已重新打开");
+            toast("已恢复跟进");
           });
         }}
       />

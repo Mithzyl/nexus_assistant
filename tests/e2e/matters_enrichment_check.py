@@ -128,7 +128,7 @@ def main() -> int:
         page.goto(f"{BASE}/matters/{matter_id}", wait_until="networkidle")
         page.wait_for_timeout(800)
         detail_text = page_text(page)
-        check("history is available after navigation", "变更历史" in detail_text and "已生效" in detail_text)
+        check("history is available after navigation", "调整记录" in detail_text and "已保存" in detail_text)
         check("history uses readable result text", "日程：" in detail_text and "change" not in detail_text.lower())
 
         schedule = page.locator(".schedule-block").filter(has_text="陆家嘴面谈").first

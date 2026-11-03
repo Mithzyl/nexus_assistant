@@ -253,7 +253,7 @@ def main() -> int:
             "no hidden internal bubble exists",
             page.locator(".bubble-user", has_text="请作为通勤分析器").count() == 0,
         )
-        check("failed chat is shown honestly", "失败的聊天问题" in body and "这次没有完成" in body)
+        check("failed chat is shown honestly", "失败的聊天问题" in body and "这次没处理完" in body)
         check(
             "server history newest chat is present",
             "E2E 聊天问题 20" in body,
@@ -326,22 +326,14 @@ def main() -> int:
         )
         check_posts.clear()
         go(page, f"/me/commute/{plan_a}", 2200)
-        if page.locator(".commute-basis > summary").count():
-            page.locator(".commute-basis > summary").first.click()
-            wait(page, 300)
         body = text(page)
         check("no check created on detail load", len(check_posts) == 0, check_posts)
-        check("latest weather area is present", "最新天气" in body)
-        check("analysis-time weather is labelled", "建议采用" in body)
-        check("latest weather value shown", "18°C" in body and "降雨 60%" in body, body[:500])
-        check("old advice keeps its weather", "21°C" in body and "降雨 20%" in body)
-        check("weather update copy is present", "最新天气" in body and "建议采用" in body)
-        check(
-            "weather update does not claim reanalysis",
-            "建议采用" in body and "重新分析" not in body,
-        )
-        if page.locator(".commute-history > summary").count():
-            page.locator(".commute-history > summary").first.click()
+        check("conclusion date is shown", "下一次通勤" in body and "周" in body)
+        check("analysis weather is shown once", "21°C" in body and "降雨概率 20%" in body)
+        check("time ledger is shown", "时间明细" in body and "到岗时间" in body and "预留时间" in body)
+        check("no latest-weather comparison leaks", "最新天气" not in body and "建议采用" not in body)
+        if page.locator(".commute-archive > summary").count():
+            page.locator(".commute-archive > summary").first.click()
             wait(page, 300)
         body = text(page)
         check("old plan revision is labelled", "设置已更新" in body)
@@ -354,12 +346,8 @@ def main() -> int:
             legacy_card.locator("summary").click()
             wait(page, 300)
         body = text(page)
-        check("legacy history remains readable", FIXTURE["titles"]["legacy"] in body)
-        check("legacy does not invent AI zero", "AI 额外 0" not in body)
-        check(
-            "expired title lives in history",
-            page.locator(".history-advice", has_text=FIXTURE["titles"]["expired"]).count() == 1,
-        )
+        check("history records remain readable", "已过期" in body and "设置已更新" in body)
+        check("no invented AI zero", "AI 额外 0" not in body)
         check(
             "current departure is shown only for current advice",
             "建议出发" in body,
@@ -384,7 +372,7 @@ def main() -> int:
         go(page, f"/me/commute/{plan_b}", 1200)
         body = text(page)
         check("running phase is shown", "核对通勤时段天气" in body)
-        check("missing worker is explained", "尚未收到执行程序的响应" in body)
+        check("missing worker is explained", "后台还没有开始处理" in body)
         check("task is described as saved", "任务已保存" in body)
         check("manual reconcile action exists", "继续核对" in body or "继续等待" in body)
         check("no check created while restoring", len(check_posts) == 0, check_posts)
@@ -408,7 +396,7 @@ def main() -> int:
         # 7. A real click creates once; refresh restores the same check.
         check_posts.clear()
         go(page, f"/me/commute/{plan_d}", 900)
-        page.get_by_role("button", name="更新建议").first.click()
+        page.get_by_role("button", name="刷新路线").first.click()
         wait(page, 1600)
         body = text(page)
         check("explicit reanalysis posts once", len(check_posts) == 1, check_posts)
@@ -417,7 +405,7 @@ def main() -> int:
             all(not body for body in check_bodies),
             check_bodies,
         )
-        check("queued check is shown as waiting", "等待处理" in body)
+        check("queued check is shown as waiting", "已提交，马上开始" in body)
         check(
             "create plan has one check",
             db_count("select count(*) from commute_checks where plan_id=?", (plan_d,)) == 1,
@@ -473,8 +461,8 @@ def main() -> int:
         )
         check_posts.clear()
         go(page, f"/me/commute/{plan_h}", 1300)
-        if page.locator(".commute-history > summary").count():
-            page.locator(".commute-history > summary").first.click()
+        if page.locator(".commute-archive > summary").count():
+            page.locator(".commute-archive > summary").first.click()
             wait(page, 300)
         body = text(page)
         check("old revision operation is retired", "计划已更新" in body)
@@ -515,12 +503,12 @@ def main() -> int:
 
         # 10. Route provider unconfigured is explicit; weather/history remain readable.
         go(page, f"/me/commute/{plan_c}", 1500)
-        if page.locator(".commute-history > summary").count():
-            page.locator(".commute-history > summary").first.click()
+        if page.locator(".commute-archive > summary").count():
+            page.locator(".commute-archive > summary").first.click()
             wait(page, 300)
         body = text(page)
         check("route unconfigured is explicit", "路线服务暂时不可用" in body)
-        check("weather missing is honest", "22°C" in body and "降雨 20%" in body)
+        check("weather missing is honest", "22°C" in body and "降雨概率 20%" in body)
         check("historical advice still readable", "建议出发" in body and "09:00" in body)
         check("no fabricated route source", "服务器路线查询" not in body, body[:400])
         page.screenshot(path=str(SHOTS / "commute-unconfigured.png"), full_page=True)

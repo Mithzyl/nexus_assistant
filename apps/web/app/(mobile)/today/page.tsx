@@ -302,13 +302,17 @@ export default function TodayPage() {
         </div>
       ) : todayData.data ? (
         <>
-          <section style={{ padding: "0 var(--m-gutter)", marginBottom: 12 }} aria-label="提醒送达方式">
-            <p className="micro">{notificationPermission === "granted"
-              ? "已开启系统通知 · 本页面保持打开时，可在后台发送浏览器通知"
-              : "仅页面内提醒 · 页面保持打开时，每 15 秒核对一次到点提醒"}</p>
-            <p className="micro">页面关闭后不再发送提醒；日历订阅的提醒由日历应用负责。</p>
-            {notificationPermission === "default" ? <button className="btn btn--secondary btn--small" onClick={() => void enableNotifications()}>开启浏览器系统通知</button> : null}
-            {notificationPermission === "denied" ? <p className="micro">浏览器通知未获允许，页面内提醒仍可使用。</p> : null}
+          <section className="today-reminder-note" aria-label="提醒送达方式">
+            <span className="today-reminder-note__state">
+              <i aria-hidden="true" />
+              {notificationPermission === "granted" ? "系统通知已开启" : "页面内提醒已开启"}
+            </span>
+            {notificationPermission === "default" ? (
+              <button type="button" onClick={() => void enableNotifications()}>开启浏览器通知</button>
+            ) : null}
+            {notificationPermission === "denied" ? (
+              <span className="today-reminder-note__muted">浏览器通知未获允许</span>
+            ) : null}
           </section>
           {dueReminders.length > 0 ? (
             <section style={{ padding: "0 var(--m-gutter)" }}>

@@ -4,13 +4,12 @@
 
 import type { Advisory } from "@/lib/mobile/api";
 import { formatDateTime, formatDuration, formatServiceDate, formatTime } from "@/lib/mobile/format";
-import { advisoryApplicability, mockProviders } from "@/lib/mobile/advisory";
+import { advisoryApplicability } from "@/lib/mobile/advisory";
 import { Pill } from "./ui";
 
 const PROVIDER_LABEL: Record<string, string> = {
   amap: "高德地图",
   open_meteo: "Open-Meteo",
-  mock: "示例数据",
 };
 
 export function HistoryAdvisoryCard({
@@ -25,6 +24,7 @@ export function HistoryAdvisoryCard({
   const departure = formatTime(advisory.recommended_departure_at);
   const arrival = formatTime(advisory.target_arrival_at);
   const sources = advisory.sources
+    .filter((source) => source.provider !== "mock")
     .map((source) => `${source.kind === "weather" ? "天气" : "路线"} ${PROVIDER_LABEL[source.provider] ?? source.provider}`)
     .join(" · ");
 
@@ -34,7 +34,6 @@ export function HistoryAdvisoryCard({
         <span className="history-advice__date">{formatServiceDate(advisory.local_service_date)}</span>
         <span className="history-advice__time">{departure ? `${departure} 出发` : "时间待确认"}</span>
         <Pill tone={applicability.tone}>{applicability.label}</Pill>
-        {mockProviders(advisory).length > 0 ? <Pill tone="amber">示例数据</Pill> : null}
       </summary>
       <div className="history-advice__body">
         <div className="history-advice__row">
@@ -54,7 +53,7 @@ export function HistoryAdvisoryCard({
               {advisory.weather.temperature_c !== null ? `${Math.round(advisory.weather.temperature_c)}°C` : "温度未知"}
               {advisory.weather.precipitation_probability_known &&
               advisory.weather.precipitation_probability_max !== null
-                ? ` · 降雨 ${Math.round(advisory.weather.precipitation_probability_max * 100)}%`
+                ? ` · 降雨概率 ${Math.round(advisory.weather.precipitation_probability_max * 100)}%`
                 : ""}
             </b>
           </div>

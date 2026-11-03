@@ -13,7 +13,7 @@ function MatterCard({ matter }: { matter: MatterSummary }) {
     <Link href={`/matters/${matter.matter_id}`} className="card matter-card">
       <span className="card-title" style={{ display: "block" }}>{matter.title}</span>
       <span className="matter-card__progress">
-        {matter.latest_progress || "还没有最新进展。"}
+        {matter.latest_progress || "还没有进展记录。"}
       </span>
       <span className="matter-card__next">
         <ArrowDownRight size={13} />
@@ -37,7 +37,7 @@ export default function MattersPage() {
   ];
 
   return (
-    <div className="m-screen m-stack-18" style={{ paddingBottom: 28 }}>
+    <div className="m-screen m-stack-24 matters-page" style={{ paddingBottom: 40 }}>
       <ScreenHeader
         title="事项"
         subtitle="把长期的事拆成下一步"
@@ -69,8 +69,8 @@ export default function MattersPage() {
       {!signedIn ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <LoginRequired
-            title="登录后同步事项"
-            body="登录账号后，事项、日程和提醒会同步到这里，方便你持续跟进。"
+            title="登录生活助手"
+            body="跨设备同步你的今日安排、待办事项与个人习惯。"
           />
         </div>
       ) : matters.loading && matters.items.length === 0 ? (
@@ -84,8 +84,8 @@ export default function MattersPage() {
       ) : matters.items.length === 0 ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
-            title="还没有事项"
-            body="把要做的事交给助手，之后可以在这里持续跟进。"
+            title="还没有正在跟进的事项"
+            body="发一段消息或会议安排，助手会帮你理清头绪。"
           >
             <div className="m-stack-8">
               <Link href="/ask" className="btn btn--primary">交给助手整理</Link>
@@ -100,15 +100,15 @@ export default function MattersPage() {
           {groups.map((group) => {
             const rows = matters.items.filter((matter) => matter.status === group.status);
             return (
-              <section key={group.status} className="stack-12">
-                <div className="flex items-center justify-between gap-12" style={{ padding: "0 var(--m-gutter)" }}>
+              <section key={group.status} className="matter-group">
+                <div className="matter-group__head flex items-center justify-between gap-12" style={{ padding: "0 var(--m-gutter)" }}>
                   <h2 className="section-title" style={{ marginBottom: 0 }}>{group.label}</h2>
                   <span className="micro">{rows.length}</span>
                 </div>
                 {rows.length === 0 ? (
-                  <p className="micro" style={{ padding: "0 var(--m-gutter)", margin: "4px 0 0" }}>这一组暂无事项。</p>
+                  <p className="micro matter-group__empty" style={{ padding: "0 var(--m-gutter)" }}>这一组暂无事项。</p>
                 ) : (
-                  <div className="m-stack-10" style={{ padding: "0 var(--m-gutter)" }}>
+                  <div className="m-stack-12" style={{ padding: "0 var(--m-gutter)" }}>
                     {rows.map((matter) => <MatterCard key={matter.matter_id} matter={matter} />)}
                   </div>
                 )}
@@ -123,7 +123,7 @@ export default function MattersPage() {
             </div>
           ) : null}
           <p className="micro" style={{ padding: "0 var(--m-gutter)" }}>
-            已同步 {matters.items.length} 条事项
+            共 {matters.items.length} 条事项
           </p>
         </>
       )}

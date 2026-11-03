@@ -24,6 +24,7 @@ const ALLOWED_ROOTS = new Set([
   "advisories",
   "commute",
   "matters",
+  "follow-ups",
   "today",
   "reminders",
   "calendar-subscription",

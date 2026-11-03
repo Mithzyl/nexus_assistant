@@ -8,6 +8,9 @@ import {
   type DraftConfirmInput,
   type DraftConfirmResponse,
   type DraftPatchInput,
+  type FollowUpExecutionRead,
+  type FollowUpPatchInput,
+  type FollowUpRead,
   type InitialDeleteResponse,
   type MatterDetail,
   type MatterChange,
@@ -200,6 +203,46 @@ export function intakeMatter(
 
 export function listIntakeResults(limit = 20, signal?: AbortSignal): Promise<MatterIntakeResult[]> {
   return apiRequest<MatterIntakeResult[]>(pa(`/matters/intake?limit=${limit}`), { signal });
+}
+
+export function listFollowUps(
+  matterId?: string | null,
+  state?: "enabled" | "paused" | "closed" | null,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<FollowUpRead[]> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (matterId) query.set("matter_id", matterId);
+  if (state) query.set("state", state);
+  return apiRequest<FollowUpRead[]>(pa(`/follow-ups?${query.toString()}`), { signal });
+}
+
+export function getFollowUp(
+  followUpId: string,
+  signal?: AbortSignal,
+): Promise<FollowUpRead> {
+  return apiRequest<FollowUpRead>(pa(`/follow-ups/${id(followUpId)}`), { signal });
+}
+
+export function patchFollowUp(
+  followUpId: string,
+  input: FollowUpPatchInput,
+): Promise<FollowUpRead> {
+  return apiRequest<FollowUpRead>(pa(`/follow-ups/${id(followUpId)}`), {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+export function listFollowUpExecutions(
+  followUpId: string,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<FollowUpExecutionRead[]> {
+  return apiRequest<FollowUpExecutionRead[]>(
+    pa(`/follow-ups/${id(followUpId)}/executions?limit=${limit}`),
+    { signal },
+  );
 }
 
 export function getIntakeResult(
