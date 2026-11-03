@@ -19,7 +19,12 @@ class AppMemoryData(BaseModel):
 
 
 class MemoryCommand(BaseModel):
-    """Only an explicit authenticated user action can confirm sensitive content."""
+    """Explicit user memory command, outside the generic business-operation catalogue.
+
+    save/propose/correct require nonblank text; correct/forget/confirm/disclose
+    require entry_id and expected_version >= 1. settings requires enabled and
+    expected_version. Sensitive confirmation retains the dedicated user flow.
+    """
 
     model_config = ConfigDict(extra="forbid")
     local_run_id: str = Field(min_length=36, max_length=36)

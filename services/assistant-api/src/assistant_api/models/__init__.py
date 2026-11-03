@@ -85,3 +85,5 @@ __all__ = [
     "UserProfile",
     "UserSession",
 ]
+
+from assistant_api.models.follow_up import FollowUp, FollowUpExecution, BusinessChangeEvent

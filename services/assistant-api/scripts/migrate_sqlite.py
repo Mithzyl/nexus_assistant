@@ -21,6 +21,8 @@ from assistant_api.models import Base
 
 VERSION = "0001_sqlite_baseline"
 COLUMN_MIGRATIONS = (
+    ("0023_commute_day_override", "commute_instances", "arrival_local_time_override", "VARCHAR(5)"),
+    ("0022_explicit_reminder_dependency", "reminders", "schedule_offset_seconds", "INTEGER"),
     ("0013_commute_bundle", "commute_plans", "effective_from", "DATE"),
     ("0013_commute_bundle", "commute_plans", "matter_id", "VARCHAR(36) REFERENCES matters(matter_id)"),
     ("0013_commute_bundle", "commute_plans", "first_schedule_id", "VARCHAR(36) REFERENCES schedules(schedule_id)"),
@@ -167,6 +169,7 @@ async def init(database_url: str) -> None:
             await conn.run_sync(Base.metadata.create_all)
             await _ensure_table(conn)
             await _record(conn, VERSION, "metadata")
+            await _record(conn, "0021_follow_ups", "metadata:follow_ups,follow_up_executions,business_change_events")
             for version, table, column, sqltype in COLUMN_MIGRATIONS:
                 await _record(conn, version, "metadata")
             await _apply_indexes(conn)
@@ -176,6 +179,7 @@ async def init(database_url: str) -> None:
 
 
 async def upgrade(database_url: str) -> None:
+    """Add missing tables and columns while preserving all existing business rows."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
@@ -195,6 +199,7 @@ async def upgrade(database_url: str) -> None:
                     await _record(conn, version, f"added:{table}.{column}")
                     print(f"{version}: added {table}.{column}")
             await _apply_indexes(conn)
+            await _record(conn, "0021_follow_ups", "created missing follow-up tables")
             await _record(conn, VERSION, "upgrade")
     finally:
         await engine.dispose()

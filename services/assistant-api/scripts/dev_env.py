@@ -88,6 +88,9 @@ REQUIRED_TABLES = (
     "matter_drafts",
     "matter_changes",
     "reminders",
+    "follow_ups",
+    "follow_up_executions",
+    "business_change_events",
 )
 REQUIRED_COLUMNS = {
     "nexus_runs": ("purpose", "business_ref", "input_version", "trigger"),
@@ -119,6 +122,7 @@ REQUIRED_COLUMNS = {
         "location_external_id",
     ),
     "reminders": (
+        "schedule_offset_seconds",
         "source_scope_key",
         "data_source_id",
         "schedule_id",
@@ -134,13 +138,15 @@ REQUIRED_MIGRATIONS = (
     "0008_source_auth",
     "0009_edit_drafts",
     "0012_reminder_lifecycle",
+    "0021_follow_ups",
+    "0022_explicit_reminder_dependency",
 )
 
 COMPONENT_MARKERS = {
     "stub": ("uvicorn", "app:app"),
     "api": ("uvicorn", "assistant_api.main:app"),
-    "scheduler": ("assistant_api.commute.scheduler",),
-    "worker": ("assistant_api.commute.worker",),
+    "scheduler": ("assistant_api.background", "scheduler"),
+    "worker": ("assistant_api.background", "worker"),
 }
 
 
@@ -553,13 +559,13 @@ def component_command(
         )
     if name == "scheduler":
         return (
-            [str(python), "-m", "assistant_api.commute.scheduler"],
+            [str(python), "-m", "assistant_api.background", "scheduler"],
             SERVICE_ROOT,
             None,
         )
     if name == "worker":
         return (
-            [str(python), "-m", "assistant_api.commute.worker"],
+            [str(python), "-m", "assistant_api.background", "worker"],
             SERVICE_ROOT,
             None,
         )

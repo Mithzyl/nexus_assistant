@@ -73,7 +73,9 @@ async def delete_data_source(
     await service.delete_source(db, user.user_id, source_id)
 
 
-@content_router.get("/content", response_model=ContentListResponse)
+@content_router.get("/content", response_model=ContentListResponse,
+    openapi_extra={'x-assistant': {'enabled': False, 'reason': '当前内容读取服务未按assistant_enabled过滤，不能用作AI业务查询入口。'}}
+)
 async def list_content(
     user: CurrentUser,
     db: DatabaseSession,
@@ -87,7 +89,9 @@ async def list_content(
     )
 
 
-@content_router.get("/content/{item_id}", response_model=ContentItemRead)
+@content_router.get("/content/{item_id}", response_model=ContentItemRead,
+    openapi_extra={'x-assistant': {'enabled': False, 'reason': '当前内容读取服务未按assistant_enabled过滤，不能用作AI业务查询入口。'}}
+)
 async def get_content(
     item_id: str, user: CurrentUser, db: DatabaseSession
 ) -> ContentItemRead:

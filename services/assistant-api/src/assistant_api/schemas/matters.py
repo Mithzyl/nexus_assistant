@@ -7,12 +7,12 @@ service. Nothing here reuses `source_run_id` for a record's origin.
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal
+from datetime import date, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from assistant_api.commute.schemas import UtcDateTime
+from assistant_api.commute.schemas import UtcDateTime, CommutePlanRead
 from assistant_api.commute.timeutil import ensure_aware
 
 MatterState = Literal["active", "waiting", "archived", "deleted"]
@@ -38,12 +38,20 @@ class Coordinate(BaseModel):
 class SchedulePayload(BaseModel):
     """Formal appointment fields; `schedule_id` means "update this one"."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
+        {"oneOf": [
+            {"required": ["latitude", "longitude"], "properties": {"latitude": {"type": "number"}, "longitude": {"type": "number"}}},
+            {"properties": {"latitude": {"type": "null"}, "longitude": {"type": "null"}}},
+        ]},
+        {"not": {"required": ["reminder_at", "reminder_offset_seconds"], "properties": {"reminder_at": {"type": "string"}, "reminder_offset_seconds": {"type": "integer"}}}},
+    ]})
 
     schedule_id: str | None = None
     title: str = Field(min_length=1, max_length=255)
     starts_at: datetime
-    ends_at: datetime | None = None
+    ends_at: datetime | None = Field(default=None, description="结束时间必须晚于starts_at；未给出结束时间时省略。")
+    reminder_at: datetime | None = Field(default=None, description="可选的日程绝对提醒时间；与reminder_offset_seconds二选一，不创建待办。")
+    reminder_offset_seconds: int | None = Field(default=None, ge=-31536000, le=31536000, description="明确要求日程开始前后多久提醒时提供秒数，提前为负数；修改日程时随开始时间重算。")
     location: str | None = Field(default=None, max_length=255)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
@@ -55,6 +63,9 @@ class SchedulePayload(BaseModel):
 
     @model_validator(mode="after")
     def _check(self) -> "SchedulePayload":
+        """Require paired coordinates, ordered times and one explicitly selected reminder timing mode."""
+        if self.reminder_at is not None and self.reminder_offset_seconds is not None:
+            raise ValueError("日程绝对提醒与相对提醒只能选择一个。")
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("latitude 和 longitude 必须同时提供或同时为空。")
         if self.ends_at is not None and ensure_aware(self.ends_at) <= ensure_aware(
@@ -64,18 +75,37 @@ class SchedulePayload(BaseModel):
         return self
 
 
-class TodoPayload(BaseModel):
+class ScheduleRelativeReminder(BaseModel):
+    """An explicit dependency on a schedule time; omitted ID refers only to a same-request schedule."""
     model_config = ConfigDict(extra="forbid")
+    schedule_id: str | None = Field(default=None, min_length=1, max_length=36)
+    offset_seconds: int = Field(ge=-31536000, le=31536000)
+
+
+class TodoPayload(BaseModel):
+    """Independent todo fields, with an optional explicitly requested schedule-relative reminder."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"not": {
+        "required": ["reminder_at", "schedule_reminder"],
+        "properties": {"reminder_at": {"type": "string"}, "schedule_reminder": {"type": "object"}},
+    }})
 
     todo_id: str | None = None
     title: str = Field(min_length=1, max_length=255)
     due_at: datetime | None = None
     reminder_at: datetime | None = None
     status: TodoStatus = "open"
+    schedule_reminder: ScheduleRelativeReminder | None = None
+
+    @model_validator(mode="after")
+    def validate_reminder_timing(self):
+        """An absolute time and a relative schedule dependency are alternative reminder definitions."""
+        if self.reminder_at is not None and self.schedule_reminder is not None:
+            raise ValueError("绝对提醒时间和日程相对提醒只能选择一个。")
+        return self
 
 
 class DraftPayload(BaseModel):
-    """Editable proposal shown in the confirmation sheet."""
+    """Typed record changes prepared before the existing save transaction."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -86,6 +116,41 @@ class DraftPayload(BaseModel):
     schedule: SchedulePayload | None = None
     todos: list[TodoPayload] = Field(default_factory=list, max_length=30)
     complete_todo_ids: list[str] = Field(default_factory=list, max_length=30)
+
+
+class NewSchedulePayload(SchedulePayload):
+    """Describe a new schedule; existing records must use the edit-draft route."""
+    schedule_id: None = None
+
+
+class NewTodoPayload(TodoPayload):
+    """Describe a new todo without accepting an existing todo identifier."""
+    todo_id: None = None
+
+
+class StructuredDraftRequest(DraftPayload):
+    """Prepare new records for the existing atomic draft save transaction."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"oneOf": [
+        {"required": ["title"], "properties": {"title": {"type": "string", "minLength": 1}, "matter_id": {"type": "null"}, "expected_matter_version": {"type": "null"}}},
+        {"required": ["matter_id", "expected_matter_version"], "properties": {"matter_id": {"type": "string", "minLength": 1}, "expected_matter_version": {"type": "integer", "minimum": 1}}},
+    ]})
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    matter_id: str | None = Field(default=None, min_length=1, max_length=36, description="追加到已有事项时提供真实ID；新建事项时省略。")
+    expected_matter_version: int | None = Field(default=None, ge=1, description="已有事项的当前version；新建事项时省略。")
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    schedule: NewSchedulePayload | None = None
+    todos: list[NewTodoPayload] = Field(default_factory=list, max_length=30)
+    complete_todo_ids: list[str] = Field(default_factory=list, max_length=0)
+
+    @model_validator(mode="after")
+    def validate_creation_target(self):
+        """Require a new title or an existing matter with its observed version."""
+        if self.matter_id is None:
+            if not self.title or self.expected_matter_version is not None:
+                raise ValueError("新建事项需要标题，不能提供原事项版本。")
+        elif self.expected_matter_version is None:
+            raise ValueError("追加记录需要已有事项的当前版本。")
+        return self
 
 
 class TodoRead(BaseModel):
@@ -149,6 +214,7 @@ class ReminderRead(BaseModel):
     title: str
     note: str | None = None
     trigger_at: UtcDateTime
+    schedule_offset_seconds: int | None = None
     status: ReminderStatus
     sync_status: SyncStatus | None = None
     source: ScheduleSource | None = None
@@ -174,6 +240,7 @@ class MatterRead(BaseModel):
 
 
 class MatterDetailRead(MatterRead):
+    commute_plan_id: str | None = Field(default=None, description="该事项唯一有效通勤计划的实际ID；与matter_id是不同实体，不能互相代替。")
     schedules: list[ScheduleRead] = Field(default_factory=list)
     todos: list[TodoRead] = Field(default_factory=list)
     progress: list[ProgressRead] = Field(default_factory=list)
@@ -306,11 +373,18 @@ class IntakeRequest(BaseModel):
 
 
 class IntakeResponse(BaseModel):
+    source: Literal['chat','follow_up'] = 'chat'
+    matter_id: str | None = None
+    follow_up_id: str | None = None
+    follow_up_execution_id: str | None = None
+    status: str | None = None
+    error: dict | None = None
+    workflow_execution_id: str | None = None
     draft: DraftRead | None = None
     replayed: bool = False
     intent: Literal["matter", "question"] = "matter"
     outcome: Literal[
-        "answer", "draft", "needs_clarification", "processing", "unknown"
+        "answer", "draft", "needs_clarification", "processing", "unknown", "failed", "cancelled"
     ] = "draft"
     message: str | None = None
     answer: str | None = None
@@ -321,6 +395,9 @@ class IntakeResponse(BaseModel):
 
 
 class IntakeResultRead(BaseModel):
+    source: Literal['chat','follow_up'] = 'chat'
+    follow_up_id: str | None = None
+    follow_up_execution_id: str | None = None
     confirm_status: Literal["confirmed", "unconfirmed", "unknown"] = "unknown"
     target_lifecycle: Literal["active", "archived", "deleted", "source_revoked"] | None = None
     target_title: str | None = None
@@ -350,9 +427,12 @@ class IntakeResultRead(BaseModel):
 
 
 class MatterEditRequest(BaseModel):
-    """Create an editable draft from one existing schedule or todo."""
+    """Open exactly one existing object; use StructuredDraftRequest for additions."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"oneOf": [
+        {"required": ["schedule_id"], "properties": {"schedule_id": {"type": "string"}, "todo_id": {"type": "null"}}},
+        {"required": ["todo_id"], "properties": {"todo_id": {"type": "string"}, "schedule_id": {"type": "null"}}},
+    ]})
 
     idempotency_key: str = Field(min_length=8, max_length=128)
     schedule_id: str | None = None
@@ -360,6 +440,7 @@ class MatterEditRequest(BaseModel):
 
     @model_validator(mode="after")
     def _one_target(self) -> "MatterEditRequest":
+        """Reject missing or ambiguous existing-record selectors before opening a draft."""
         if (self.schedule_id is None) == (self.todo_id is None):
             raise ValueError("schedule_id 和 todo_id 必须且只能提供一个。")
         return self
@@ -393,8 +474,8 @@ class DraftPatchRequest(BaseModel):
     changes_note: str | None = Field(default=None, max_length=2000)
     next_step: str | None = Field(default=None, max_length=500)
     schedule: SchedulePayload | None = None
-    todos: list[TodoPayload] | None = None
-    complete_todo_ids: list[str] | None = None
+    todos: list[TodoPayload] | None = Field(default=None, max_length=30)
+    complete_todo_ids: list[str] | None = Field(default=None, max_length=30)
     cancel_schedule_ids: list[str] | None = Field(default=None, max_length=30)
 
 
@@ -433,6 +514,7 @@ class ConfirmResponse(BaseModel):
     draft: DraftRead
     matter: MatterRead
     schedule: ScheduleRead | None = None
+    todos: list[TodoRead] = Field(default_factory=list)
     reminders: list[ReminderRead] = Field(default_factory=list)
     change_id: str
     replayed: bool = False
@@ -448,6 +530,12 @@ class RevertResponse(BaseModel):
     matter: MatterRead
     change_id: str
     reverted_at: UtcDateTime
+
+
+class MatterDeleteRead(BaseModel):
+    """Return the actual matter deletion identity and time."""
+    matter_id: str
+    deleted_at: UtcDateTime
 
 
 class InitialDeleteResponse(BaseModel):
@@ -505,7 +593,15 @@ class TodayRead(BaseModel):
 
 
 class EstimateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    """Estimate from one known origin and at least one explicit journey time."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
+        {"oneOf": [
+            {"required": ["origin"], "properties": {"origin": {"type": "object"}, "origin_schedule_id": {"type": "null"}}},
+            {"required": ["origin_schedule_id"], "properties": {"origin_schedule_id": {"type": "string"}, "origin": {"type": "null"}}},
+        ]},
+        {"anyOf": [{"required": [key], "properties": {key: {"type": "string"}}} for key in ("depart_at", "arrive_by")]},
+        {"if": {"required": ["origin_basis"], "properties": {"origin_basis": {"const": "previous_schedule"}}}, "then": {"required": ["origin_schedule_id"], "properties": {"origin_schedule_id": {"type": "string"}}}},
+    ]})
 
     origin: Coordinate | None = None
     origin_schedule_id: str | None = Field(default=None, min_length=8, max_length=36)
@@ -518,6 +614,7 @@ class EstimateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _one_time(self) -> "EstimateRequest":
+        """Validate origin exclusivity and required time inputs for route estimation."""
         if self.origin is not None and self.origin_schedule_id is not None:
             raise ValueError("origin 和 origin_schedule_id 只能提供一个。")
         if self.origin is None and self.origin_schedule_id is None:
@@ -581,6 +678,16 @@ class EstimateResponse(BaseModel):
     origin: RouteEndpointRead | None = None
     destination: RouteEndpointRead | None = None
     shape: RouteShapeRead = Field(default_factory=RouteShapeRead)
+
+
+class CommuteDayRead(BaseModel):
+    """Return the saved daily schedule identity, including replay and optional route data."""
+    schedule_id: str
+    replayed: bool
+    service_date: date
+    instance_id: str | None = None
+    timezone_repaired: bool | None = None
+    route: EstimateResponse | None = None
 
 
 class PlaceSearchRequest(BaseModel):
@@ -735,3 +842,132 @@ class PendingActionsResponse(BaseModel):
 
 
 __all__ = [name for name in dir() if name[0].isupper()]
+
+
+# The same target rules apply to both independent resource creation endpoints.
+_CREATE_TARGET_SCHEMA = {"if": {"required": ["matter_id"], "properties": {"matter_id": {"type": "string"}}},
+                         "then": {"required": ["expected_matter_version"], "properties": {"expected_matter_version": {"type": "integer", "minimum": 1}}},
+                         "else": {"properties": {"expected_matter_version": {"type": "null"}}}}
+
+
+class RecordCreationTarget(BaseModel):
+    """Resolve an existing parent by ID/version, or let the backend create the parent atomically."""
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    matter_id: str | None = Field(default=None, min_length=1, max_length=36)
+    expected_matter_version: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_parent_version(self):
+        """An existing parent needs its current version; a new parent has no supplied version."""
+        if (self.matter_id is None) != (self.expected_matter_version is None):
+            raise ValueError("指定已有事项时必须同时提供当前事项版本。")
+        return self
+
+
+class TodoCreateRequest(RecordCreationTarget, NewTodoPayload):
+    """Create a todo without requiring any schedule; explicit relative reminders name a real schedule."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
+        TodoPayload.model_config["json_schema_extra"], _CREATE_TARGET_SCHEMA,
+        {"properties": {"schedule_reminder": {"anyOf": [{"type": "null"}, {"type": "object", "required": ["schedule_id"], "properties": {"schedule_id": {"type": "string"}}}]}}},
+    ]})
+
+    @model_validator(mode="after")
+    def validate_relative_schedule(self):
+        """Independent creation cannot refer to an imaginary same-request calendar record."""
+        if self.schedule_reminder and (not self.schedule_reminder.schedule_id or not self.matter_id):
+            raise ValueError("独立待办的相对提醒需要已有日程ID及所属事项。")
+        return self
+
+
+class ScheduleCreateRequest(RecordCreationTarget, NewSchedulePayload):
+    """Create only a calendar record and its optional reminder, without todo fields."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
+        SchedulePayload.model_config["json_schema_extra"], _CREATE_TARGET_SCHEMA,
+    ]})
+
+
+class TodoPatchRequest(BaseModel):
+    """Patch specified todo fields while keeping its identity and all unrelated calendar records."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [{"properties": {key: {"not": {"type": "null"}} for key in ("title", "status")}}]})
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    expected_matter_version: int = Field(ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    due_at: datetime | None = None
+    reminder_at: datetime | None = None
+    schedule_reminder: ScheduleRelativeReminder | None = None
+    status: TodoStatus | None = None
+
+
+class SchedulePatchRequest(BaseModel):
+    """Patch only specified calendar fields; unspecified original fields remain local and unchanged."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [{"properties": {key: {"not": {"type": "null"}} for key in ("title", "starts_at", "coordinate_system")}}]})
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    expected_matter_version: int = Field(ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    location: str | None = Field(default=None, max_length=255)
+    reminder_at: datetime | None = None
+    reminder_offset_seconds: int | None = Field(default=None, ge=-31536000, le=31536000)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    coordinate_system: CoordinateSystem | None = None
+    location_city: str | None = Field(default=None, max_length=64)
+    location_address: str | None = Field(default=None, max_length=255)
+    location_source: str | None = Field(default=None, max_length=32)
+    location_external_id: str | None = Field(default=None, max_length=128)
+
+
+class TodoOperationRead(BaseModel):
+    """Return the actual saved todo and parent version so a create does not need a verification GET."""
+    matter: MatterRead
+    todo: TodoRead
+    reminders: list[ReminderRead] = Field(default_factory=list)
+    change_id: str | None = None
+    replayed: bool = False
+    applied: bool = True
+
+
+class ScheduleOperationRead(BaseModel):
+    """Return the actual calendar result, including unapplied conflict information when required."""
+    matter: MatterRead | None = None
+    schedule: ScheduleRead | None = None
+    reminders: list[ReminderRead] = Field(default_factory=list)
+    change_id: str | None = None
+    replayed: bool = False
+    applied: bool = True
+    conflict: ConflictRead | None = None
+
+
+class TodoListRead(BaseModel):
+    """Publish the collection shape for owned todo lookup."""
+    items: list[TodoRead]
+
+
+class ScheduleListRead(BaseModel):
+    """Publish the collection shape for owned calendar lookup."""
+    items: list[ScheduleRead]
+
+
+class CommuteDayState(BaseModel):
+    """Publish effective state, versions and real saved records for AI decisions and result cards."""
+    plan_id: str
+    matter_id: str | None = None
+    version: int | None = None
+    revision: int
+    service_date: date
+    timezone: str
+    status: Literal['upcoming','past','inactive','ineligible']
+    target_arrival_at: UtcDateTime
+    arrival_local_time: str
+    schedule: ScheduleRead | None = None
+    route: dict[str,Any] | None = None
+    applied: bool | None = None
+    replayed: bool | None = None
+    change_id: str | None = None
+    conflict: dict[str,Any] | None = None
+
+
+class CommutePlanUpdateRead(CommutePlanRead):
+    """Retain the existing plan response and include the immediately refreshed future day."""
+    next_day: CommuteDayState | None = None

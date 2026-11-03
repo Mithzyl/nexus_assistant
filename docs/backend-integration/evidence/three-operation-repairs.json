@@ -1,0 +1,2246 @@
+{
+  "date": "2026-11-03",
+  "scope": "Only three reported defects plus requested past-time and prior-evening 22:00 behavior",
+  "model": "real Nexus",
+  "map_eta": "existing explicit mock providers",
+  "database": "fresh isolated SQLite per batch; evening worker alone",
+  "deterministic": {
+    "command": ".venv/bin/pytest -q tests/test_three_operation_repairs.py --tb=short",
+    "result": "10 passed in 8.32s",
+    "initial_reproduction": "6 failed before implementation"
+  },
+  "real_ai": {
+    "passed": 5,
+    "failed": 0,
+    "cases": [
+      {
+        "case": "commute_day_modify",
+        "input": "只把现有测试上班通勤2030年11月4日这一天的到达时间改到10:00，长期计划仍为09:00；起终点、开车方式和10分钟余量都保持，不新增日程。",
+        "status": "passed",
+        "input_version": 16,
+        "elapsed_seconds": 132.35,
+        "synthetic_clock": null,
+        "before": {
+          "matters": [
+            {
+              "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+              "title": "测试上班通勤",
+              "version": 1,
+              "status": "active"
+            }
+          ],
+          "todos": [],
+          "schedules": [
+            {
+              "schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9",
+              "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+              "title": "测试上班通勤",
+              "status": "scheduled",
+              "starts_at": "2030-11-04 00:20:00",
+              "location": "测试公司",
+              "deleted_at": null,
+              "ends_at": "2030-11-04 00:50:00"
+            }
+          ],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "ea933445-e48a-4f34-8e44-c5e4d34b7e77",
+              "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+              "first_schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9",
+              "name": "测试上班通勤",
+              "revision": 1,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:00",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": []
+        },
+        "after": {
+          "matters": [
+            {
+              "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+              "title": "测试上班通勤",
+              "version": 2,
+              "status": "active"
+            }
+          ],
+          "todos": [],
+          "schedules": [
+            {
+              "schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9",
+              "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+              "title": "测试上班通勤",
+              "status": "scheduled",
+              "starts_at": "2030-11-04 01:20:00",
+              "location": "测试公司",
+              "deleted_at": null,
+              "ends_at": "2030-11-04 01:50:00"
+            }
+          ],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "ea933445-e48a-4f34-8e44-c5e4d34b7e77",
+              "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+              "first_schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9",
+              "name": "测试上班通勤",
+              "revision": 1,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:00",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": [
+            {
+              "schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9",
+              "result": {
+                "status": "available",
+                "provider": "mock",
+                "mode": "driving",
+                "duration_seconds": 1800,
+                "distance_meters": 12000,
+                "walking_distance_meters": null,
+                "transfer_count": null,
+                "transfers_summary": null,
+                "fare_cny": null,
+                "fare_kind": null,
+                "fare_notice": null,
+                "fetched_at": "2026-11-03T07:44:12.526372Z",
+                "request_depart_at": "2030-11-04T01:00:00Z",
+                "target_arrival_at": "2030-11-04T02:00:00Z",
+                "source": "server_provider",
+                "reason_code": null,
+                "timing_basis": "provider_departure_time",
+                "accuracy_notice": null,
+                "origin_basis": "user_confirmed",
+                "origin_schedule_id": null,
+                "schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9",
+                "origin": {
+                  "latitude": 31.2231,
+                  "longitude": 121.4456,
+                  "coordinate_system": "gcj02",
+                  "city": null,
+                  "basis": "user_confirmed",
+                  "schedule_id": null
+                },
+                "destination": {
+                  "latitude": 31.2304,
+                  "longitude": 121.4737,
+                  "coordinate_system": "gcj02",
+                  "city": null,
+                  "basis": "destination_schedule",
+                  "schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9"
+                },
+                "shape": {
+                  "status": "missing",
+                  "segments": []
+                },
+                "_destination_address": null
+              }
+            }
+          ]
+        },
+        "day_instances": [
+          {
+            "instance_id": "4caa23b8-d1b9-4a52-afff-b7dc5654617a",
+            "service_date": "2030-11-04",
+            "arrival_local_time_override": "10:00",
+            "target_arrival_at": "2030-11-04 02:00:00.000000"
+          }
+        ],
+        "actual_calls": [
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+            "references": {},
+            "result_shape": {
+              "": {
+                "type": "array",
+                "count": 1,
+                "item_fields": [
+                  "effective_from",
+                  "name",
+                  "enabled",
+                  "timezone",
+                  "weekdays",
+                  "arrival_local_time",
+                  "check_local_time",
+                  "transport_mode",
+                  "buffer_minutes",
+                  "rain_probability_threshold",
+                  "rain_extra_buffer_minutes",
+                  "notify_enabled",
+                  "origin",
+                  "destination",
+                  "matter_id",
+                  "first_schedule_id",
+                  "id",
+                  "revision",
+                  "created_at",
+                  "updated_at"
+                ]
+              }
+            },
+            "step": 3
+          },
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "get_commute_day",
+            "references": {
+              "plan_id": "ea933445-e48a-4f34-8e44-c5e4d34b7e77",
+              "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+              "version": 1,
+              "revision": 1,
+              "status": "upcoming"
+            },
+            "result_shape": {
+              "": {
+                "type": "object",
+                "fields": [
+                  "plan_id",
+                  "matter_id",
+                  "version",
+                  "revision",
+                  "service_date",
+                  "timezone",
+                  "status",
+                  "target_arrival_at",
+                  "arrival_local_time",
+                  "schedule",
+                  "route",
+                  "applied",
+                  "replayed",
+                  "change_id",
+                  "conflict"
+                ]
+              },
+              "/schedule": {
+                "type": "object",
+                "fields": [
+                  "schedule_id",
+                  "matter_id",
+                  "title",
+                  "starts_at",
+                  "ends_at",
+                  "location",
+                  "latitude",
+                  "longitude",
+                  "coordinate_system",
+                  "location_city",
+                  "location_address",
+                  "location_source",
+                  "location_external_id",
+                  "status",
+                  "source",
+                  "sync_status",
+                  "deleted_at"
+                ]
+              }
+            },
+            "step": 4
+          },
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "update_commute_day",
+            "applied": true,
+            "references": {
+              "plan_id": "ea933445-e48a-4f34-8e44-c5e4d34b7e77",
+              "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+              "version": 2,
+              "revision": 1,
+              "status": "upcoming",
+              "change_id": "a6b1279b-09ea-4d63-b7f0-c7ae3483c7c4"
+            },
+            "result_shape": {
+              "": {
+                "type": "object",
+                "fields": [
+                  "plan_id",
+                  "matter_id",
+                  "version",
+                  "revision",
+                  "service_date",
+                  "timezone",
+                  "status",
+                  "target_arrival_at",
+                  "arrival_local_time",
+                  "schedule",
+                  "route",
+                  "applied",
+                  "replayed",
+                  "change_id",
+                  "conflict"
+                ]
+              },
+              "/schedule": {
+                "type": "object",
+                "fields": [
+                  "schedule_id",
+                  "matter_id",
+                  "title",
+                  "starts_at",
+                  "ends_at",
+                  "location",
+                  "latitude",
+                  "longitude",
+                  "coordinate_system",
+                  "location_city",
+                  "location_address",
+                  "location_source",
+                  "location_external_id",
+                  "status",
+                  "source",
+                  "sync_status",
+                  "deleted_at"
+                ]
+              },
+              "/route": {
+                "type": "object",
+                "fields": [
+                  "status",
+                  "provider",
+                  "mode",
+                  "duration_seconds",
+                  "distance_meters",
+                  "walking_distance_meters",
+                  "transfer_count",
+                  "transfers_summary",
+                  "fare_cny",
+                  "fare_kind",
+                  "fare_notice",
+                  "fetched_at",
+                  "request_depart_at",
+                  "target_arrival_at",
+                  "source",
+                  "reason_code",
+                  "timing_basis",
+                  "accuracy_notice",
+                  "origin_basis",
+                  "origin_schedule_id",
+                  "schedule_id",
+                  "origin",
+                  "destination",
+                  "shape",
+                  "_destination_address",
+                  "calculated_at"
+                ]
+              },
+              "/route/origin": {
+                "type": "object",
+                "fields": [
+                  "latitude",
+                  "longitude",
+                  "coordinate_system",
+                  "city",
+                  "basis",
+                  "schedule_id"
+                ]
+              },
+              "/route/destination": {
+                "type": "object",
+                "fields": [
+                  "latitude",
+                  "longitude",
+                  "coordinate_system",
+                  "city",
+                  "basis",
+                  "schedule_id"
+                ]
+              },
+              "/route/shape": {
+                "type": "object",
+                "fields": [
+                  "status",
+                  "segments"
+                ]
+              },
+              "/route/shape/segments": {
+                "type": "array",
+                "count": 0,
+                "item_fields": []
+              }
+            },
+            "step": 5
+          }
+        ],
+        "decisions": [
+          {
+            "decision": "search",
+            "search_query": "查询通勤计划指定日期状态 get_commute_day"
+          },
+          {
+            "decision": "search",
+            "search_query": "按事项查询通勤计划列表获取 plan_id"
+          },
+          {
+            "decision": "search",
+            "search_query": "查询通勤计划列表及计划ID"
+          },
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+              "path_parameters": {},
+              "query_parameters": {},
+              "headers": {},
+              "summary": "先查找“测试上班通勤”对应的长期通勤计划，确认要修改的唯一计划。"
+            }
+          },
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "get_commute_day",
+              "path_parameters": {
+                "plan_id": {
+                  "$result": "",
+                  "where": {
+                    "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed"
+                  },
+                  "field": "id",
+                  "step": 3
+                },
+                "service_date": "2030-11-04"
+              },
+              "summary": "先读取 2030-11-04 当天的通勤安排与版本信息，为只改这一天做准备"
+            }
+          },
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "update_commute_day",
+              "path_parameters": {
+                "plan_id": "ea933445-e48a-4f34-8e44-c5e4d34b7e77",
+                "service_date": "2030-11-04"
+              },
+              "query_parameters": {},
+              "headers": {},
+              "body": {
+                "idempotency_key": "api-call-23e9fdd5-7609-42cf-af1c-09764512681e-5",
+                "expected_plan_revision": 1,
+                "expected_matter_version": 1,
+                "arrival_local_time": "10:00"
+              },
+              "summary": "把2030年11月4日的通勤到达时间改为10:00并立即重新测算保存，长期计划保持09:00不变。"
+            }
+          },
+          {
+            "decision": "answer",
+            "answer": "改好了，2030年11月4日这一天的到达时间已经调到10:00，原日程保留、没有新增。长期计划仍是09:00，起终点、开车方式和10分钟余量都没动。",
+            "cards": [
+              {
+                "kind": "result",
+                "title": "11月4日通勤到达时间已改为10:00",
+                "blocks": [
+                  {
+                    "type": "fields",
+                    "items": [
+                      {
+                        "label": "日期",
+                        "value": {
+                          "$result": "/service_date",
+                          "step": 5
+                        },
+                        "format": "date"
+                      },
+                      {
+                        "label": "到达时间",
+                        "value": {
+                          "$result": "/arrival_local_time",
+                          "step": 5
+                        },
+                        "format": "time"
+                      },
+                      {
+                        "label": "日程开始",
+                        "value": {
+                          "$result": "/schedule/starts_at",
+                          "step": 5
+                        },
+                        "format": "datetime"
+                      },
+                      {
+                        "label": "日程结束",
+                        "value": {
+                          "$result": "/schedule/ends_at",
+                          "step": 5
+                        },
+                        "format": "datetime"
+                      },
+                      {
+                        "label": "地点",
+                        "value": {
+                          "$result": "/schedule/location",
+                          "step": 5
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "result": {
+          "source": "chat",
+          "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+          "follow_up_id": null,
+          "follow_up_execution_id": null,
+          "local_run_id": "00c57991-1eb8-4be9-a84c-e68c1cfd9e5b",
+          "parent_run_id": null,
+          "status": "succeeded",
+          "workflow_execution_id": "9ba8c1c1-0c5b-4b33-af74-ef640a5437f5",
+          "intent": "question",
+          "outcome": "answer",
+          "answer": "改好了，2030年11月4日这一天的到达时间已经调到10:00，原日程保留、没有新增。长期计划仍是09:00，起终点、开车方式和10分钟余量都没动。",
+          "clarify": null,
+          "pending_context": {
+            "execution_result": {
+              "operation_id": "update_commute_day",
+              "status": "succeeded",
+              "http_status": 200,
+              "data": {
+                "plan_id": "ea933445-e48a-4f34-8e44-c5e4d34b7e77",
+                "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+                "version": 2,
+                "revision": 1,
+                "service_date": "2030-11-04",
+                "timezone": "Asia/Shanghai",
+                "status": "upcoming",
+                "target_arrival_at": "2030-11-04T02:00:00Z",
+                "arrival_local_time": "10:00",
+                "schedule": {
+                  "schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9",
+                  "matter_id": "6ae5e3f6-17d3-40ee-bac8-bbb436ae91ed",
+                  "title": "测试上班通勤",
+                  "starts_at": "2030-11-04T01:20:00Z",
+                  "ends_at": "2030-11-04T01:50:00Z",
+                  "location": "测试公司",
+                  "latitude": 31.2304,
+                  "longitude": 121.4737,
+                  "coordinate_system": "gcj02",
+                  "location_city": null,
+                  "location_address": null,
+                  "location_source": null,
+                  "location_external_id": null,
+                  "status": "scheduled",
+                  "source": "web_native",
+                  "sync_status": "local_only",
+                  "deleted_at": null
+                },
+                "route": {
+                  "status": "available",
+                  "provider": "mock",
+                  "mode": "driving",
+                  "duration_seconds": 1800,
+                  "distance_meters": 12000,
+                  "walking_distance_meters": null,
+                  "transfer_count": null,
+                  "transfers_summary": null,
+                  "fare_cny": null,
+                  "fare_kind": null,
+                  "fare_notice": null,
+                  "fetched_at": "2026-11-03T07:44:12.526372Z",
+                  "request_depart_at": "2030-11-04T01:00:00Z",
+                  "target_arrival_at": "2030-11-04T02:00:00Z",
+                  "source": "server_provider",
+                  "reason_code": null,
+                  "timing_basis": "provider_departure_time",
+                  "accuracy_notice": null,
+                  "origin_basis": "user_confirmed",
+                  "origin_schedule_id": null,
+                  "schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9",
+                  "origin": {
+                    "latitude": 31.2231,
+                    "longitude": 121.4456,
+                    "coordinate_system": "gcj02",
+                    "city": null,
+                    "basis": "user_confirmed",
+                    "schedule_id": null
+                  },
+                  "destination": {
+                    "latitude": 31.2304,
+                    "longitude": 121.4737,
+                    "coordinate_system": "gcj02",
+                    "city": null,
+                    "basis": "destination_schedule",
+                    "schedule_id": "8a8f0814-589b-4940-b08c-cf1fd4389ba9"
+                  },
+                  "shape": {
+                    "status": "missing",
+                    "segments": []
+                  },
+                  "_destination_address": null,
+                  "calculated_at": "2026-11-03T07:44:12.542365"
+                },
+                "applied": true,
+                "replayed": false,
+                "change_id": "a6b1279b-09ea-4d63-b7f0-c7ae3483c7c4",
+                "conflict": null
+              }
+            },
+            "cards": [
+              {
+                "kind": "result",
+                "title": "11月4日通勤到达时间已改为10:00",
+                "blocks": [
+                  {
+                    "type": "fields",
+                    "items": [
+                      {
+                        "label": "日期",
+                        "value": "2030-11-04",
+                        "format": "date"
+                      },
+                      {
+                        "label": "到达时间",
+                        "value": "10:00",
+                        "format": "time"
+                      },
+                      {
+                        "label": "日程开始",
+                        "value": "2030-11-04T01:20:00Z",
+                        "format": "datetime"
+                      },
+                      {
+                        "label": "日程结束",
+                        "value": "2030-11-04T01:50:00Z",
+                        "format": "datetime"
+                      },
+                      {
+                        "label": "地点",
+                        "value": "测试公司",
+                        "format": "text"
+                      }
+                    ]
+                  }
+                ],
+                "status": "completed"
+              }
+            ]
+          }
+        },
+        "workflow_execution_ids": [
+          "9ba8c1c1-0c5b-4b33-af74-ef640a5437f5",
+          "10abda04-3af0-4ef1-8ee7-dbe65d5660e1",
+          "39ec5e88-3486-4f13-8c80-d0a123937b82",
+          "425e54fc-06f8-4707-8be9-ccfd5a7216b6",
+          "bd5ce84f-1e8c-4cd5-b706-06269f8039b3",
+          "9661a5eb-947c-4e6b-b9cb-cd10829ccf7f",
+          "f6927158-b63b-4abc-b105-0457a3376fa0"
+        ],
+        "source": "/private/tmp/assistant-three-repairs-ai-20261103-a/commute_day_modify.json"
+      },
+      {
+        "case": "commute_vague",
+        "input": "把现有测试上班通勤往后挪一点。",
+        "status": "passed",
+        "input_version": 16,
+        "elapsed_seconds": 46.77,
+        "synthetic_clock": null,
+        "before": {
+          "matters": [],
+          "todos": [],
+          "schedules": [],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "2fcb0d08-91d2-4afa-a612-65e7f0556537",
+              "matter_id": null,
+              "first_schedule_id": null,
+              "name": "测试上班通勤",
+              "revision": 1,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:00",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": []
+        },
+        "after": {
+          "matters": [],
+          "todos": [],
+          "schedules": [],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "2fcb0d08-91d2-4afa-a612-65e7f0556537",
+              "matter_id": null,
+              "first_schedule_id": null,
+              "name": "测试上班通勤",
+              "revision": 1,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:00",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": []
+        },
+        "day_instances": [],
+        "actual_calls": [
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+            "references": {},
+            "result_shape": {
+              "": {
+                "type": "array",
+                "count": 1,
+                "item_fields": [
+                  "effective_from",
+                  "name",
+                  "enabled",
+                  "timezone",
+                  "weekdays",
+                  "arrival_local_time",
+                  "check_local_time",
+                  "transport_mode",
+                  "buffer_minutes",
+                  "rain_probability_threshold",
+                  "rain_extra_buffer_minutes",
+                  "notify_enabled",
+                  "origin",
+                  "destination",
+                  "matter_id",
+                  "first_schedule_id",
+                  "id",
+                  "revision",
+                  "created_at",
+                  "updated_at"
+                ]
+              }
+            },
+            "step": 1
+          },
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+            "references": {
+              "revision": 1
+            },
+            "result_shape": {
+              "": {
+                "type": "object",
+                "fields": [
+                  "effective_from",
+                  "name",
+                  "enabled",
+                  "timezone",
+                  "weekdays",
+                  "arrival_local_time",
+                  "check_local_time",
+                  "transport_mode",
+                  "buffer_minutes",
+                  "rain_probability_threshold",
+                  "rain_extra_buffer_minutes",
+                  "notify_enabled",
+                  "origin",
+                  "destination",
+                  "matter_id",
+                  "first_schedule_id",
+                  "id",
+                  "revision",
+                  "created_at",
+                  "updated_at"
+                ]
+              },
+              "/weekdays": {
+                "type": "array",
+                "count": 5,
+                "item_fields": []
+              },
+              "/origin": {
+                "type": "object",
+                "fields": [
+                  "label",
+                  "latitude",
+                  "longitude"
+                ]
+              },
+              "/destination": {
+                "type": "object",
+                "fields": [
+                  "label",
+                  "latitude",
+                  "longitude"
+                ]
+              }
+            },
+            "step": 2
+          }
+        ],
+        "decisions": [
+          {
+            "decision": "search",
+            "search_query": "查询现有通勤计划列表"
+          },
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+              "path_parameters": {},
+              "query_parameters": {},
+              "headers": {},
+              "summary": "先查一下已保存的通勤计划，找到“测试上班通勤”这一条"
+            }
+          },
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+              "path_parameters": {
+                "plan_id": {
+                  "$result": "",
+                  "where": {
+                    "name": "测试上班通勤"
+                  },
+                  "field": "id"
+                }
+              },
+              "query_parameters": {},
+              "headers": {},
+              "summary": "先读取“测试上班通勤”当前的到达时间和周期设置，确认原时间后再调整。"
+            }
+          },
+          {
+            "decision": "ask_user",
+            "question": "好的，我先确认两件事：这次“测试上班通勤”你想往后挪到几点（比如原来的到达时间往后推 30 分钟，或直接给一个新时间）？另外，这次是只调整今天这一趟，还是以后每天的通勤都按新时间走？",
+            "choices": [
+              "只调今天这一次",
+              "以后每天都调"
+            ]
+          }
+        ],
+        "result": {
+          "source": "chat",
+          "matter_id": null,
+          "follow_up_id": null,
+          "follow_up_execution_id": null,
+          "local_run_id": "1309c75c-4946-425d-a83c-48eaf8c3332f",
+          "parent_run_id": null,
+          "status": "succeeded",
+          "workflow_execution_id": "c081d404-7b36-4120-9f95-6cd53667ee22",
+          "intent": "question",
+          "outcome": "needs_clarification",
+          "answer": null,
+          "clarify": "好的，我先确认两件事：这次“测试上班通勤”你想往后挪到几点（比如原来的到达时间往后推 30 分钟，或直接给一个新时间）？另外，这次是只调整今天这一趟，还是以后每天的通勤都按新时间走？",
+          "pending_context": {
+            "execution_result": {
+              "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+              "status": "succeeded",
+              "http_status": 200,
+              "data": {
+                "effective_from": "2030-11-04",
+                "name": "测试上班通勤",
+                "enabled": true,
+                "timezone": "Asia/Shanghai",
+                "weekdays": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "arrival_local_time": "09:00",
+                "check_local_time": "07:00",
+                "transport_mode": "driving",
+                "buffer_minutes": 10,
+                "rain_probability_threshold": 0.4,
+                "rain_extra_buffer_minutes": 10,
+                "notify_enabled": false,
+                "origin": {
+                  "label": "测试家园",
+                  "latitude": 31.2231,
+                  "longitude": 121.4456
+                },
+                "destination": {
+                  "label": "测试公司",
+                  "latitude": 31.2304,
+                  "longitude": 121.4737
+                },
+                "matter_id": null,
+                "first_schedule_id": null,
+                "id": "2fcb0d08-91d2-4afa-a612-65e7f0556537",
+                "revision": 1,
+                "created_at": "2026-11-03T07:44:21.247692Z",
+                "updated_at": "2026-11-03T07:44:21.247695Z"
+              }
+            },
+            "choices": [
+              "只调今天这一次",
+              "以后每天都调"
+            ]
+          }
+        },
+        "workflow_execution_ids": [
+          "c081d404-7b36-4120-9f95-6cd53667ee22",
+          "4bb643da-5a5a-4bf0-b0a7-a5eb639f3044",
+          "c53e8d8f-d1b5-4c46-a07d-6f03ef93f5b5",
+          "30a67802-182f-45d8-9ae7-84acdbc61dbb"
+        ],
+        "source": "/private/tmp/assistant-three-repairs-ai-20261103-a/commute_vague.json"
+      },
+      {
+        "case": "commute_modify",
+        "input": "把我现有的测试上班通勤计划长期改为每天09:30到达，预留15分钟；原来每周一至周五、出发地、目的地、交通方式和其他设置保持。不要新建计划。",
+        "status": "passed",
+        "input_version": 16,
+        "elapsed_seconds": 51.42,
+        "synthetic_clock": null,
+        "before": {
+          "matters": [],
+          "todos": [],
+          "schedules": [],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "d7b6eb6b-5446-4b3b-a2fb-bb3088a589f4",
+              "matter_id": null,
+              "first_schedule_id": null,
+              "name": "测试上班通勤",
+              "revision": 1,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:00",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": []
+        },
+        "after": {
+          "matters": [],
+          "todos": [],
+          "schedules": [],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "d7b6eb6b-5446-4b3b-a2fb-bb3088a589f4",
+              "matter_id": null,
+              "first_schedule_id": null,
+              "name": "测试上班通勤",
+              "revision": 2,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:30",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 15,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": []
+        },
+        "day_instances": [],
+        "actual_calls": [
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+            "references": {},
+            "result_shape": {
+              "": {
+                "type": "array",
+                "count": 1,
+                "item_fields": [
+                  "effective_from",
+                  "name",
+                  "enabled",
+                  "timezone",
+                  "weekdays",
+                  "arrival_local_time",
+                  "check_local_time",
+                  "transport_mode",
+                  "buffer_minutes",
+                  "rain_probability_threshold",
+                  "rain_extra_buffer_minutes",
+                  "notify_enabled",
+                  "origin",
+                  "destination",
+                  "matter_id",
+                  "first_schedule_id",
+                  "id",
+                  "revision",
+                  "created_at",
+                  "updated_at"
+                ]
+              }
+            },
+            "step": 1
+          },
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+            "references": {
+              "revision": 1
+            },
+            "result_shape": {
+              "": {
+                "type": "object",
+                "fields": [
+                  "effective_from",
+                  "name",
+                  "enabled",
+                  "timezone",
+                  "weekdays",
+                  "arrival_local_time",
+                  "check_local_time",
+                  "transport_mode",
+                  "buffer_minutes",
+                  "rain_probability_threshold",
+                  "rain_extra_buffer_minutes",
+                  "notify_enabled",
+                  "origin",
+                  "destination",
+                  "matter_id",
+                  "first_schedule_id",
+                  "id",
+                  "revision",
+                  "created_at",
+                  "updated_at"
+                ]
+              },
+              "/weekdays": {
+                "type": "array",
+                "count": 5,
+                "item_fields": []
+              },
+              "/origin": {
+                "type": "object",
+                "fields": [
+                  "label",
+                  "latitude",
+                  "longitude"
+                ]
+              },
+              "/destination": {
+                "type": "object",
+                "fields": [
+                  "label",
+                  "latitude",
+                  "longitude"
+                ]
+              }
+            },
+            "step": 2
+          },
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "update_commute_plan_api_v1_commute_plans__plan_id__put",
+            "references": {
+              "revision": 2
+            },
+            "result_shape": {
+              "": {
+                "type": "object",
+                "fields": [
+                  "effective_from",
+                  "name",
+                  "enabled",
+                  "timezone",
+                  "weekdays",
+                  "arrival_local_time",
+                  "check_local_time",
+                  "transport_mode",
+                  "buffer_minutes",
+                  "rain_probability_threshold",
+                  "rain_extra_buffer_minutes",
+                  "notify_enabled",
+                  "origin",
+                  "destination",
+                  "matter_id",
+                  "first_schedule_id",
+                  "id",
+                  "revision",
+                  "created_at",
+                  "updated_at",
+                  "next_day"
+                ]
+              },
+              "/weekdays": {
+                "type": "array",
+                "count": 5,
+                "item_fields": []
+              },
+              "/origin": {
+                "type": "object",
+                "fields": [
+                  "label",
+                  "latitude",
+                  "longitude"
+                ]
+              },
+              "/destination": {
+                "type": "object",
+                "fields": [
+                  "label",
+                  "latitude",
+                  "longitude"
+                ]
+              }
+            },
+            "step": 3
+          }
+        ],
+        "decisions": [
+          {
+            "decision": "search",
+            "search_query": "查询现有通勤计划列表及原始配置详情"
+          },
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+              "path_parameters": {},
+              "query_parameters": {},
+              "headers": {},
+              "summary": "先找到你现有的“测试上班通勤计划”"
+            }
+          },
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+              "path_parameters": {
+                "plan_id": {
+                  "$result": "/0/id"
+                }
+              },
+              "query_parameters": {},
+              "headers": {},
+              "summary": "读取你现有上班通勤计划的完整配置和当前修订号，以便直接改这一条（不新建）"
+            }
+          },
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "update_commute_plan_api_v1_commute_plans__plan_id__put",
+              "path_parameters": {
+                "plan_id": {
+                  "$result": "/id"
+                }
+              },
+              "headers": {
+                "If-Match": {
+                  "$result": "/revision",
+                  "as": "string"
+                }
+              },
+              "body": {
+                "$result": "",
+                "pick": [
+                  "effective_from",
+                  "name",
+                  "enabled",
+                  "timezone",
+                  "weekdays",
+                  "arrival_local_time",
+                  "check_local_time",
+                  "transport_mode",
+                  "buffer_minutes",
+                  "rain_probability_threshold",
+                  "rain_extra_buffer_minutes",
+                  "notify_enabled",
+                  "origin",
+                  "destination"
+                ],
+                "overrides": {
+                  "arrival_local_time": "09:30",
+                  "buffer_minutes": 15
+                }
+              },
+              "summary": "把现有这条上班通勤计划的到达时间改为 09:30、预留 15 分钟，其余（周一至周五、出发地、目的地、交通方式等）保持原样，并立即重测下一次通勤"
+            }
+          },
+          {
+            "decision": "answer",
+            "answer": "改好了：每周一至周五按 09:30 到达、预留 15 分钟，其余出发地、目的地、交通方式和提醒等设置都保持原样，用的还是原来这条计划。之后每次通勤会按新配置算出发时间。",
+            "cards": [
+              {
+                "kind": "result",
+                "title": "通勤计划已更新",
+                "blocks": [
+                  {
+                    "type": "fields",
+                    "items": [
+                      {
+                        "label": "名称",
+                        "value": {
+                          "$result": "/name",
+                          "step": 3
+                        }
+                      },
+                      {
+                        "label": "到达时间",
+                        "value": {
+                          "$result": "/arrival_local_time",
+                          "step": 3
+                        },
+                        "format": "time"
+                      },
+                      {
+                        "label": "预留缓冲（分钟）",
+                        "value": {
+                          "$result": "/buffer_minutes",
+                          "step": 3
+                        },
+                        "format": "number"
+                      },
+                      {
+                        "label": "星期",
+                        "value": {
+                          "$result": "/weekdays",
+                          "step": 3
+                        },
+                        "format": "weekdays"
+                      },
+                      {
+                        "label": "出发地",
+                        "value": {
+                          "$result": "/origin/label",
+                          "step": 3
+                        }
+                      },
+                      {
+                        "label": "目的地",
+                        "value": {
+                          "$result": "/destination/label",
+                          "step": 3
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "result": {
+          "source": "chat",
+          "matter_id": null,
+          "follow_up_id": null,
+          "follow_up_execution_id": null,
+          "local_run_id": "b03f5eca-21a7-4a7e-8712-bfab3f159fc1",
+          "parent_run_id": null,
+          "status": "succeeded",
+          "workflow_execution_id": "791fd23a-6691-4e50-b9e3-5d316128474b",
+          "intent": "question",
+          "outcome": "answer",
+          "answer": "改好了：每周一至周五按 09:30 到达、预留 15 分钟，其余出发地、目的地、交通方式和提醒等设置都保持原样，用的还是原来这条计划。之后每次通勤会按新配置算出发时间。",
+          "clarify": null,
+          "pending_context": {
+            "execution_result": {
+              "operation_id": "update_commute_plan_api_v1_commute_plans__plan_id__put",
+              "status": "succeeded",
+              "http_status": 200,
+              "data": {
+                "effective_from": "2030-11-04",
+                "name": "测试上班通勤",
+                "enabled": true,
+                "timezone": "Asia/Shanghai",
+                "weekdays": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "arrival_local_time": "09:30",
+                "check_local_time": "07:00",
+                "transport_mode": "driving",
+                "buffer_minutes": 15,
+                "rain_probability_threshold": 0.4,
+                "rain_extra_buffer_minutes": 10,
+                "notify_enabled": false,
+                "origin": {
+                  "label": "测试家园",
+                  "latitude": 31.2231,
+                  "longitude": 121.4456
+                },
+                "destination": {
+                  "label": "测试公司",
+                  "latitude": 31.2304,
+                  "longitude": 121.4737
+                },
+                "matter_id": null,
+                "first_schedule_id": null,
+                "id": "d7b6eb6b-5446-4b3b-a2fb-bb3088a589f4",
+                "revision": 2,
+                "created_at": "2026-11-03T07:45:08.025515Z",
+                "updated_at": "2026-11-03T07:45:48.340326Z",
+                "next_day": null
+              }
+            },
+            "cards": [
+              {
+                "kind": "result",
+                "title": "通勤计划已更新",
+                "blocks": [
+                  {
+                    "type": "fields",
+                    "items": [
+                      {
+                        "label": "名称",
+                        "value": "测试上班通勤",
+                        "format": "text"
+                      },
+                      {
+                        "label": "到达时间",
+                        "value": "09:30",
+                        "format": "time"
+                      },
+                      {
+                        "label": "预留缓冲（分钟）",
+                        "value": 15,
+                        "format": "number"
+                      },
+                      {
+                        "label": "星期",
+                        "value": "周一至周五",
+                        "format": "text"
+                      },
+                      {
+                        "label": "出发地",
+                        "value": "测试家园",
+                        "format": "text"
+                      },
+                      {
+                        "label": "目的地",
+                        "value": "测试公司",
+                        "format": "text"
+                      }
+                    ]
+                  }
+                ],
+                "status": "completed"
+              }
+            ]
+          }
+        },
+        "workflow_execution_ids": [
+          "791fd23a-6691-4e50-b9e3-5d316128474b",
+          "b69b0782-2f19-47cb-8524-f50acb0fb3a6",
+          "c26e4b2d-7ae4-444c-857c-f5d328dd163f",
+          "1fa2c4f9-642d-4ac3-a669-3f9777be9bc0",
+          "81f2cc55-20c3-4c43-bc3e-171164c2f8fd"
+        ],
+        "source": "/private/tmp/assistant-three-repairs-ai-20261103-a/commute_modify.json"
+      },
+      {
+        "case": "commute_past_time",
+        "input": "把今天这条测试上班通勤的到达时间改到10:00，只改今天，长期计划不变。",
+        "status": "passed",
+        "input_version": 16,
+        "elapsed_seconds": 12.55,
+        "synthetic_clock": "2030-11-04T03:00:00+00:00",
+        "before": {
+          "matters": [
+            {
+              "matter_id": "a0db3dfb-e5e1-4e49-a55b-842c9543cbd6",
+              "title": "测试上班通勤",
+              "version": 1,
+              "status": "active"
+            }
+          ],
+          "todos": [],
+          "schedules": [
+            {
+              "schedule_id": "c93184b3-0a7d-4165-a33f-a277b3bfd8e3",
+              "matter_id": "a0db3dfb-e5e1-4e49-a55b-842c9543cbd6",
+              "title": "测试上班通勤",
+              "status": "scheduled",
+              "starts_at": "2030-11-04 00:20:00",
+              "location": "测试公司",
+              "deleted_at": null,
+              "ends_at": "2030-11-04 00:50:00"
+            }
+          ],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "130d7a3b-2fb3-4a09-88af-94268f9f8bcb",
+              "matter_id": "a0db3dfb-e5e1-4e49-a55b-842c9543cbd6",
+              "first_schedule_id": "c93184b3-0a7d-4165-a33f-a277b3bfd8e3",
+              "name": "测试上班通勤",
+              "revision": 1,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:00",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": []
+        },
+        "after": {
+          "matters": [
+            {
+              "matter_id": "a0db3dfb-e5e1-4e49-a55b-842c9543cbd6",
+              "title": "测试上班通勤",
+              "version": 1,
+              "status": "active"
+            }
+          ],
+          "todos": [],
+          "schedules": [
+            {
+              "schedule_id": "c93184b3-0a7d-4165-a33f-a277b3bfd8e3",
+              "matter_id": "a0db3dfb-e5e1-4e49-a55b-842c9543cbd6",
+              "title": "测试上班通勤",
+              "status": "scheduled",
+              "starts_at": "2030-11-04 00:20:00",
+              "location": "测试公司",
+              "deleted_at": null,
+              "ends_at": "2030-11-04 00:50:00"
+            }
+          ],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "130d7a3b-2fb3-4a09-88af-94268f9f8bcb",
+              "matter_id": "a0db3dfb-e5e1-4e49-a55b-842c9543cbd6",
+              "first_schedule_id": "c93184b3-0a7d-4165-a33f-a277b3bfd8e3",
+              "name": "测试上班通勤",
+              "revision": 1,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:00",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": []
+        },
+        "day_instances": [],
+        "actual_calls": [],
+        "decisions": [
+          {
+            "decision": "ask_user",
+            "question": "现在本地时间已经是 11:00，今天 10:00 这个到达时间已经过去了，没法按这个时间改。今天想改到几点？（只改今天，长期计划不动）",
+            "choices": [
+              "改到今天 12:00",
+              "改到今天 13:00",
+              "改到今天 18:00"
+            ]
+          }
+        ],
+        "result": {
+          "source": "chat",
+          "matter_id": "a0db3dfb-e5e1-4e49-a55b-842c9543cbd6",
+          "follow_up_id": null,
+          "follow_up_execution_id": null,
+          "local_run_id": "3e139a7a-8dd6-405c-83d3-828b05b3ab6f",
+          "parent_run_id": null,
+          "status": "succeeded",
+          "workflow_execution_id": "415b6906-b037-46e0-b966-d875b314d43e",
+          "intent": "question",
+          "outcome": "needs_clarification",
+          "answer": null,
+          "clarify": "现在本地时间已经是 11:00，今天 10:00 这个到达时间已经过去了，没法按这个时间改。今天想改到几点？（只改今天，长期计划不动）",
+          "pending_context": {
+            "choices": [
+              "改到今天 12:00",
+              "改到今天 13:00",
+              "改到今天 18:00"
+            ]
+          }
+        },
+        "workflow_execution_ids": [
+          "415b6906-b037-46e0-b966-d875b314d43e"
+        ],
+        "source": "/private/tmp/assistant-three-repairs-ai-20261103-c/commute_past_time.json"
+      },
+      {
+        "case": "commute_evening_worker",
+        "input": "前晚22点自动更新2030年11月4日通勤",
+        "status": "passed",
+        "input_version": 16,
+        "elapsed_seconds": 37.33,
+        "synthetic_clock": "2030-11-03T14:00:00+00:00",
+        "before": {
+          "matters": [
+            {
+              "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+              "title": "测试上班通勤",
+              "version": 1,
+              "status": "active"
+            }
+          ],
+          "todos": [],
+          "schedules": [
+            {
+              "schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e",
+              "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+              "title": "测试上班通勤",
+              "status": "scheduled",
+              "starts_at": "2030-11-04 00:20:00",
+              "location": "测试公司",
+              "deleted_at": null,
+              "ends_at": "2030-11-04 00:50:00"
+            }
+          ],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "8b7ac5d1-5320-41be-85a9-1b209ccd6ac1",
+              "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+              "first_schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e",
+              "name": "测试上班通勤",
+              "revision": 1,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:00",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": []
+        },
+        "after": {
+          "matters": [
+            {
+              "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+              "title": "测试上班通勤",
+              "version": 2,
+              "status": "active"
+            }
+          ],
+          "todos": [],
+          "schedules": [
+            {
+              "schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e",
+              "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+              "title": "测试上班通勤",
+              "status": "scheduled",
+              "starts_at": "2030-11-04 00:20:00",
+              "location": "测试公司",
+              "deleted_at": null,
+              "ends_at": "2030-11-04 00:50:00"
+            }
+          ],
+          "reminders": [],
+          "commute_plans": [
+            {
+              "plan_id": "8b7ac5d1-5320-41be-85a9-1b209ccd6ac1",
+              "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+              "first_schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e",
+              "name": "测试上班通勤",
+              "revision": 1,
+              "enabled": true,
+              "timezone": "Asia/Shanghai",
+              "weekdays_json": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "arrival_local_time": "09:00",
+              "check_local_time": "07:00",
+              "transport_mode": "driving",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "notify_enabled": false,
+              "rain_probability_threshold": 0.4,
+              "rain_extra_buffer_minutes": 10,
+              "origin_label": "测试家园",
+              "origin_latitude": 31.2231,
+              "origin_longitude": 121.4456,
+              "destination_label": "测试公司",
+              "destination_latitude": 31.2304,
+              "destination_longitude": 121.4737
+            }
+          ],
+          "routes": [
+            {
+              "schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e",
+              "result": {
+                "status": "available",
+                "provider": "mock",
+                "mode": "driving",
+                "duration_seconds": 1800,
+                "distance_meters": 12000,
+                "walking_distance_meters": null,
+                "transfer_count": null,
+                "transfers_summary": null,
+                "fare_cny": null,
+                "fare_kind": null,
+                "fare_notice": null,
+                "fetched_at": "2026-11-03T07:47:43.691984Z",
+                "request_depart_at": "2030-11-04T00:00:00Z",
+                "target_arrival_at": "2030-11-04T01:00:00Z",
+                "source": "server_provider",
+                "reason_code": null,
+                "timing_basis": "provider_departure_time",
+                "accuracy_notice": null,
+                "origin_basis": "user_confirmed",
+                "origin_schedule_id": null,
+                "schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e",
+                "origin": {
+                  "latitude": 31.2231,
+                  "longitude": 121.4456,
+                  "coordinate_system": "gcj02",
+                  "city": null,
+                  "basis": "user_confirmed",
+                  "schedule_id": null
+                },
+                "destination": {
+                  "latitude": 31.2304,
+                  "longitude": 121.4737,
+                  "coordinate_system": "gcj02",
+                  "city": null,
+                  "basis": "destination_schedule",
+                  "schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e"
+                },
+                "shape": {
+                  "status": "missing",
+                  "segments": []
+                },
+                "_destination_address": null
+              }
+            }
+          ]
+        },
+        "day_instances": [
+          {
+            "instance_id": "754042ef-8eba-4d29-ba9b-3178f5e8c2f7",
+            "service_date": "2030-11-04",
+            "arrival_local_time_override": null,
+            "target_arrival_at": "2030-11-04 01:00:00.000000"
+          }
+        ],
+        "actual_calls": [
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "get_commute_day",
+            "references": {
+              "plan_id": "8b7ac5d1-5320-41be-85a9-1b209ccd6ac1",
+              "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+              "version": 1,
+              "revision": 1,
+              "status": "upcoming"
+            },
+            "result_shape": {
+              "": {
+                "type": "object",
+                "fields": [
+                  "plan_id",
+                  "matter_id",
+                  "version",
+                  "revision",
+                  "service_date",
+                  "timezone",
+                  "status",
+                  "target_arrival_at",
+                  "arrival_local_time",
+                  "schedule",
+                  "route",
+                  "applied",
+                  "replayed",
+                  "change_id",
+                  "conflict"
+                ]
+              },
+              "/schedule": {
+                "type": "object",
+                "fields": [
+                  "schedule_id",
+                  "matter_id",
+                  "title",
+                  "starts_at",
+                  "ends_at",
+                  "location",
+                  "latitude",
+                  "longitude",
+                  "coordinate_system",
+                  "location_city",
+                  "location_address",
+                  "location_source",
+                  "location_external_id",
+                  "status",
+                  "source",
+                  "sync_status",
+                  "deleted_at"
+                ]
+              }
+            },
+            "step": 0
+          },
+          {
+            "status": "succeeded",
+            "http_status": 200,
+            "operation_id": "refresh_commute_day",
+            "applied": true,
+            "references": {
+              "plan_id": "8b7ac5d1-5320-41be-85a9-1b209ccd6ac1",
+              "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+              "version": 2,
+              "revision": 1,
+              "status": "upcoming",
+              "change_id": "e3ef1032-7f85-4171-8c13-25495e81d0b0"
+            },
+            "result_shape": {
+              "": {
+                "type": "object",
+                "fields": [
+                  "plan_id",
+                  "matter_id",
+                  "version",
+                  "revision",
+                  "service_date",
+                  "timezone",
+                  "status",
+                  "target_arrival_at",
+                  "arrival_local_time",
+                  "schedule",
+                  "route",
+                  "applied",
+                  "replayed",
+                  "change_id",
+                  "conflict"
+                ]
+              },
+              "/schedule": {
+                "type": "object",
+                "fields": [
+                  "schedule_id",
+                  "matter_id",
+                  "title",
+                  "starts_at",
+                  "ends_at",
+                  "location",
+                  "latitude",
+                  "longitude",
+                  "coordinate_system",
+                  "location_city",
+                  "location_address",
+                  "location_source",
+                  "location_external_id",
+                  "status",
+                  "source",
+                  "sync_status",
+                  "deleted_at"
+                ]
+              },
+              "/route": {
+                "type": "object",
+                "fields": [
+                  "status",
+                  "provider",
+                  "mode",
+                  "duration_seconds",
+                  "distance_meters",
+                  "walking_distance_meters",
+                  "transfer_count",
+                  "transfers_summary",
+                  "fare_cny",
+                  "fare_kind",
+                  "fare_notice",
+                  "fetched_at",
+                  "request_depart_at",
+                  "target_arrival_at",
+                  "source",
+                  "reason_code",
+                  "timing_basis",
+                  "accuracy_notice",
+                  "origin_basis",
+                  "origin_schedule_id",
+                  "schedule_id",
+                  "origin",
+                  "destination",
+                  "shape",
+                  "_destination_address",
+                  "calculated_at"
+                ]
+              },
+              "/route/origin": {
+                "type": "object",
+                "fields": [
+                  "latitude",
+                  "longitude",
+                  "coordinate_system",
+                  "city",
+                  "basis",
+                  "schedule_id"
+                ]
+              },
+              "/route/destination": {
+                "type": "object",
+                "fields": [
+                  "latitude",
+                  "longitude",
+                  "coordinate_system",
+                  "city",
+                  "basis",
+                  "schedule_id"
+                ]
+              },
+              "/route/shape": {
+                "type": "object",
+                "fields": [
+                  "status",
+                  "segments"
+                ]
+              },
+              "/route/shape/segments": {
+                "type": "array",
+                "count": 0,
+                "item_fields": []
+              }
+            },
+            "step": 1
+          }
+        ],
+        "decisions": [
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "get_commute_day",
+              "path_parameters": {
+                "plan_id": "8b7ac5d1-5320-41be-85a9-1b209ccd6ac1",
+                "service_date": "2030-11-04"
+              },
+              "query_parameters": {},
+              "headers": {},
+              "summary": "先查看 2030-11-04 当天的通勤状态和现有安排。"
+            }
+          },
+          {
+            "decision": "call",
+            "call": {
+              "operation_id": "refresh_commute_day",
+              "path_parameters": {
+                "plan_id": "8b7ac5d1-5320-41be-85a9-1b209ccd6ac1",
+                "service_date": "2030-11-04"
+              },
+              "query_parameters": {},
+              "headers": {},
+              "body": {
+                "idempotency_key": "api-call-52d13319-2f12-4fb2-a05b-a50a4c1733b7-1"
+              },
+              "summary": "立即重测 2030-11-04 的通勤时间并保存当天安排"
+            }
+          },
+          {
+            "decision": "answer",
+            "answer": "已更新 2030-11-04 的通勤安排，并立即重新测算了当天路线；原日程没有更换，出发时间就是下面卡片里的时间。",
+            "cards": [
+              {
+                "kind": "result",
+                "title": "11月4日通勤已重新测算",
+                "blocks": [
+                  {
+                    "type": "fields",
+                    "items": [
+                      {
+                        "label": "日期",
+                        "value": {
+                          "$result": "/service_date"
+                        },
+                        "format": "date"
+                      },
+                      {
+                        "label": "目标到达",
+                        "value": {
+                          "$result": "/arrival_local_time"
+                        },
+                        "format": "time"
+                      },
+                      {
+                        "label": "出发时间",
+                        "value": {
+                          "$result": "/schedule/starts_at"
+                        },
+                        "format": "datetime"
+                      },
+                      {
+                        "label": "目的地",
+                        "value": {
+                          "$result": "/schedule/location"
+                        }
+                      },
+                      {
+                        "label": "预计车程（秒）",
+                        "value": {
+                          "$result": "/route/duration_seconds"
+                        },
+                        "format": "number"
+                      },
+                      {
+                        "label": "换乘",
+                        "value": {
+                          "$result": "/route/transfers_summary"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "notify": true
+          }
+        ],
+        "result": {
+          "source": "follow_up",
+          "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+          "follow_up_id": "c4d636f9-98e0-441d-b7ca-3778101be325",
+          "follow_up_execution_id": "1fcce762-9d9a-487b-9e58-7d2e101f17bd",
+          "local_run_id": "b1377d2e-41e5-4dfa-b810-d4a8a3089270",
+          "parent_run_id": null,
+          "status": "succeeded",
+          "workflow_execution_id": "0a13c27d-e684-44f4-9578-9105af2a945a",
+          "intent": "question",
+          "outcome": "answer",
+          "answer": "已更新 2030-11-04 的通勤安排，并立即重新测算了当天路线；原日程没有更换，出发时间就是下面卡片里的时间。",
+          "clarify": null,
+          "pending_context": {
+            "execution_result": {
+              "operation_id": "refresh_commute_day",
+              "status": "succeeded",
+              "http_status": 200,
+              "data": {
+                "plan_id": "8b7ac5d1-5320-41be-85a9-1b209ccd6ac1",
+                "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+                "version": 2,
+                "revision": 1,
+                "service_date": "2030-11-04",
+                "timezone": "Asia/Shanghai",
+                "status": "upcoming",
+                "target_arrival_at": "2030-11-04T01:00:00Z",
+                "arrival_local_time": "09:00",
+                "schedule": {
+                  "schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e",
+                  "matter_id": "0bfbaaec-eaf0-45de-ae89-5fcd5d037829",
+                  "title": "测试上班通勤",
+                  "starts_at": "2030-11-04T00:20:00Z",
+                  "ends_at": "2030-11-04T00:50:00Z",
+                  "location": "测试公司",
+                  "latitude": 31.2304,
+                  "longitude": 121.4737,
+                  "coordinate_system": "gcj02",
+                  "location_city": null,
+                  "location_address": null,
+                  "location_source": null,
+                  "location_external_id": null,
+                  "status": "scheduled",
+                  "source": "web_native",
+                  "sync_status": "local_only",
+                  "deleted_at": null
+                },
+                "route": {
+                  "status": "available",
+                  "provider": "mock",
+                  "mode": "driving",
+                  "duration_seconds": 1800,
+                  "distance_meters": 12000,
+                  "walking_distance_meters": null,
+                  "transfer_count": null,
+                  "transfers_summary": null,
+                  "fare_cny": null,
+                  "fare_kind": null,
+                  "fare_notice": null,
+                  "fetched_at": "2026-11-03T07:47:43.691984Z",
+                  "request_depart_at": "2030-11-04T00:00:00Z",
+                  "target_arrival_at": "2030-11-04T01:00:00Z",
+                  "source": "server_provider",
+                  "reason_code": null,
+                  "timing_basis": "provider_departure_time",
+                  "accuracy_notice": null,
+                  "origin_basis": "user_confirmed",
+                  "origin_schedule_id": null,
+                  "schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e",
+                  "origin": {
+                    "latitude": 31.2231,
+                    "longitude": 121.4456,
+                    "coordinate_system": "gcj02",
+                    "city": null,
+                    "basis": "user_confirmed",
+                    "schedule_id": null
+                  },
+                  "destination": {
+                    "latitude": 31.2304,
+                    "longitude": 121.4737,
+                    "coordinate_system": "gcj02",
+                    "city": null,
+                    "basis": "destination_schedule",
+                    "schedule_id": "1ebe590a-450c-41b7-aa89-08e041c63d8e"
+                  },
+                  "shape": {
+                    "status": "missing",
+                    "segments": []
+                  },
+                  "_destination_address": null,
+                  "calculated_at": "2026-11-03T07:47:43.707867"
+                },
+                "applied": true,
+                "replayed": false,
+                "change_id": "e3ef1032-7f85-4171-8c13-25495e81d0b0",
+                "conflict": null
+              }
+            },
+            "cards": [
+              {
+                "kind": "result",
+                "title": "11月4日通勤已重新测算",
+                "blocks": [
+                  {
+                    "type": "fields",
+                    "items": [
+                      {
+                        "label": "日期",
+                        "value": "2030-11-04",
+                        "format": "date"
+                      },
+                      {
+                        "label": "目标到达",
+                        "value": "09:00",
+                        "format": "time"
+                      },
+                      {
+                        "label": "出发时间",
+                        "value": "2030-11-04T00:20:00Z",
+                        "format": "datetime"
+                      },
+                      {
+                        "label": "目的地",
+                        "value": "测试公司",
+                        "format": "text"
+                      },
+                      {
+                        "label": "预计车程（秒）",
+                        "value": 1800,
+                        "format": "number"
+                      },
+                      {
+                        "label": "换乘",
+                        "format": "text"
+                      }
+                    ]
+                  }
+                ],
+                "status": "completed"
+              }
+            ]
+          }
+        },
+        "workflow_execution_ids": [
+          "0a13c27d-e684-44f4-9578-9105af2a945a",
+          "985926fa-b962-4db6-b8e1-d463a215e505",
+          "fbc5ff44-a67d-4f8a-b0f2-e8e8cd2cc83e"
+        ],
+        "source": "/private/tmp/assistant-three-repairs-ai-20261103-d/commute_evening_worker.json",
+        "worker_executions": [
+          {
+            "state": "succeeded",
+            "error_code": null
+          }
+        ],
+        "scheduled_rules": [
+          {
+            "key": "commute:8b7ac5d1-5320-41be-85a9-1b209ccd6ac1:2030-11-04:v1",
+            "state": "enabled",
+            "next_trigger_at": "2030-11-03 23:00:00.000000"
+          },
+          {
+            "key": "commute:8b7ac5d1-5320-41be-85a9-1b209ccd6ac1:2030-11-04:evening:v1",
+            "state": "closed",
+            "next_trigger_at": null
+          }
+        ]
+      }
+    ]
+  },
+  "prior_attempts": [
+    {
+      "source": "/private/tmp/assistant-three-repairs-ai-20261103-b/commute_past_time.json",
+      "result": "failed: model substituted matter ID for plan ID, then answered instead of clarifying; fixed actual plan reference and time instructions, repeated only this case"
+    },
+    {
+      "source": "/private/tmp/assistant-three-repairs-ai-20261103-b/commute_evening_worker.json",
+      "result": "fixture failed before AI: global worker saw another synthetic user; made this case require its own fresh database"
+    }
+  ],
+  "verification_limits": [
+    "No historical regression or hash checks",
+    "No live maps, actual push delivery or browser verification",
+    "No original business database migration or service switch",
+    "Successful AI scenarios were not repeated after later targeted reference/wording corrections; exact inputs are retained in their NexusRun contexts"
+  ]
+}

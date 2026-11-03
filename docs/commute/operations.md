@@ -62,7 +62,7 @@ WorkingDirectory=/srv/assistant-api
 EnvironmentFile=/etc/assistant/assistant.env
 Environment=ASSISTANT_ENVIRONMENT=production
 Environment=ASSISTANT_COMMUTE_PROVIDER_MODE=live
-ExecStart=/srv/assistant-api/.venv/bin/python -m assistant_api.commute.scheduler
+ExecStart=/srv/assistant-api/.venv/bin/python -m assistant_api.background scheduler
 Restart=always
 RestartSec=5
 ```
@@ -77,7 +77,7 @@ WorkingDirectory=/srv/assistant-api
 EnvironmentFile=/etc/assistant/assistant.env
 Environment=ASSISTANT_ENVIRONMENT=production
 Environment=ASSISTANT_COMMUTE_PROVIDER_MODE=live
-ExecStart=/srv/assistant-api/.venv/bin/python -m assistant_api.commute.worker
+ExecStart=/srv/assistant-api/.venv/bin/python -m assistant_api.background worker
 Restart=always
 RestartSec=5
 ```
@@ -111,8 +111,8 @@ cd services/assistant-api
 
 ```bash
 # 独立进程（均支持 --once）
-.venv/bin/python -m assistant_api.commute.scheduler
-.venv/bin/python -m assistant_api.commute.worker
+.venv/bin/python -m assistant_api.background scheduler
+.venv/bin/python -m assistant_api.background worker
 .venv/bin/python -m assistant_api.commute.cleanup --days 30
 
 # 运行可用性（需登录；只返回当前账号的队列/最新进度）
@@ -180,3 +180,10 @@ Apple WeatherKit/Maps/APNs 凭证不是启动前置。缺失能力按 unavailabl
 - 第一版只支持同日本地自然日、driving/walking、固定地点。
 - 服务器建议出发时间是 ETA + 预留的估算，不是导航实时值，也不承诺准时。
 - 修改计划不会撤回已接受的推送；未发送 outbox 会取消。
+
+
+## 9. 单日重测与前晚22:00更新
+
+单日修改、立即刷新接口及AI说明见[日程与待办独立操作及AI验收](../backend-integration/28-日程与待办独立操作及AI验收.md)的“三个问题修复与22:00通勤更新”。上线该版前需执行现有迁移命令`python scripts/migrate_sqlite.py upgrade --database <SQLite URL>`，新增0023可空当天覆盖字段。原先隔离验收阶段未迁移原库；2026-11-03经用户授权已完成原库备份及0021/0022/0023升级，当前运行状态见上述验收文档末尾。
+
+统一后台入口为`python -m assistant_api.background scheduler`和`python -m assistant_api.background worker`。启用现有`ASSISTANT_COMMUTE_AUTO_AI_ENABLED`后，scheduler提前建立前晚当地22:00和当天检查时间的持久跟进，由worker通过同一AI/业务接口刷新。通知由现有Assistant跟进消息返回；实际设备推送送达需另行验证，不把模型结果当送达记录。

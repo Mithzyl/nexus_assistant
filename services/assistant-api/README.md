@@ -1,7 +1,13 @@
 # assistant-api
 
-Personal Assistant 的后端脚手架：本地用户与业务数据 + NexusPilot 应用客户端。
-**不含**模型适配器、Agent 循环、工具运行时、记忆存储——这些在 NexusPilot。
+Personal Assistant 后端负责身份、业务记录、OpenAPI 接口目录、AI 调用参数执行和通用跟进。
+NexusPilot 提供模型与 Agent 工作流，Assistant 使用现有 matter_plan 组织接口调用和卡片要求。
+
+通用跟进的接口、运行、定向验收和前端任务提示词见
+[通用跟进实现与前端联调](../../docs/backend-integration/26-通用跟进实现与前端联调.md)。
+
+本轮接口清单、结构化创建入口、调用参数与 AI 步骤要求见
+[接口复核与AI业务调用说明](../../docs/backend-integration/27-接口复核与AI业务调用说明.md)。
 
 设计说明见 [`../../docs/backend-integration/`](../../docs/backend-integration/)。
 通勤提醒模块的架构、接口示例与 App 联调清单见
@@ -68,8 +74,8 @@ ASSISTANT_PROVISION_PASSWORD='<一次性密码>' \
 定时生成检查与发送通知必须在独立进程：
 
 ```bash
-.venv/bin/python -m assistant_api.commute.scheduler   # 独立调度器
-.venv/bin/python -m assistant_api.commute.worker      # 检查 + 推送 worker
+.venv/bin/python -m assistant_api.background scheduler   # 通用调度器
+.venv/bin/python -m assistant_api.background worker      # 通用跟进 + 供应商队列
 .venv/bin/python -m assistant_api.commute.cleanup --days 30
 ```
 
@@ -185,3 +191,19 @@ NexusPilot 应用 API 的服务，并断言 9 次上游调用里没有任何请�
 - `ASSISTANT_REGISTER_INVITE_CODE`：默认空，本机免邀请码；非空时后端恒定时间校验且网页显示必填邀请码。
 - 公网部署前明确关闭注册或配置私有邀请码；共享邀请码是注册门槛，不替代网关限流和账户额度管理。不要放入前端公开环境变量。
 - `GET /api/v1/auth/register` 仅返回 enabled/invite_required；POST 接收 email、display_name、password（8–256字符）、invite_code，成功返回会话。网页代理只设置 httpOnly Cookie，不把 token 返回页面脚本。
+
+[日程与待办独立操作及AI验收](../../docs/backend-integration/28-日程与待办独立操作及AI验收.md)：独立接口、可选组合、明确提醒依赖、迁移及16个真实AI场景。
+
+
+### 单日通勤修改、即时重测与前晚更新
+
+`POST /api/v1/commute-plans/{plan_id}/days/query`、`PATCH /api/v1/commute-plans/{plan_id}/days`和`POST .../days/refresh`（service_date统一放JSON payload）提供完整的读取、修改重测及即时刷新操作；长期PUT对完整关联计划立即刷新下一次有效通勤，并返回next_day。详见[当前接口与定向验收](../../docs/backend-integration/28-日程与待办独立操作及AI验收.md)。新版本需要迁移0023_commute_day_override，新增可空当天到达覆盖值；不改写旧业务行。
+
+自动更新继续使用现有统一background scheduler/worker及commute_auto_ai_enabled配置，前晚当地22:00和当天检查时间各建立一次持久跟进。本次10条缺陷定向用例使用`pytest -q tests/test_three_operation_repairs.py`；真实Nexus脚本`evaluate_intent_commute.py`必须显式选择--cases，后台22点用例必须独占新临时库。不要用默认业务库执行这些验收。
+
+
+### 当前共同8010运行入口（2026-11-03）
+
+当前LaunchAgent `local.superapp.assistant-backend`已运行本backend worktree的`scripts/run_backend.py --env-file /Users/mith/Desktop/project/superapp-next/services/assistant-api/.env`，复用原库及凭据；子进程为API与统一background scheduler/worker。原库已完成0021/0022/0023增量升级，原业务行保持。自动AI、自动天气配置仍为false。不要再从主目录旧run_backend.py并行启动另一套服务。
+
+实时定义：`http://127.0.0.1:8010/openapi.json`。前端在Web worktree的3001运行，经`/api/pa`代理访问8010。详细备份、迁移和启动记录见[当前验收文档末尾](../../docs/backend-integration/28-日程与待办独立操作及AI验收.md)。

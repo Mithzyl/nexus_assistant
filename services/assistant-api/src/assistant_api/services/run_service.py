@@ -196,28 +196,34 @@ async def create_ai_task(
     context: dict[str, Any],
     business_ref: str | None = None,
     attach: Callable[[NexusRun], None] | None = None,
+    strict_input_match: bool | None = None,
 ) -> tuple[NexusRun, bool]:
     """Return the run for this key, creating the local row exactly once.
 
     Local writes (run row, chat association or business link) are committed here,
     before any network call. The caller launches or resumes the remote workflow
-    afterwards, so a slow upstream never holds a write transaction open.
+    afterwards, so a slow upstream never holds a write transaction open. Callers
+    with generated context may compare their own stable input identity explicitly.
     """
 
+    # Rollback expires ORM identity fields; retain the trusted scalar for a
+    # concurrent idempotency-key loser before its transaction can roll back.
+    user_id = user.user_id
     spec = ai_tasks.spec_for(purpose)
+    match_input = spec.strict_input_match if strict_input_match is None else strict_input_match
     if trigger not in ai_tasks.VALID_TRIGGERS:  # pragma: no cover - programming error
         raise ValueError(f"unknown AI task trigger: {trigger!r}")
     input_text = spec.prepare_input(context)
 
     existing = await _find_by_key(
-        db, user_id=user.user_id, idempotency_key=idempotency_key
+        db, user_id=user_id, idempotency_key=idempotency_key
     )
     if existing is not None:
         _check_replay(
             existing,
             purpose=purpose,
             input_text=input_text,
-            strict_input_match=spec.strict_input_match,
+            strict_input_match=match_input,
         )
         _adopt_task_metadata(
             existing,
@@ -231,7 +237,7 @@ async def create_ai_task(
 
     row = NexusRun(
         local_run_id=new_id(),
-        user_id=user.user_id,
+        user_id=user_id,
         nexus_principal_id=None,
         idempotency_key=idempotency_key,
         request_text=input_text,
@@ -251,7 +257,7 @@ async def create_ai_task(
         # rather than returning an error or creating a second remote Run.
         await db.rollback()
         existing = await _find_by_key(
-            db, user_id=user.user_id, idempotency_key=idempotency_key
+            db, user_id=user_id, idempotency_key=idempotency_key
         )
         if existing is None:
             raise
@@ -259,7 +265,7 @@ async def create_ai_task(
             existing,
             purpose=purpose,
             input_text=input_text,
-            strict_input_match=spec.strict_input_match,
+            strict_input_match=match_input,
         )
         _adopt_task_metadata(
             existing,
@@ -630,6 +636,10 @@ async def _consume_workflow(
             external_user_id, remote_run_id, payload
         ):
             data = client.event_payload(event)
+            from assistant_api.services.intake_stream import sink
+            observer = sink.get()
+            if observer and data.get('event_type') == 'agent.answer.delta':
+                observer((data.get('public_payload') or {}).get('text_delta', ''))
             event_workflow_id = data.get("workflow_execution_id")
             if workflow_id is None and isinstance(event_workflow_id, str) and event_workflow_id:
                 workflow_id = event_workflow_id

@@ -15,12 +15,16 @@ from assistant_api.schemas.bark import (
 router = APIRouter(prefix="/api/v1/commute/bark", tags=["commute"])
 
 
-@router.get("", response_model=BarkStatusRead)
+@router.get("", response_model=BarkStatusRead,
+    openapi_extra={'x-assistant': {'enabled': False, 'reason': '通知设置由设置页面管理。'}}
+)
 async def bark_status(user: CurrentUser, db: DatabaseSession) -> BarkStatusRead:
     return await service.status(db, user.user_id)
 
 
-@router.post("/binding", response_model=BarkStatusRead, status_code=status.HTTP_201_CREATED)
+@router.post("/binding", response_model=BarkStatusRead, status_code=status.HTTP_201_CREATED,
+    openapi_extra={'x-assistant': {'enabled': False, 'reason': '设备密钥不交给AI。'}}
+)
 async def bind_bark(
     payload: BarkBindingWrite, user: CurrentUser, db: DatabaseSession
 ) -> BarkStatusRead:
@@ -28,19 +32,25 @@ async def bind_bark(
     return await service.bind(db, user.user_id, payload.device_key)
 
 
-@router.delete("/binding", response_model=BarkStatusRead)
+@router.delete("/binding", response_model=BarkStatusRead,
+    openapi_extra={'x-assistant': {'enabled': False, 'reason': '设备绑定由设置页面管理。'}}
+)
 async def unbind_bark(user: CurrentUser, db: DatabaseSession) -> BarkStatusRead:
     return await service.unbind(db, user.user_id)
 
 
-@router.patch("", response_model=BarkStatusRead)
+@router.patch("", response_model=BarkStatusRead,
+    openapi_extra={'x-assistant': {'enabled': False, 'reason': '通知授权由设置页面管理。'}}
+)
 async def update_bark_setting(
     payload: BarkSettingUpdate, user: CurrentUser, db: DatabaseSession
 ) -> BarkStatusRead:
     return await service.set_auto_reminders(db, user.user_id, payload.auto_reminders_enabled)
 
 
-@router.post("/test", response_model=BarkTestRead)
+@router.post("/test", response_model=BarkTestRead,
+    openapi_extra={'x-assistant': {'enabled': False, 'reason': '通知测试不是普通业务操作。'}}
+)
 async def send_bark_test(
     payload: BarkTestRequest, request: Request, user: CurrentUser, db: DatabaseSession
 ) -> BarkTestRead:

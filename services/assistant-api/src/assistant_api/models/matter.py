@@ -182,6 +182,8 @@ class Reminder(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(255))
     note: Mapped[str | None] = mapped_column(String(500))
     trigger_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    schedule_offset_seconds: Mapped[int | None] = mapped_column(Integer)
+
     status: Mapped[str] = mapped_column(String(16), default="pending")
     sync_status: Mapped[str | None] = mapped_column(String(24))
     source: Mapped[str | None] = mapped_column(String(24))

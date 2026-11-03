@@ -150,6 +150,12 @@ def create_app(
     app.include_router(bark_router)
     app.include_router(calendar_feed.router)
     app.include_router(calendar_feed.feed_router)
+    from assistant_api.routers import follow_ups
+    from assistant_api.services.business_events import install_change_events
+    install_change_events()
+    app.include_router(follow_ups.router)
+    from assistant_api.routers import records
+    app.include_router(records.router)
     app.include_router(matters.router)
     app.include_router(sync_ios.router)
 

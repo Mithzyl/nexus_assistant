@@ -50,6 +50,7 @@ async def ensure_instance(
 ) -> CommuteInstance | None:
     """Create or reconcile today's instance for one plan.
 
+    An explicit day override takes priority over recurring configuration.
     A past target arrival never creates a historical instance, so a restart does
     not backfill old notifications. Plan edits update the same row and therefore
     keep the twice-a-day cap across revisions.
@@ -62,9 +63,10 @@ async def ensure_instance(
         return None
     if not allow_non_scheduled_day and iso_weekday(day) not in (plan.weekdays_json or []):
         return None
-    target = target_arrival_for(day, plan.arrival_local_time, plan.timezone)
-    window = check_window_for(day, plan.check_local_time, plan.timezone)
     existing = await get_instance(db, plan_id=plan.plan_id, local_service_date=day)
+    arrival_time = existing.arrival_local_time_override if existing and existing.arrival_local_time_override else plan.arrival_local_time
+    target = target_arrival_for(day, arrival_time, plan.timezone)
+    window = check_window_for(day, plan.check_local_time, plan.timezone)
     if existing is None:
         if target <= now:
             return None

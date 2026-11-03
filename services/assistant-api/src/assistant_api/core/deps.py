@@ -71,6 +71,13 @@ async def get_current_user(
     stolen token cannot be probed for validity.
     """
 
+    internal_user_id = request.scope.get('assistant_execution_user_id')
+    if internal_user_id:
+        user = await db.get(User, internal_user_id)
+        if user is None or user.status != 'active':
+            raise UnauthenticatedError()
+        return user
+
     token = bearer_token(request)
     if token is None:
         raise UnauthenticatedError()

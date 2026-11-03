@@ -1,0 +1,5130 @@
+{
+  "date": "2026-11-03",
+  "model": "real Nexus",
+  "map_and_eta_provider": "mock",
+  "business_database": "isolated temporary SQLite",
+  "scope": "16 new cases; only failed commute_modify repeated after publisher metadata correction; no historical regression or hash checks",
+  "summary": {
+    "cases": 16,
+    "complete_passed": 13,
+    "business_passed": 14,
+    "presentation_failed": 1,
+    "business_failed": 2
+  },
+  "cases": [
+    {
+      "case": "casual_todo",
+      "input": "帮我记一下买牛奶，回头办。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "passed",
+      "error": null,
+      "elapsed_seconds": 28.35,
+      "answer": "记好了，买牛奶已加进待办，没有设截止时间，回头方便时办就行。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "search",
+          "search_query": "新增待办 创建 todo"
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_todo",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "买牛奶",
+              "idempotency_key": "api-call-2411cbf9-3117-471b-a633-1832385693f5-1"
+            },
+            "summary": "新增待办“买牛奶”，暂不设截止时间和提醒"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "记好了，买牛奶已加进待办，没有设截止时间，回头方便时办就行。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已记下",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "待办",
+                      "value": {
+                        "$result": "/todo/title"
+                      }
+                    },
+                    {
+                      "label": "所属事项",
+                      "value": {
+                        "$result": "/matter/title"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 201,
+          "operation_id": "create_todo",
+          "applied": true,
+          "references": {
+            "change_id": "100ad048-5c7a-4171-ba46-abf95d0abf8e"
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "todo",
+                "reminders",
+                "change_id",
+                "replayed",
+                "applied"
+              ]
+            },
+            "/matter": {
+              "type": "object",
+              "fields": [
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/todo": {
+              "type": "object",
+              "fields": [
+                "todo_id",
+                "title",
+                "status",
+                "position"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 1
+        }
+      ],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "6ef17458-db42-4bcc-920d-6bffb7f17fec",
+            "title": "买牛奶",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "5500c079-f8c8-4af8-8184-83c1df75dc88",
+            "matter_id": "6ef17458-db42-4bcc-920d-6bffb7f17fec",
+            "title": "买牛奶",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": null
+          }
+        ],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "待办已记下",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "待办",
+                  "value": "买牛奶",
+                  "format": "text"
+                },
+                {
+                  "label": "所属事项",
+                  "value": "买牛奶",
+                  "format": "text"
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "0cc810e3-5d06-40d8-a0b0-6b67b3e71d79",
+        "da490e22-2e2c-42d2-8474-ae2c7195a884",
+        "ae6b7c9a-ab27-4a96-9528-0a736598cfdb"
+      ],
+      "source": "/private/tmp/assistant-intent-ai-20261103-a/casual_todo.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-ai-20261103-a/casual_todo.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "deadline_without_type",
+      "input": "2030年11月8日下午3点前把报价核对完，帮我记着。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "passed",
+      "error": null,
+      "elapsed_seconds": 57.35,
+      "answer": "记好了，报价核对的待办已经存上，截止时间是2030年11月8日下午3点。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "search",
+          "search_query": "新增待办事项草稿"
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_todo",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "核对报价",
+              "due_at": "2030-11-08T15:00:00+08:00",
+              "idempotency_key": "api-call-77910eb3-6cc3-414d-b533-f2fc55b158de-1"
+            },
+            "summary": "新增一条待办「核对报价」，截止到2030年11月8日下午3点"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "记好了，报价核对的待办已经存上，截止时间是2030年11月8日下午3点。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已记录",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "事项",
+                      "value": {
+                        "$result": "/todo/title"
+                      }
+                    },
+                    {
+                      "label": "截止时间",
+                      "value": {
+                        "$result": "/todo/due_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "状态",
+                      "value": {
+                        "$result": "/todo/status"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 201,
+          "operation_id": "create_todo",
+          "applied": true,
+          "references": {
+            "change_id": "87d82051-1086-4309-87f2-94d60c9d0f52"
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "todo",
+                "reminders",
+                "change_id",
+                "replayed",
+                "applied"
+              ]
+            },
+            "/matter": {
+              "type": "object",
+              "fields": [
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/todo": {
+              "type": "object",
+              "fields": [
+                "todo_id",
+                "title",
+                "status",
+                "position",
+                "due_at"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 1
+        }
+      ],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "7928c8e5-4219-4b37-b9ff-d3d29a281ddf",
+            "title": "核对报价",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "cf046db4-a5ff-44e8-86b1-42e94fd1ebff",
+            "matter_id": "7928c8e5-4219-4b37-b9ff-d3d29a281ddf",
+            "title": "核对报价",
+            "status": "open",
+            "due_at": "2030-11-08 07:00:00",
+            "reminder_at": null
+          }
+        ],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "待办已记录",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "事项",
+                  "value": "核对报价",
+                  "format": "text"
+                },
+                {
+                  "label": "截止时间",
+                  "value": "2030-11-08T07:00:00Z",
+                  "format": "datetime"
+                },
+                {
+                  "label": "状态",
+                  "value": "open",
+                  "format": "text"
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "9d5b2b55-8387-4dca-b19f-a16caba90b90",
+        "b486589d-60ee-434f-bda4-eaae932aa715",
+        "91c6328a-75e8-4114-a0be-253548c09c45"
+      ],
+      "source": "/private/tmp/assistant-intent-commute-ai-20261103-b/deadline_without_type.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-commute-ai-20261103-b/deadline_without_type.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "reminder_without_time",
+      "input": "提醒我买药。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "not_requested",
+      "error": null,
+      "elapsed_seconds": 34.17,
+      "answer": null,
+      "question": "买药这件事想什么时候提醒你？",
+      "model_decisions": [
+        {
+          "decision": "search",
+          "search_query": "创建待办提醒 新建事项草稿"
+        },
+        {
+          "decision": "ask_user",
+          "question": "买药这件事想什么时候提醒你？",
+          "choices": [
+            "今晚 8 点",
+            "明天早上 9 点",
+            "不设提醒，只记成待办"
+          ]
+        }
+      ],
+      "actual_calls": [],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [],
+      "workflow_execution_ids": [
+        "6fc2a588-272d-4a3c-8db7-504721f3a3cb",
+        "617330fe-1999-4b22-968d-b61cf128764d"
+      ],
+      "source": "/private/tmp/assistant-intent-commute-ai-20261103-b/reminder_without_time.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-commute-ai-20261103-b/reminder_without_time.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "deadline_todo",
+      "input": "2030年11月8日下午3点前把合同看完，记一项待办。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "passed",
+      "error": null,
+      "elapsed_seconds": 33.88,
+      "answer": "记好了，合同要在2030年11月8日下午3点前看完，已经加进待办了。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_todo",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "把合同看完",
+              "due_at": "2030-11-08T15:00:00+08:00",
+              "idempotency_key": "api-call-eb720f63-dae0-4f99-bdcb-d71e8860a3fe-0"
+            },
+            "summary": "新增待办“把合同看完”，截止时间为 2030年11月8日 15:00 前"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "记好了，合同要在2030年11月8日下午3点前看完，已经加进待办了。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已添加",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "待办",
+                      "value": {
+                        "$result": "/todo/title"
+                      }
+                    },
+                    {
+                      "label": "截止时间",
+                      "value": {
+                        "$result": "/todo/due_at"
+                      },
+                      "format": "datetime"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 201,
+          "operation_id": "create_todo",
+          "applied": true,
+          "references": {
+            "change_id": "2d3aff76-8869-4176-a78b-7de489ad9640"
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "todo",
+                "reminders",
+                "change_id",
+                "replayed",
+                "applied"
+              ]
+            },
+            "/matter": {
+              "type": "object",
+              "fields": [
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/todo": {
+              "type": "object",
+              "fields": [
+                "todo_id",
+                "title",
+                "status",
+                "position",
+                "due_at"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 0
+        }
+      ],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "f50a71ea-e1a8-4d58-9904-f3af8153de86",
+            "title": "把合同看完",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "4d493744-cd47-4308-a8d4-0dfb67e5a90f",
+            "matter_id": "f50a71ea-e1a8-4d58-9904-f3af8153de86",
+            "title": "把合同看完",
+            "status": "open",
+            "due_at": "2030-11-08 07:00:00",
+            "reminder_at": null
+          }
+        ],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "待办已添加",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "待办",
+                  "value": "把合同看完",
+                  "format": "text"
+                },
+                {
+                  "label": "截止时间",
+                  "value": "2030-11-08T07:00:00Z",
+                  "format": "datetime"
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "e3cf8192-40b0-4400-8260-4f0557e425a7",
+        "72896817-086a-47cf-b3c6-35d82883e332"
+      ],
+      "source": "/private/tmp/assistant-intent-ai-20261103-a/deadline_todo.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-ai-20261103-a/deadline_todo.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "meeting_schedule",
+      "input": "2030年11月8日下午3点和客户聊报价，帮我排一下。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "passed",
+      "error": null,
+      "elapsed_seconds": 64.42,
+      "answer": "排好了：2030年11月8日下午3点和客户聊报价的日程已经建好，不用再单独做其他事。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "search",
+          "search_query": "新增日程 创建草稿 保存事项"
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_schedule",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "和客户聊报价",
+              "starts_at": "2030-11-08T15:00:00+08:00",
+              "idempotency_key": "api-call-666663a6-55fa-4a3f-beef-1926288c1eca-1"
+            },
+            "summary": "为你新建 2030年11月8日 15:00 与客户聊报价的日程"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "排好了：2030年11月8日下午3点和客户聊报价的日程已经建好，不用再单独做其他事。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "日程已排好",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "事项",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "开始时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "状态",
+                      "value": {
+                        "$result": "/schedule/status"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 201,
+          "operation_id": "create_schedule",
+          "applied": true,
+          "references": {
+            "change_id": "df875427-7a64-400b-8be3-7208a01b643b"
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "schedule",
+                "reminders",
+                "change_id",
+                "replayed",
+                "applied"
+              ]
+            },
+            "/matter": {
+              "type": "object",
+              "fields": [
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/schedule": {
+              "type": "object",
+              "fields": [
+                "schedule_id",
+                "matter_id",
+                "title",
+                "starts_at",
+                "coordinate_system",
+                "status",
+                "source",
+                "sync_status"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 1
+        }
+      ],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "60e87bc5-839a-400b-96a2-30134bb3c7ae",
+            "title": "和客户聊报价",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "da8e0ff8-cf01-48fa-be2f-97c8b41c29ac",
+            "matter_id": "60e87bc5-839a-400b-96a2-30134bb3c7ae",
+            "title": "和客户聊报价",
+            "status": "scheduled",
+            "starts_at": "2030-11-08 07:00:00",
+            "location": null,
+            "deleted_at": null
+          }
+        ],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "日程已排好",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "事项",
+                  "value": "和客户聊报价",
+                  "format": "text"
+                },
+                {
+                  "label": "开始时间",
+                  "value": "2030-11-08T07:00:00Z",
+                  "format": "datetime"
+                },
+                {
+                  "label": "状态",
+                  "value": "scheduled",
+                  "format": "text"
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "e47b5d9a-569f-4b19-b7ec-c2ce82442b42",
+        "cc12b9ae-ab0b-4574-abd5-72e3ee0adf61",
+        "58ea46a6-bfe5-4cab-96fb-2de0d2382904"
+      ],
+      "source": "/private/tmp/assistant-intent-ai-20261103-a/meeting_schedule.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-ai-20261103-a/meeting_schedule.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "meeting_materials",
+      "input": "帮我安排一下开会材料，2030年11月8日下午3点前准备好。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "passed",
+      "error": null,
+      "elapsed_seconds": 42.92,
+      "answer": "安排好了，已建好待办：2030年11月8日下午3点前准备好开会材料。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_structured_draft",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "准备开会材料",
+              "todos": [
+                {
+                  "title": "准备开会材料",
+                  "due_at": "2030-11-08T15:00:00+08:00"
+                }
+              ],
+              "idempotency_key": "api-call-da7440bf-30a3-404f-b0c6-37b36adf6721-0"
+            },
+            "summary": "准备一个「准备开会材料」的待办，截止 2030年11月8日下午3点，先存成草稿再正式保存"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "confirm_draft_api_v1_matters_drafts__draft_id__confirm_post",
+            "path_parameters": {
+              "draft_id": {
+                "$result": "/draft_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {
+              "Idempotency-Key": "api-call-da7440bf-30a3-404f-b0c6-37b36adf6721-2"
+            },
+            "body": {
+              "expected_version": {
+                "$result": "/version"
+              }
+            },
+            "summary": "保存“开会材料”待办，截止时间为2030年11月8日下午3点"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "安排好了，已建好待办：2030年11月8日下午3点前准备好开会材料。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已创建",
+              "blocks": [
+                {
+                  "type": "timeline",
+                  "items": {
+                    "$each": "/todos",
+                    "template": {
+                      "title": {
+                        "$item": "/title"
+                      },
+                      "time": {
+                        "$item": "/due_at"
+                      },
+                      "category": "待办",
+                      "description": "2030年11月8日下午3点前准备好开会材料"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 201,
+          "operation_id": "create_structured_draft",
+          "references": {
+            "draft_id": "4c6a1b95-0a8d-4f62-b642-a2c24ff4339d",
+            "status": "preview",
+            "version": 1
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "draft_id",
+                "kind",
+                "status",
+                "version",
+                "matter_id",
+                "payload",
+                "conflicts",
+                "action_plan",
+                "communication_draft",
+                "candidates",
+                "ai_run_id",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/payload": {
+              "type": "object",
+              "fields": [
+                "title",
+                "goal",
+                "changes_note",
+                "next_step",
+                "schedule",
+                "todos",
+                "complete_todo_ids",
+                "kind",
+                "matter_id",
+                "requires_choice",
+                "source_text",
+                "analysis",
+                "action_plan"
+              ]
+            },
+            "/payload/todos": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "todo_id",
+                "title",
+                "due_at",
+                "reminder_at",
+                "status",
+                "schedule_reminder"
+              ]
+            },
+            "/payload/complete_todo_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/payload/analysis": {
+              "type": "object",
+              "fields": [
+                "creation_request"
+              ]
+            },
+            "/payload/analysis/creation_request": {
+              "type": "object",
+              "fields": [
+                "title",
+                "goal",
+                "changes_note",
+                "next_step",
+                "schedule",
+                "todos",
+                "complete_todo_ids",
+                "idempotency_key",
+                "matter_id",
+                "expected_matter_version"
+              ]
+            },
+            "/payload/analysis/creation_request/todos": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "todo_id",
+                "title",
+                "due_at",
+                "reminder_at",
+                "status",
+                "schedule_reminder"
+              ]
+            },
+            "/payload/analysis/creation_request/complete_todo_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/payload/action_plan": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "kind",
+                "title"
+              ]
+            },
+            "/action_plan": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "kind",
+                "role",
+                "schedule_id",
+                "todo_id",
+                "reminder_id",
+                "title",
+                "starts_at",
+                "due_at",
+                "reminder_at",
+                "trigger_at",
+                "location",
+                "status",
+                "reason",
+                "selected",
+                "cancellable"
+              ]
+            }
+          },
+          "step": 0
+        },
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "confirm_draft_api_v1_matters_drafts__draft_id__confirm_post",
+          "applied": true,
+          "references": {
+            "change_id": "35fcbbae-a638-499b-b50b-aee15a3143ac",
+            "draft": {
+              "draft_id": "4c6a1b95-0a8d-4f62-b642-a2c24ff4339d",
+              "version": 1,
+              "status": "confirmed"
+            }
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "draft",
+                "matter",
+                "schedule",
+                "todos",
+                "reminders",
+                "change_id",
+                "replayed",
+                "applied",
+                "cancelled_reminder_ids",
+                "cancelled_schedule_ids",
+                "notifications_retracted",
+                "conflict",
+                "change"
+              ]
+            },
+            "/draft": {
+              "type": "object",
+              "fields": [
+                "draft_id",
+                "kind",
+                "status",
+                "version",
+                "matter_id",
+                "payload",
+                "conflicts",
+                "action_plan",
+                "communication_draft",
+                "candidates",
+                "ai_run_id",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/draft/payload": {
+              "type": "object",
+              "fields": [
+                "title",
+                "goal",
+                "changes_note",
+                "next_step",
+                "schedule",
+                "todos",
+                "complete_todo_ids",
+                "kind",
+                "matter_id",
+                "requires_choice",
+                "source_text",
+                "analysis",
+                "action_plan"
+              ]
+            },
+            "/draft/payload/todos": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "todo_id",
+                "title",
+                "due_at",
+                "reminder_at",
+                "status",
+                "schedule_reminder"
+              ]
+            },
+            "/draft/payload/complete_todo_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/draft/payload/analysis": {
+              "type": "object",
+              "fields": [
+                "creation_request"
+              ]
+            },
+            "/draft/payload/analysis/creation_request": {
+              "type": "object",
+              "fields": [
+                "title",
+                "goal",
+                "changes_note",
+                "next_step",
+                "schedule",
+                "todos",
+                "complete_todo_ids",
+                "idempotency_key",
+                "matter_id",
+                "expected_matter_version"
+              ]
+            },
+            "/draft/payload/action_plan": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "kind",
+                "title"
+              ]
+            },
+            "/draft/action_plan": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "kind",
+                "role",
+                "schedule_id",
+                "todo_id",
+                "reminder_id",
+                "title",
+                "starts_at",
+                "due_at",
+                "reminder_at",
+                "trigger_at",
+                "location",
+                "status",
+                "reason",
+                "selected",
+                "cancellable"
+              ]
+            },
+            "/matter": {
+              "type": "object",
+              "fields": [
+                "archive_effect",
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "next_step",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/todos": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "todo_id",
+                "title",
+                "status",
+                "position",
+                "due_at",
+                "reminder_at",
+                "completed_at"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/cancelled_reminder_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/cancelled_schedule_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change": {
+              "type": "object",
+              "fields": [
+                "change_id",
+                "change_type",
+                "before",
+                "after"
+              ]
+            },
+            "/change/before": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "schedule",
+                "todos",
+                "reminders",
+                "adjacent_schedules",
+                "cancelled_schedules"
+              ]
+            },
+            "/change/before/todos": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/before/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/before/adjacent_schedules": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/before/cancelled_schedules": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "matter_version",
+                "schedule",
+                "todos",
+                "reminders",
+                "adjacent_schedules",
+                "cancelled_schedules",
+                "created_todo_ids",
+                "created_reminder_ids",
+                "reminder_ids",
+                "cancelled_schedule_ids",
+                "completed_todo_ids"
+              ]
+            },
+            "/change/after/matter": {
+              "type": "object",
+              "fields": [
+                "title",
+                "goal",
+                "status",
+                "next_step"
+              ]
+            },
+            "/change/after/todos": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "todo_id",
+                "matter_id",
+                "title",
+                "status",
+                "position",
+                "due_at",
+                "reminder_at",
+                "completed_at",
+                "deleted_at",
+                "updated_at"
+              ]
+            },
+            "/change/after/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/adjacent_schedules": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/cancelled_schedules": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/created_todo_ids": {
+              "type": "array",
+              "count": 1,
+              "item_fields": []
+            },
+            "/change/after/created_reminder_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/reminder_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/cancelled_schedule_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/completed_todo_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 1
+        }
+      ],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "4478262e-65a5-4d94-a827-2d604237ffc8",
+            "title": "准备开会材料",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "8d8e7833-262d-4ab8-ae7b-4af2aee4cfd3",
+            "matter_id": "4478262e-65a5-4d94-a827-2d604237ffc8",
+            "title": "准备开会材料",
+            "status": "open",
+            "due_at": "2030-11-08 07:00:00",
+            "reminder_at": null
+          }
+        ],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "待办已创建",
+          "blocks": [
+            {
+              "type": "timeline",
+              "items": [
+                {
+                  "title": "准备开会材料",
+                  "time": "2030-11-08T07:00:00Z",
+                  "description": "2030年11月8日下午3点前准备好开会材料",
+                  "category": "待办",
+                  "fields": []
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "865a550d-00f9-42d8-859b-bcff9a668fdb",
+        "11327425-2fc3-496b-beee-0fb6acea2274",
+        "fd1d7554-e77b-4c94-a67e-45c053714981"
+      ],
+      "source": "/private/tmp/assistant-intent-ai-20261103-a/meeting_materials.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-ai-20261103-a/meeting_materials.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "negated_schedule",
+      "input": "先别安排会议，只加一个准备材料的待办。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "passed",
+      "error": null,
+      "elapsed_seconds": 41.52,
+      "answer": "好，会议先不安排，只加了一个“准备材料”的待办。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_todo",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "准备材料",
+              "idempotency_key": "api-call-f15419e0-4acd-44d0-a044-ff5879da03ba-0"
+            },
+            "summary": "只新增一个“准备材料”的待办，不安排会议，也不设截止时间"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "好，会议先不安排，只加了一个“准备材料”的待办。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已添加",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "待办",
+                      "value": {
+                        "$result": "/todo/title"
+                      }
+                    },
+                    {
+                      "label": "所属事项",
+                      "value": {
+                        "$result": "/matter/title"
+                      }
+                    },
+                    {
+                      "label": "状态",
+                      "value": {
+                        "$result": "/todo/status"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 201,
+          "operation_id": "create_todo",
+          "applied": true,
+          "references": {
+            "change_id": "8e5fb45b-6ba1-4d74-b8ab-fa992b2aff2e"
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "todo",
+                "reminders",
+                "change_id",
+                "replayed",
+                "applied"
+              ]
+            },
+            "/matter": {
+              "type": "object",
+              "fields": [
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/todo": {
+              "type": "object",
+              "fields": [
+                "todo_id",
+                "title",
+                "status",
+                "position"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 0
+        }
+      ],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "c779a19f-93d3-444d-b9f0-ada83e34355d",
+            "title": "准备材料",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "452a32e5-94e4-4442-bfb6-a09c4b405f64",
+            "matter_id": "c779a19f-93d3-444d-b9f0-ada83e34355d",
+            "title": "准备材料",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": null
+          }
+        ],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "待办已添加",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "待办",
+                  "value": "准备材料",
+                  "format": "text"
+                },
+                {
+                  "label": "所属事项",
+                  "value": "准备材料",
+                  "format": "text"
+                },
+                {
+                  "label": "状态",
+                  "value": "open",
+                  "format": "text"
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "98bfdd24-0ea3-48c4-a6c9-00ec93b5d26c",
+        "31514f94-da10-4d79-a14d-939dcb3de776"
+      ],
+      "source": "/private/tmp/assistant-intent-ai-20261103-a/negated_schedule.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-ai-20261103-a/negated_schedule.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "missing_kind",
+      "input": "帮我安排一下开会。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "not_requested",
+      "error": null,
+      "elapsed_seconds": 15.93,
+      "answer": null,
+      "question": "好嘞～这场会安排在什么时候？告诉我日期和开始时间就行（比如“明天上午10点”），有结束时间和地点也一起说。",
+      "model_decisions": [
+        {
+          "decision": "ask_user",
+          "question": "好嘞～这场会安排在什么时候？告诉我日期和开始时间就行（比如“明天上午10点”），有结束时间和地点也一起说。",
+          "choices": [
+            "今天下午 3 点",
+            "明天上午 10 点",
+            "下周一上午 9 点",
+            "其他时间，我来说明"
+          ]
+        }
+      ],
+      "actual_calls": [],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [],
+      "workflow_execution_ids": [
+        "48b0bd1e-c061-43b3-bffc-8e4c2026afdb"
+      ],
+      "source": "/private/tmp/assistant-intent-ai-20261103-a/missing_kind.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-ai-20261103-a/missing_kind.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "ambiguous_change",
+      "input": "把那个事情往后挪一下。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "not_requested",
+      "error": null,
+      "elapsed_seconds": 36.17,
+      "answer": null,
+      "question": "想把这条事项里的哪一项往后挪、挪多少？现在有一条日程和一条待办，我不确定你指的是哪个，也不想猜时间。",
+      "model_decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先看一下你选中的这件事里有哪些日程和待办，确认要挪的是哪一个"
+          }
+        },
+        {
+          "decision": "ask_user",
+          "question": "想把这条事项里的哪一项往后挪、挪多少？现在有一条日程和一条待办，我不确定你指的是哪个，也不想猜时间。",
+          "choices": [
+            "日程往后挪1小时",
+            "日程往后挪1天",
+            "待办截止时间往后挪1天"
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "get_matter_api_v1_matters__matter_id__get",
+          "references": {
+            "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0",
+            "status": "active",
+            "version": 2
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "archive_effect",
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "next_step",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at",
+                "schedules",
+                "todos",
+                "progress",
+                "reminders"
+              ]
+            },
+            "/schedules": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "schedule_id",
+                "matter_id",
+                "title",
+                "starts_at",
+                "ends_at",
+                "location",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "location_city",
+                "location_address",
+                "location_source",
+                "location_external_id",
+                "status",
+                "source",
+                "sync_status",
+                "deleted_at"
+              ]
+            },
+            "/todos": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "todo_id",
+                "title",
+                "status",
+                "position",
+                "due_at",
+                "reminder_at",
+                "completed_at"
+              ]
+            },
+            "/progress": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "progress_id",
+                "text",
+                "kind",
+                "created_at"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "reminder_id",
+                "matter_id",
+                "todo_id",
+                "schedule_id",
+                "title",
+                "note",
+                "trigger_at",
+                "schedule_offset_seconds",
+                "status",
+                "sync_status",
+                "source",
+                "completed_at",
+                "acknowledged_at",
+                "cancelled_at",
+                "deleted_at"
+              ]
+            }
+          },
+          "step": 0
+        }
+      ],
+      "before": {
+        "matters": [
+          {
+            "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "1123c946-3fef-4122-a52a-3e35f7a12fb5",
+            "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "921a7dbc-5e8f-4b74-a108-32bf67296f35",
+            "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "1316bc35-354c-4999-af73-568a5619ed7a",
+            "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0",
+            "todo_id": "1123c946-3fef-4122-a52a-3e35f7a12fb5",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          }
+        ],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "1123c946-3fef-4122-a52a-3e35f7a12fb5",
+            "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "921a7dbc-5e8f-4b74-a108-32bf67296f35",
+            "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "1316bc35-354c-4999-af73-568a5619ed7a",
+            "matter_id": "a64a0c5a-11b6-4def-8741-978b8fba51c0",
+            "todo_id": "1123c946-3fef-4122-a52a-3e35f7a12fb5",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          }
+        ],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [],
+      "workflow_execution_ids": [
+        "fa30f782-8ca8-440f-8f6f-c289866bf1e8",
+        "dc0485ce-5146-43fe-a48c-95be6bdacc01"
+      ],
+      "source": "/private/tmp/assistant-intent-ai-20261103-a/ambiguous_change.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-ai-20261103-a/ambiguous_change.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "query_only",
+      "input": "看看我现在有哪些安排和要办的事情。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "passed",
+      "error": null,
+      "elapsed_seconds": 50.87,
+      "answer": "你现在有 1 个日程和 1 条待办，都在当前这件事下，具体内容在下面的卡片里。想再看别的安排，把名字或大致日期告诉我，我再帮你找。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "读取当前事项详情，查看其中的日程和待办安排"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "你现在有 1 个日程和 1 条待办，都在当前这件事下，具体内容在下面的卡片里。想再看别的安排，把名字或大致日期告诉我，我再帮你找。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "你的日程",
+              "blocks": [
+                {
+                  "type": "timeline",
+                  "items": {
+                    "$each": "/schedules",
+                    "template": {
+                      "title": {
+                        "$item": "/title"
+                      },
+                      "time": {
+                        "$item": "/starts_at"
+                      },
+                      "category": "日程"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "result",
+              "title": "要办的事",
+              "blocks": [
+                {
+                  "type": "timeline",
+                  "items": {
+                    "$each": "/todos",
+                    "template": {
+                      "title": {
+                        "$item": "/title"
+                      },
+                      "category": "待办"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "get_matter_api_v1_matters__matter_id__get",
+          "references": {
+            "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c",
+            "status": "active",
+            "version": 2
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "archive_effect",
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "next_step",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at",
+                "schedules",
+                "todos",
+                "progress",
+                "reminders"
+              ]
+            },
+            "/schedules": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "schedule_id",
+                "matter_id",
+                "title",
+                "starts_at",
+                "ends_at",
+                "location",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "location_city",
+                "location_address",
+                "location_source",
+                "location_external_id",
+                "status",
+                "source",
+                "sync_status",
+                "deleted_at"
+              ]
+            },
+            "/todos": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "todo_id",
+                "title",
+                "status",
+                "position",
+                "due_at",
+                "reminder_at",
+                "completed_at"
+              ]
+            },
+            "/progress": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "progress_id",
+                "text",
+                "kind",
+                "created_at"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "reminder_id",
+                "matter_id",
+                "todo_id",
+                "schedule_id",
+                "title",
+                "note",
+                "trigger_at",
+                "schedule_offset_seconds",
+                "status",
+                "sync_status",
+                "source",
+                "completed_at",
+                "acknowledged_at",
+                "cancelled_at",
+                "deleted_at"
+              ]
+            }
+          },
+          "step": 0
+        }
+      ],
+      "before": {
+        "matters": [
+          {
+            "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "c11a8497-72f4-4c91-97c6-78aa620ad24c",
+            "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "68805898-a998-44eb-82b6-b710a22e8218",
+            "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "97029202-3abc-4482-8cfc-6ece4273e452",
+            "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c",
+            "todo_id": "c11a8497-72f4-4c91-97c6-78aa620ad24c",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          }
+        ],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "c11a8497-72f4-4c91-97c6-78aa620ad24c",
+            "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "68805898-a998-44eb-82b6-b710a22e8218",
+            "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "97029202-3abc-4482-8cfc-6ece4273e452",
+            "matter_id": "43324cd6-459b-4ec7-b1af-f81011b97d2c",
+            "todo_id": "c11a8497-72f4-4c91-97c6-78aa620ad24c",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          }
+        ],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "你的日程",
+          "blocks": [
+            {
+              "type": "timeline",
+              "items": [
+                {
+                  "title": "项目评审",
+                  "time": "2030-07-01T07:00:00Z",
+                  "category": "日程",
+                  "fields": []
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        },
+        {
+          "kind": "result",
+          "title": "要办的事",
+          "blocks": [
+            {
+              "type": "timeline",
+              "items": [
+                {
+                  "title": "提交清单",
+                  "category": "待办",
+                  "fields": []
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "0b76bbeb-7158-4a5a-9207-63db1f14e81d",
+        "745522bc-f95f-4ad0-9d91-ec24c4b3ee9c"
+      ],
+      "source": "/private/tmp/assistant-intent-ai-20261103-a/query_only.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-ai-20261103-a/query_only.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "commute_create",
+      "input": "新增一套通勤安排：上海，从测试家园到测试公司，自2030年11月4日起每周一至周五，开车，09:00到达，预留10分钟。不加待办。这是联调测试。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "passed",
+      "error": null,
+      "elapsed_seconds": 82.49,
+      "answer": "搞定了，通勤安排已经按“测试家园 → 测试公司”存好了：周一到周五，开车，09:00 到公司，预留 10 分钟。按你说的没有加待办。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "search",
+          "search_query": "通勤安排 草稿"
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_commute_draft",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "origin_query": "测试家园",
+              "destination_query": "测试公司",
+              "city": "上海",
+              "arrival_local_time": "09:00",
+              "buffer_minutes": 10,
+              "effective_from": "2030-11-04",
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "title": "日常通勤安排",
+              "idempotency_key": "api-call-1131419e-ef15-4875-b3a1-7dc414263647-1"
+            },
+            "summary": "准备从测试家园到测试公司的通勤草稿，并查找真实起终点候选"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "quote_commute_api_v1_matters_drafts__draft_id__commute_quote_post",
+            "path_parameters": {
+              "draft_id": "8bed9b5d-d9e7-4981-bdb1-1f8c98e2927c"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "expected_version": 1,
+              "origin_token": {
+                "$result": "/payload/commute/origin_search/candidates",
+                "where": {
+                  "name": "测试家园"
+                },
+                "field": "selection_token"
+              },
+              "destination_token": {
+                "$result": "/payload/commute/destination_search/candidates",
+                "where": {
+                  "name": "测试公司"
+                },
+                "field": "selection_token"
+              },
+              "effective_from": "2030-11-04",
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "buffer_minutes": 10,
+              "mode": "driving",
+              "test_only": true
+            },
+            "summary": "按“测试家园→测试公司”选定的真实地点候选测算开车通勤时间，并确认每周一至周五09:00到达、预留10分钟"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "confirm_draft_api_v1_matters_drafts__draft_id__confirm_post",
+            "path_parameters": {
+              "draft_id": "8bed9b5d-d9e7-4981-bdb1-1f8c98e2927c"
+            },
+            "query_parameters": {},
+            "headers": {
+              "Idempotency-Key": "api-call-1131419e-ef15-4875-b3a1-7dc414263647-3"
+            },
+            "body": {
+              "expected_version": {
+                "$result": "/version"
+              },
+              "matter_id": {
+                "$result": "/matter_id"
+              },
+              "create_schedule": true,
+              "sync_to_ios": false
+            },
+            "summary": "把已经测算好的通勤安排正式保存下来（测试用，不创建待办）"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "搞定了，通勤安排已经按“测试家园 → 测试公司”存好了：周一到周五，开车，09:00 到公司，预留 10 分钟。按你说的没有加待办。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "通勤安排已保存",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "首次出发",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "目的地",
+                      "value": {
+                        "$result": "/schedule/location"
+                      }
+                    },
+                    {
+                      "label": "所属事项",
+                      "value": {
+                        "$result": "/matter/title"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "周期：每周一至周五，开车；09:00 到达，含 10 分钟余量。未创建待办。"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 201,
+          "operation_id": "create_commute_draft",
+          "references": {
+            "draft_id": "8bed9b5d-d9e7-4981-bdb1-1f8c98e2927c",
+            "status": "preview",
+            "version": 1
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "draft_id",
+                "kind",
+                "status",
+                "version",
+                "matter_id",
+                "payload",
+                "conflicts",
+                "action_plan",
+                "communication_draft",
+                "candidates",
+                "ai_run_id",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/payload": {
+              "type": "object",
+              "fields": [
+                "kind",
+                "title",
+                "goal",
+                "source_text",
+                "schedule",
+                "todos",
+                "complete_todo_ids",
+                "matter_action",
+                "commute",
+                "analysis"
+              ]
+            },
+            "/payload/todos": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/payload/complete_todo_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/payload/commute": {
+              "type": "object",
+              "fields": [
+                "intent",
+                "timezone",
+                "status",
+                "origin_search",
+                "destination_search"
+              ]
+            },
+            "/payload/commute/intent": {
+              "type": "object",
+              "fields": [
+                "origin_query",
+                "destination_query",
+                "city",
+                "arrival_local_time",
+                "buffer_minutes",
+                "effective_from",
+                "weekdays"
+              ]
+            },
+            "/payload/commute/intent/weekdays": {
+              "type": "array",
+              "count": 5,
+              "item_fields": []
+            },
+            "/payload/commute/origin_search": {
+              "type": "object",
+              "fields": [
+                "query",
+                "city",
+                "search_type",
+                "ambiguous",
+                "candidates",
+                "reason_code"
+              ]
+            },
+            "/payload/commute/origin_search/candidates": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "provider",
+                "provider_place_id",
+                "name",
+                "address",
+                "city",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "source",
+                "selection_token"
+              ]
+            },
+            "/payload/commute/destination_search": {
+              "type": "object",
+              "fields": [
+                "query",
+                "city",
+                "search_type",
+                "ambiguous",
+                "candidates",
+                "reason_code"
+              ]
+            },
+            "/payload/commute/destination_search/candidates": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "provider",
+                "provider_place_id",
+                "name",
+                "address",
+                "city",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "source",
+                "selection_token"
+              ]
+            },
+            "/payload/analysis": {
+              "type": "object",
+              "fields": [
+                "creation_request"
+              ]
+            },
+            "/payload/analysis/creation_request": {
+              "type": "object",
+              "fields": [
+                "origin_query",
+                "destination_query",
+                "city",
+                "arrival_local_time",
+                "buffer_minutes",
+                "effective_from",
+                "weekdays",
+                "idempotency_key",
+                "title"
+              ]
+            },
+            "/payload/analysis/creation_request/weekdays": {
+              "type": "array",
+              "count": 5,
+              "item_fields": []
+            },
+            "/action_plan": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 1
+        },
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "quote_commute_api_v1_matters_drafts__draft_id__commute_quote_post",
+          "references": {
+            "draft_id": "8bed9b5d-d9e7-4981-bdb1-1f8c98e2927c",
+            "status": "preview",
+            "version": 3
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "draft_id",
+                "kind",
+                "status",
+                "version",
+                "matter_id",
+                "payload",
+                "conflicts",
+                "action_plan",
+                "communication_draft",
+                "candidates",
+                "ai_run_id",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/payload": {
+              "type": "object",
+              "fields": [
+                "kind",
+                "title",
+                "goal",
+                "source_text",
+                "schedule",
+                "todos",
+                "complete_todo_ids",
+                "matter_action",
+                "commute",
+                "analysis"
+              ]
+            },
+            "/payload/schedule": {
+              "type": "object",
+              "fields": [
+                "title",
+                "starts_at",
+                "ends_at",
+                "location",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "location_city",
+                "location_address",
+                "location_source",
+                "location_external_id"
+              ]
+            },
+            "/payload/todos": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/payload/complete_todo_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/payload/commute": {
+              "type": "object",
+              "fields": [
+                "intent",
+                "timezone",
+                "status",
+                "origin_search",
+                "destination_search",
+                "quote_inputs",
+                "quote_status",
+                "routes",
+                "route_quote_id",
+                "expires_at",
+                "selected_mode",
+                "suggested_departure_at",
+                "target_arrival_at"
+              ]
+            },
+            "/payload/commute/intent": {
+              "type": "object",
+              "fields": [
+                "origin_query",
+                "destination_query",
+                "city",
+                "arrival_local_time",
+                "buffer_minutes",
+                "effective_from",
+                "weekdays"
+              ]
+            },
+            "/payload/commute/intent/weekdays": {
+              "type": "array",
+              "count": 5,
+              "item_fields": []
+            },
+            "/payload/commute/origin_search": {
+              "type": "object",
+              "fields": [
+                "query",
+                "city",
+                "search_type",
+                "ambiguous",
+                "candidates",
+                "reason_code"
+              ]
+            },
+            "/payload/commute/origin_search/candidates": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "provider",
+                "provider_place_id",
+                "name",
+                "address",
+                "city",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "source",
+                "selection_token"
+              ]
+            },
+            "/payload/commute/destination_search": {
+              "type": "object",
+              "fields": [
+                "query",
+                "city",
+                "search_type",
+                "ambiguous",
+                "candidates",
+                "reason_code"
+              ]
+            },
+            "/payload/commute/destination_search/candidates": {
+              "type": "array",
+              "count": 2,
+              "item_fields": [
+                "provider",
+                "provider_place_id",
+                "name",
+                "address",
+                "city",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "source",
+                "selection_token"
+              ]
+            },
+            "/payload/commute/quote_inputs": {
+              "type": "object",
+              "fields": [
+                "origin",
+                "destination",
+                "effective_from",
+                "weekdays",
+                "buffer_minutes",
+                "test_only"
+              ]
+            },
+            "/payload/commute/quote_inputs/origin": {
+              "type": "object",
+              "fields": [
+                "address",
+                "city",
+                "coordinate_system",
+                "draft_id",
+                "expires_at",
+                "issued_at",
+                "latitude",
+                "longitude",
+                "name",
+                "provider",
+                "provider_place_id",
+                "selection_kind",
+                "source",
+                "user_id",
+                "selection_token"
+              ]
+            },
+            "/payload/commute/quote_inputs/destination": {
+              "type": "object",
+              "fields": [
+                "address",
+                "city",
+                "coordinate_system",
+                "draft_id",
+                "expires_at",
+                "issued_at",
+                "latitude",
+                "longitude",
+                "name",
+                "provider",
+                "provider_place_id",
+                "selection_kind",
+                "source",
+                "user_id",
+                "selection_token"
+              ]
+            },
+            "/payload/commute/quote_inputs/weekdays": {
+              "type": "array",
+              "count": 5,
+              "item_fields": []
+            },
+            "/payload/commute/routes": {
+              "type": "object",
+              "fields": [
+                "driving",
+                "transit"
+              ]
+            },
+            "/payload/commute/routes/driving": {
+              "type": "object",
+              "fields": [
+                "status",
+                "provider",
+                "mode",
+                "duration_seconds",
+                "distance_meters",
+                "walking_distance_meters",
+                "transfer_count",
+                "transfers_summary",
+                "fare_cny",
+                "fare_kind",
+                "fare_notice",
+                "fetched_at",
+                "request_depart_at",
+                "target_arrival_at",
+                "source",
+                "reason_code",
+                "timing_basis",
+                "accuracy_notice",
+                "origin_basis",
+                "origin_schedule_id",
+                "schedule_id",
+                "origin",
+                "destination",
+                "shape"
+              ]
+            },
+            "/payload/commute/routes/transit": {
+              "type": "object",
+              "fields": [
+                "status",
+                "provider",
+                "mode",
+                "duration_seconds",
+                "distance_meters",
+                "walking_distance_meters",
+                "transfer_count",
+                "transfers_summary",
+                "fare_cny",
+                "fare_kind",
+                "fare_notice",
+                "fetched_at",
+                "request_depart_at",
+                "target_arrival_at",
+                "source",
+                "reason_code",
+                "timing_basis",
+                "accuracy_notice",
+                "origin_basis",
+                "origin_schedule_id",
+                "schedule_id",
+                "origin",
+                "destination",
+                "shape"
+              ]
+            },
+            "/payload/analysis": {
+              "type": "object",
+              "fields": [
+                "creation_request"
+              ]
+            },
+            "/payload/analysis/creation_request": {
+              "type": "object",
+              "fields": [
+                "origin_query",
+                "destination_query",
+                "city",
+                "arrival_local_time",
+                "buffer_minutes",
+                "effective_from",
+                "weekdays",
+                "idempotency_key",
+                "title"
+              ]
+            },
+            "/payload/analysis/creation_request/weekdays": {
+              "type": "array",
+              "count": 5,
+              "item_fields": []
+            },
+            "/conflicts": {
+              "type": "object",
+              "fields": [
+                "has_conflict",
+                "severity",
+                "window",
+                "conflicts",
+                "options",
+                "eta_note"
+              ]
+            },
+            "/conflicts/window": {
+              "type": "object",
+              "fields": [
+                "start",
+                "end"
+              ]
+            },
+            "/conflicts/conflicts": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/conflicts/options": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/action_plan": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 2
+        },
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "confirm_draft_api_v1_matters_drafts__draft_id__confirm_post",
+          "applied": true,
+          "references": {
+            "change_id": "3811a2cd-1d0b-4ffa-9762-634a45315611",
+            "draft": {
+              "draft_id": "8bed9b5d-d9e7-4981-bdb1-1f8c98e2927c",
+              "version": 3,
+              "status": "confirmed"
+            }
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "draft",
+                "matter",
+                "schedule",
+                "todos",
+                "reminders",
+                "change_id",
+                "replayed",
+                "applied",
+                "cancelled_reminder_ids",
+                "cancelled_schedule_ids",
+                "notifications_retracted",
+                "conflict",
+                "change"
+              ]
+            },
+            "/draft": {
+              "type": "object",
+              "fields": [
+                "draft_id",
+                "kind",
+                "status",
+                "version",
+                "matter_id",
+                "payload",
+                "conflicts",
+                "action_plan",
+                "communication_draft",
+                "candidates",
+                "ai_run_id",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/draft/payload": {
+              "type": "object",
+              "fields": [
+                "kind",
+                "title",
+                "goal",
+                "source_text",
+                "schedule",
+                "todos",
+                "complete_todo_ids",
+                "matter_action",
+                "commute",
+                "analysis"
+              ]
+            },
+            "/draft/payload/schedule": {
+              "type": "object",
+              "fields": [
+                "title",
+                "starts_at",
+                "ends_at",
+                "location",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "location_city",
+                "location_address",
+                "location_source",
+                "location_external_id"
+              ]
+            },
+            "/draft/payload/todos": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/draft/payload/complete_todo_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/draft/payload/commute": {
+              "type": "object",
+              "fields": [
+                "intent",
+                "timezone",
+                "status",
+                "origin_search",
+                "destination_search",
+                "quote_inputs",
+                "quote_status",
+                "routes",
+                "route_quote_id",
+                "expires_at",
+                "selected_mode",
+                "suggested_departure_at",
+                "target_arrival_at"
+              ]
+            },
+            "/draft/payload/commute/intent": {
+              "type": "object",
+              "fields": [
+                "origin_query",
+                "destination_query",
+                "city",
+                "arrival_local_time",
+                "buffer_minutes",
+                "effective_from",
+                "weekdays"
+              ]
+            },
+            "/draft/payload/commute/origin_search": {
+              "type": "object",
+              "fields": [
+                "query",
+                "city",
+                "search_type",
+                "ambiguous",
+                "candidates",
+                "reason_code"
+              ]
+            },
+            "/draft/payload/commute/destination_search": {
+              "type": "object",
+              "fields": [
+                "query",
+                "city",
+                "search_type",
+                "ambiguous",
+                "candidates",
+                "reason_code"
+              ]
+            },
+            "/draft/payload/commute/quote_inputs": {
+              "type": "object",
+              "fields": [
+                "origin",
+                "destination",
+                "effective_from",
+                "weekdays",
+                "buffer_minutes",
+                "test_only"
+              ]
+            },
+            "/draft/payload/commute/routes": {
+              "type": "object",
+              "fields": [
+                "driving",
+                "transit"
+              ]
+            },
+            "/draft/payload/analysis": {
+              "type": "object",
+              "fields": [
+                "creation_request"
+              ]
+            },
+            "/draft/payload/analysis/creation_request": {
+              "type": "object",
+              "fields": [
+                "origin_query",
+                "destination_query",
+                "city",
+                "arrival_local_time",
+                "buffer_minutes",
+                "effective_from",
+                "weekdays",
+                "idempotency_key",
+                "title"
+              ]
+            },
+            "/draft/conflicts": {
+              "type": "object",
+              "fields": [
+                "has_conflict",
+                "severity",
+                "window",
+                "conflicts",
+                "options",
+                "eta_note"
+              ]
+            },
+            "/draft/conflicts/window": {
+              "type": "object",
+              "fields": [
+                "start",
+                "end"
+              ]
+            },
+            "/draft/conflicts/conflicts": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/draft/conflicts/options": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/draft/action_plan": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/matter": {
+              "type": "object",
+              "fields": [
+                "archive_effect",
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "next_step",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/schedule": {
+              "type": "object",
+              "fields": [
+                "schedule_id",
+                "matter_id",
+                "title",
+                "starts_at",
+                "ends_at",
+                "location",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "location_city",
+                "location_address",
+                "location_source",
+                "location_external_id",
+                "status",
+                "source",
+                "sync_status",
+                "deleted_at"
+              ]
+            },
+            "/todos": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/cancelled_reminder_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/cancelled_schedule_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/conflict": {
+              "type": "object",
+              "fields": [
+                "has_conflict",
+                "severity",
+                "window",
+                "conflicts",
+                "options",
+                "eta_note"
+              ]
+            },
+            "/conflict/window": {
+              "type": "object",
+              "fields": [
+                "start",
+                "end"
+              ]
+            },
+            "/conflict/conflicts": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/conflict/options": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change": {
+              "type": "object",
+              "fields": [
+                "change_id",
+                "change_type",
+                "before",
+                "after"
+              ]
+            },
+            "/change/before": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "schedule",
+                "todos",
+                "reminders",
+                "adjacent_schedules",
+                "cancelled_schedules"
+              ]
+            },
+            "/change/before/todos": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/before/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/before/adjacent_schedules": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/before/cancelled_schedules": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "matter_version",
+                "schedule",
+                "todos",
+                "reminders",
+                "adjacent_schedules",
+                "cancelled_schedules",
+                "created_todo_ids",
+                "created_reminder_ids",
+                "reminder_ids",
+                "cancelled_schedule_ids",
+                "completed_todo_ids"
+              ]
+            },
+            "/change/after/matter": {
+              "type": "object",
+              "fields": [
+                "title",
+                "goal",
+                "status",
+                "next_step"
+              ]
+            },
+            "/change/after/schedule": {
+              "type": "object",
+              "fields": [
+                "schedule_id",
+                "matter_id",
+                "title",
+                "starts_at",
+                "ends_at",
+                "location",
+                "status",
+                "source_run_id",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "location_city",
+                "location_address",
+                "location_source",
+                "location_external_id",
+                "source",
+                "sync_status",
+                "source_external_id",
+                "source_scope_key",
+                "source_updated_at",
+                "source_version",
+                "data_source_id",
+                "deleted_at",
+                "updated_at"
+              ]
+            },
+            "/change/after/todos": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/adjacent_schedules": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/cancelled_schedules": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/created_todo_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/created_reminder_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/reminder_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/cancelled_schedule_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/change/after/completed_todo_ids": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 3
+        }
+      ],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "8a9435ad-a6ae-421a-a8bb-4e273f9ce217",
+            "title": "日常通勤安排",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "3950c782-72fb-4eae-8e49-d5b2a7f8fafb",
+            "matter_id": "8a9435ad-a6ae-421a-a8bb-4e273f9ce217",
+            "title": "日常通勤首日",
+            "status": "scheduled",
+            "starts_at": "2030-11-04 00:20:00",
+            "location": "测试公司",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [],
+        "commute_plans": [
+          {
+            "plan_id": "86cc6ccd-344e-4f48-a676-a3847f93e8dd",
+            "matter_id": "8a9435ad-a6ae-421a-a8bb-4e273f9ce217",
+            "first_schedule_id": "3950c782-72fb-4eae-8e49-d5b2a7f8fafb",
+            "name": "日常通勤安排",
+            "revision": 1,
+            "enabled": true,
+            "timezone": "Asia/Shanghai",
+            "weekdays_json": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "arrival_local_time": "09:00",
+            "check_local_time": "07:00",
+            "transport_mode": "driving",
+            "buffer_minutes": 10,
+            "effective_from": "2030-11-04",
+            "notify_enabled": false,
+            "rain_probability_threshold": 0.4,
+            "rain_extra_buffer_minutes": 0,
+            "origin_label": "测试家园",
+            "origin_latitude": 31.2231,
+            "origin_longitude": 121.4456,
+            "destination_label": "测试公司",
+            "destination_latitude": 31.2231,
+            "destination_longitude": 121.4456
+          }
+        ],
+        "routes": [
+          {
+            "schedule_id": "3950c782-72fb-4eae-8e49-d5b2a7f8fafb",
+            "result": {
+              "status": "available",
+              "provider": "mock",
+              "mode": "driving",
+              "duration_seconds": 1800,
+              "distance_meters": 12000,
+              "walking_distance_meters": null,
+              "transfer_count": null,
+              "transfers_summary": null,
+              "fare_cny": null,
+              "fare_kind": null,
+              "fare_notice": null,
+              "fetched_at": "2026-11-03T05:32:28.364440Z",
+              "request_depart_at": "2030-11-04T00:00:00Z",
+              "target_arrival_at": "2030-11-04T01:00:00Z",
+              "source": "server_provider",
+              "reason_code": null,
+              "timing_basis": "provider_departure_time",
+              "accuracy_notice": null,
+              "origin_basis": "user_confirmed",
+              "origin_schedule_id": null,
+              "schedule_id": "3950c782-72fb-4eae-8e49-d5b2a7f8fafb",
+              "origin": {
+                "latitude": 31.2231,
+                "longitude": 121.4456,
+                "coordinate_system": "gcj02",
+                "city": "上海",
+                "basis": "user_confirmed",
+                "schedule_id": null
+              },
+              "destination": {
+                "latitude": 31.2231,
+                "longitude": 121.4456,
+                "coordinate_system": "gcj02",
+                "city": "上海",
+                "basis": "destination_schedule",
+                "schedule_id": "3950c782-72fb-4eae-8e49-d5b2a7f8fafb"
+              },
+              "shape": {
+                "status": "missing",
+                "segments": []
+              },
+              "route_quote_id": "0ba21394-2c08-48e0-b5b4-7786df6aa6f3",
+              "_destination_address": "上海示例路 1 号"
+            }
+          }
+        ]
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "通勤安排已保存",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "名称",
+                  "value": "日常通勤首日",
+                  "format": "text"
+                },
+                {
+                  "label": "首次出发",
+                  "value": "2030-11-04T00:20:00Z",
+                  "format": "datetime"
+                },
+                {
+                  "label": "目的地",
+                  "value": "测试公司",
+                  "format": "text"
+                },
+                {
+                  "label": "所属事项",
+                  "value": "日常通勤安排",
+                  "format": "text"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "周期：每周一至周五，开车；09:00 到达，含 10 分钟余量。未创建待办。"
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "17670070-7482-49eb-9546-1700844f7340",
+        "a3551c4c-c70f-4cfa-bb68-d6ab1411a50a",
+        "0f4cbfea-8c28-4e03-89c6-2b4e056377e5",
+        "09537d85-af71-4665-8d8b-e8a32c920d8b",
+        "90411ccd-2add-4879-83e2-6daa16e07a80",
+        "78b78c17-e40c-4f97-ac39-3bf4bd25731b"
+      ],
+      "source": "/private/tmp/assistant-commute-ai-20261103-a/commute_create.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-commute-ai-20261103-a/commute_create.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "commute_day_modify",
+      "input": "只把现有测试上班通勤2030年11月4日这一天的到达时间改到10:00，长期计划仍为09:00；起终点、开车方式和10分钟余量都保持，不新增日程。",
+      "status": "failed",
+      "business_status": "failed",
+      "presentation_status": "not_evaluated",
+      "error": "departure must be recomputed for 10:00 arrival",
+      "elapsed_seconds": 122.56,
+      "answer": "改好了，2030年11月4日这一天的通勤到达时间已经调到10:00，没有新增日程；起终点、开车方式和10分钟余量都保持原样，长期计划那一条也没有被改动。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "a67345d8-5dbf-4378-a264-980783e3fd59"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先读取这个通勤事项的详情，定位2030年11月4日那条日程及其开始、结束时间和版本"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "update_schedule",
+            "path_parameters": {
+              "schedule_id": {
+                "$result": "/schedules",
+                "where": {
+                  "title": "测试上班通勤"
+                },
+                "field": "schedule_id",
+                "step": 0
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-a7d2e63a-b79b-4510-a2c0-c04c24a008c4-1",
+              "expected_matter_version": {
+                "$result": "/version",
+                "step": 0
+              },
+              "ends_at": "2030-11-04T10:00:00+08:00"
+            },
+            "summary": "把 2030 年 11 月 4 日这次「测试上班通勤」日程的到达时间改到 10:00，原日程保持不变、长期计划仍为 09:00，不新增日程"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "update_schedule",
+            "path_parameters": {
+              "schedule_id": {
+                "$result": "/schedules",
+                "step": 0,
+                "where": {
+                  "matter_id": "a67345d8-5dbf-4378-a264-980783e3fd59"
+                },
+                "field": "schedule_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-a7d2e63a-b79b-4510-a2c0-c04c24a008c4-2",
+              "expected_matter_version": {
+                "$result": "/version",
+                "step": 0
+              },
+              "ends_at": "2030-11-04T10:00:00+08:00"
+            },
+            "summary": "把 2030年11月4日 这一天的上班通勤到达时间改为 10:00，起终点、开车方式和 10 分钟余量保持不变，长期计划仍是 09:00"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "改好了，2030年11月4日这一天的通勤到达时间已经调到10:00，没有新增日程；起终点、开车方式和10分钟余量都保持原样，长期计划那一条也没有被改动。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "11月4日通勤到达时间已调整",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "开始时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "结束时间",
+                      "value": {
+                        "$result": "/schedule/ends_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "地点",
+                      "value": {
+                        "$result": "/schedule/location"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "get_matter_api_v1_matters__matter_id__get",
+          "references": {
+            "matter_id": "a67345d8-5dbf-4378-a264-980783e3fd59",
+            "status": "active",
+            "version": 1
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "archive_effect",
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "next_step",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at",
+                "schedules",
+                "todos",
+                "progress",
+                "reminders"
+              ]
+            },
+            "/schedules": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "schedule_id",
+                "matter_id",
+                "title",
+                "starts_at",
+                "ends_at",
+                "location",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "location_city",
+                "location_address",
+                "location_source",
+                "location_external_id",
+                "status",
+                "source",
+                "sync_status",
+                "deleted_at"
+              ]
+            },
+            "/todos": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            },
+            "/progress": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "progress_id",
+                "text",
+                "kind",
+                "created_at"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 0
+        },
+        {
+          "operation_id": "update_schedule",
+          "status": "failed",
+          "http_status": 422,
+          "error_code": "api_result_selection_invalid",
+          "step": 1
+        },
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "update_schedule",
+          "applied": true,
+          "references": {
+            "change_id": "0664596f-6755-4420-b7e7-60b5438255c8"
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "matter",
+                "schedule",
+                "reminders",
+                "change_id",
+                "replayed",
+                "applied"
+              ]
+            },
+            "/matter": {
+              "type": "object",
+              "fields": [
+                "matter_id",
+                "title",
+                "goal",
+                "status",
+                "version",
+                "last_progress_at",
+                "latest_progress",
+                "open_todos",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/schedule": {
+              "type": "object",
+              "fields": [
+                "schedule_id",
+                "matter_id",
+                "title",
+                "starts_at",
+                "ends_at",
+                "location",
+                "latitude",
+                "longitude",
+                "coordinate_system",
+                "location_city",
+                "location_address",
+                "location_source",
+                "location_external_id",
+                "status",
+                "source",
+                "sync_status"
+              ]
+            },
+            "/reminders": {
+              "type": "array",
+              "count": 0,
+              "item_fields": []
+            }
+          },
+          "step": 2
+        }
+      ],
+      "before": {
+        "matters": [
+          {
+            "matter_id": "a67345d8-5dbf-4378-a264-980783e3fd59",
+            "title": "测试上班通勤",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+            "matter_id": "a67345d8-5dbf-4378-a264-980783e3fd59",
+            "title": "日常通勤首日",
+            "status": "scheduled",
+            "starts_at": "2030-11-04 00:20:00",
+            "location": "测试公司",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [],
+        "commute_plans": [
+          {
+            "plan_id": "13fdb0c8-db62-4764-a9b8-f6e7856e6e54",
+            "matter_id": "a67345d8-5dbf-4378-a264-980783e3fd59",
+            "first_schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+            "name": "测试上班通勤",
+            "revision": 1,
+            "enabled": true,
+            "timezone": "Asia/Shanghai",
+            "weekdays_json": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "arrival_local_time": "09:00",
+            "check_local_time": "07:00",
+            "transport_mode": "driving",
+            "buffer_minutes": 10,
+            "effective_from": "2030-11-04",
+            "notify_enabled": false,
+            "rain_probability_threshold": 0.4,
+            "rain_extra_buffer_minutes": 0,
+            "origin_label": "测试家园",
+            "origin_latitude": 31.2231,
+            "origin_longitude": 121.4456,
+            "destination_label": "测试公司",
+            "destination_latitude": 31.2231,
+            "destination_longitude": 121.4456
+          }
+        ],
+        "routes": [
+          {
+            "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+            "result": {
+              "status": "available",
+              "provider": "mock",
+              "mode": "driving",
+              "duration_seconds": 1800,
+              "distance_meters": 12000,
+              "walking_distance_meters": null,
+              "transfer_count": null,
+              "transfers_summary": null,
+              "fare_cny": null,
+              "fare_kind": null,
+              "fare_notice": null,
+              "fetched_at": "2026-11-03T05:37:07.102118Z",
+              "request_depart_at": "2030-11-04T00:00:00Z",
+              "target_arrival_at": "2030-11-04T01:00:00Z",
+              "source": "server_provider",
+              "reason_code": null,
+              "timing_basis": "provider_departure_time",
+              "accuracy_notice": null,
+              "origin_basis": "user_confirmed",
+              "origin_schedule_id": null,
+              "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+              "origin": {
+                "latitude": 31.2231,
+                "longitude": 121.4456,
+                "coordinate_system": "gcj02",
+                "city": "上海",
+                "basis": "user_confirmed",
+                "schedule_id": null
+              },
+              "destination": {
+                "latitude": 31.2231,
+                "longitude": 121.4456,
+                "coordinate_system": "gcj02",
+                "city": "上海",
+                "basis": "destination_schedule",
+                "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc"
+              },
+              "shape": {
+                "status": "missing",
+                "segments": []
+              },
+              "route_quote_id": "3e796a82-8c30-4bd8-8765-b84ba8ad6f17",
+              "_destination_address": "上海示例路 1 号"
+            }
+          }
+        ]
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "a67345d8-5dbf-4378-a264-980783e3fd59",
+            "title": "测试上班通勤",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+            "matter_id": "a67345d8-5dbf-4378-a264-980783e3fd59",
+            "title": "日常通勤首日",
+            "status": "scheduled",
+            "starts_at": "2030-11-04 00:20:00",
+            "location": "测试公司",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [],
+        "commute_plans": [
+          {
+            "plan_id": "13fdb0c8-db62-4764-a9b8-f6e7856e6e54",
+            "matter_id": "a67345d8-5dbf-4378-a264-980783e3fd59",
+            "first_schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+            "name": "测试上班通勤",
+            "revision": 1,
+            "enabled": true,
+            "timezone": "Asia/Shanghai",
+            "weekdays_json": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "arrival_local_time": "09:00",
+            "check_local_time": "07:00",
+            "transport_mode": "driving",
+            "buffer_minutes": 10,
+            "effective_from": "2030-11-04",
+            "notify_enabled": false,
+            "rain_probability_threshold": 0.4,
+            "rain_extra_buffer_minutes": 0,
+            "origin_label": "测试家园",
+            "origin_latitude": 31.2231,
+            "origin_longitude": 121.4456,
+            "destination_label": "测试公司",
+            "destination_latitude": 31.2231,
+            "destination_longitude": 121.4456
+          }
+        ],
+        "routes": [
+          {
+            "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+            "result": {
+              "status": "available",
+              "provider": "mock",
+              "mode": "driving",
+              "duration_seconds": 1800,
+              "distance_meters": 12000,
+              "walking_distance_meters": null,
+              "transfer_count": null,
+              "transfers_summary": null,
+              "fare_cny": null,
+              "fare_kind": null,
+              "fare_notice": null,
+              "fetched_at": "2026-11-03T05:37:07.102118Z",
+              "request_depart_at": "2030-11-04T00:00:00Z",
+              "target_arrival_at": "2030-11-04T01:00:00Z",
+              "source": "server_provider",
+              "reason_code": null,
+              "timing_basis": "provider_departure_time",
+              "accuracy_notice": null,
+              "origin_basis": "user_confirmed",
+              "origin_schedule_id": null,
+              "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+              "origin": {
+                "latitude": 31.2231,
+                "longitude": 121.4456,
+                "coordinate_system": "gcj02",
+                "city": "上海",
+                "basis": "user_confirmed",
+                "schedule_id": null
+              },
+              "destination": {
+                "latitude": 31.2231,
+                "longitude": 121.4456,
+                "coordinate_system": "gcj02",
+                "city": "上海",
+                "basis": "destination_schedule",
+                "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc"
+              },
+              "shape": {
+                "status": "missing",
+                "segments": []
+              },
+              "route_quote_id": "3e796a82-8c30-4bd8-8765-b84ba8ad6f17",
+              "_destination_address": "上海示例路 1 号"
+            }
+          }
+        ]
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "11月4日通勤到达时间已调整",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "名称",
+                  "value": "日常通勤首日",
+                  "format": "text"
+                },
+                {
+                  "label": "开始时间",
+                  "value": "2030-11-04T00:20:00Z",
+                  "format": "datetime"
+                },
+                {
+                  "label": "结束时间",
+                  "value": "2030-11-04T02:00:00Z",
+                  "format": "datetime"
+                },
+                {
+                  "label": "地点",
+                  "value": "测试公司",
+                  "format": "text"
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "5ef8c746-0319-43e1-ab6b-772d4a75cc2b",
+        "c985c004-8399-4b47-a6ec-77cdb54f24ef",
+        "389a5591-fd0a-405f-a807-80f19cbb6197",
+        "2b65f744-e92f-48e3-a43b-62a90a8dbc6b",
+        "c2c0cc7c-b118-4476-81e2-f970cdf747d6"
+      ],
+      "source": "/private/tmp/assistant-intent-commute-ai-20261103-b/commute_day_modify.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-commute-ai-20261103-b/commute_day_modify.json",
+          "status": "failed",
+          "error": "departure must be recomputed for 10:00 arrival"
+        }
+      ],
+      "saved_schedule_change": {
+        "before": {
+          "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+          "starts_at": "2030-11-04T00:20:00+00:00",
+          "ends_at": "2030-11-04T00:50:00+00:00",
+          "location": "测试公司"
+        },
+        "after": {
+          "schedule_id": "90646c86-e392-47ad-b9aa-d33c557913fc",
+          "starts_at": "2030-11-04T00:20:00+00:00",
+          "ends_at": "2030-11-04T02:00:00+00:00",
+          "location": "测试公司"
+        },
+        "source": "Actual matter_changes before_json/after_json, same isolated database"
+      },
+      "expected": {
+        "target_arrival_at": "2030-11-04T10:00:00+08:00",
+        "starts_at": "2030-11-04T09:20:00+08:00",
+        "ends_at": "2030-11-04T09:50:00+08:00",
+        "route_duration_seconds": 1800,
+        "buffer_minutes": 10
+      }
+    },
+    {
+      "case": "commute_modify_exact_name",
+      "input": "把名称为“测试上班通勤”的现有通勤计划长期改成09:30到达，预留15分钟；原每周一至周五、起终点、交通方式和其他设置保持，不新建计划。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "passed",
+      "error": null,
+      "elapsed_seconds": 50.34,
+      "answer": "改好了，这个通勤计划现在是09:30到达、预留15分钟，原计划的其他设置都保留着。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "search",
+          "search_query": "查询已有通勤计划并修改更新通勤计划配置"
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先查询已保存的通勤计划，定位名称是“测试上班通勤”的那一条，再读取它的当前配置"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+            "path_parameters": {
+              "plan_id": {
+                "$result": "",
+                "where": {
+                  "name": "测试上班通勤"
+                },
+                "field": "id"
+              }
+            },
+            "summary": "读取“测试上班通勤”这份通勤计划的当前配置和修订号，确认每周一至周五、起终点和交通方式后再改到达时间"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "update_commute_plan_api_v1_commute_plans__plan_id__put",
+            "path_parameters": {
+              "plan_id": {
+                "$result": "",
+                "step": 1,
+                "where": {
+                  "name": "测试上班通勤"
+                },
+                "field": "id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {
+              "If-Match": {
+                "$result": "/revision",
+                "step": 2,
+                "as": "string"
+              }
+            },
+            "body": {
+              "$result": "",
+              "step": 2,
+              "pick": [
+                "effective_from",
+                "name",
+                "enabled",
+                "timezone",
+                "weekdays",
+                "arrival_local_time",
+                "check_local_time",
+                "transport_mode",
+                "buffer_minutes",
+                "rain_probability_threshold",
+                "rain_extra_buffer_minutes",
+                "notify_enabled",
+                "origin",
+                "destination"
+              ],
+              "overrides": {
+                "arrival_local_time": "09:30",
+                "buffer_minutes": 15
+              }
+            },
+            "summary": "按原设置更新“测试上班通勤”：到达时间改为09:30，预留时间改为15分钟，原每周一至周五、起终点、交通方式等保持不变，不新建计划。"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "改好了，这个通勤计划现在是09:30到达、预留15分钟，原计划的其他设置都保留着。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "通勤计划已更新",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "计划名称",
+                      "value": {
+                        "$result": "/name"
+                      }
+                    },
+                    {
+                      "label": "到达时间",
+                      "value": {
+                        "$result": "/arrival_local_time"
+                      }
+                    },
+                    {
+                      "label": "预留缓冲（分钟）",
+                      "value": {
+                        "$result": "/buffer_minutes"
+                      },
+                      "format": "number"
+                    },
+                    {
+                      "label": "交通方式",
+                      "value": {
+                        "$result": "/transport_mode"
+                      }
+                    },
+                    {
+                      "label": "起点",
+                      "value": {
+                        "$result": "/origin/label"
+                      }
+                    },
+                    {
+                      "label": "终点",
+                      "value": {
+                        "$result": "/destination/label"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+          "references": {},
+          "result_shape": {
+            "": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "effective_from",
+                "name",
+                "enabled",
+                "timezone",
+                "weekdays",
+                "arrival_local_time",
+                "check_local_time",
+                "transport_mode",
+                "buffer_minutes",
+                "rain_probability_threshold",
+                "rain_extra_buffer_minutes",
+                "notify_enabled",
+                "origin",
+                "destination",
+                "matter_id",
+                "first_schedule_id",
+                "id",
+                "revision",
+                "created_at",
+                "updated_at"
+              ]
+            }
+          },
+          "step": 1
+        },
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+          "references": {
+            "revision": 1
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "effective_from",
+                "name",
+                "enabled",
+                "timezone",
+                "weekdays",
+                "arrival_local_time",
+                "check_local_time",
+                "transport_mode",
+                "buffer_minutes",
+                "rain_probability_threshold",
+                "rain_extra_buffer_minutes",
+                "notify_enabled",
+                "origin",
+                "destination",
+                "matter_id",
+                "first_schedule_id",
+                "id",
+                "revision",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/weekdays": {
+              "type": "array",
+              "count": 5,
+              "item_fields": []
+            },
+            "/origin": {
+              "type": "object",
+              "fields": [
+                "label",
+                "latitude",
+                "longitude"
+              ]
+            },
+            "/destination": {
+              "type": "object",
+              "fields": [
+                "label",
+                "latitude",
+                "longitude"
+              ]
+            }
+          },
+          "step": 2
+        },
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "update_commute_plan_api_v1_commute_plans__plan_id__put",
+          "references": {
+            "revision": 2
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "effective_from",
+                "name",
+                "enabled",
+                "timezone",
+                "weekdays",
+                "arrival_local_time",
+                "check_local_time",
+                "transport_mode",
+                "buffer_minutes",
+                "rain_probability_threshold",
+                "rain_extra_buffer_minutes",
+                "notify_enabled",
+                "origin",
+                "destination",
+                "matter_id",
+                "first_schedule_id",
+                "id",
+                "revision",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/weekdays": {
+              "type": "array",
+              "count": 5,
+              "item_fields": []
+            },
+            "/origin": {
+              "type": "object",
+              "fields": [
+                "label",
+                "latitude",
+                "longitude"
+              ]
+            },
+            "/destination": {
+              "type": "object",
+              "fields": [
+                "label",
+                "latitude",
+                "longitude"
+              ]
+            }
+          },
+          "step": 3
+        }
+      ],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [
+          {
+            "plan_id": "d4869020-1bf4-44a1-abb2-3ebf15eb9859",
+            "matter_id": null,
+            "first_schedule_id": null,
+            "name": "测试上班通勤",
+            "revision": 1,
+            "enabled": true,
+            "timezone": "Asia/Shanghai",
+            "weekdays_json": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "arrival_local_time": "09:00",
+            "check_local_time": "07:00",
+            "transport_mode": "driving",
+            "buffer_minutes": 10,
+            "effective_from": "2030-11-04",
+            "notify_enabled": false,
+            "rain_probability_threshold": 0.4,
+            "rain_extra_buffer_minutes": 10,
+            "origin_label": "测试家园",
+            "origin_latitude": 31.2231,
+            "origin_longitude": 121.4456,
+            "destination_label": "测试公司",
+            "destination_latitude": 31.2304,
+            "destination_longitude": 121.4737
+          }
+        ],
+        "routes": []
+      },
+      "after": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [
+          {
+            "plan_id": "d4869020-1bf4-44a1-abb2-3ebf15eb9859",
+            "matter_id": null,
+            "first_schedule_id": null,
+            "name": "测试上班通勤",
+            "revision": 2,
+            "enabled": true,
+            "timezone": "Asia/Shanghai",
+            "weekdays_json": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "arrival_local_time": "09:30",
+            "check_local_time": "07:00",
+            "transport_mode": "driving",
+            "buffer_minutes": 15,
+            "effective_from": "2030-11-04",
+            "notify_enabled": false,
+            "rain_probability_threshold": 0.4,
+            "rain_extra_buffer_minutes": 10,
+            "origin_label": "测试家园",
+            "origin_latitude": 31.2231,
+            "origin_longitude": 121.4456,
+            "destination_label": "测试公司",
+            "destination_latitude": 31.2304,
+            "destination_longitude": 121.4737
+          }
+        ],
+        "routes": []
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "通勤计划已更新",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "计划名称",
+                  "value": "测试上班通勤",
+                  "format": "text"
+                },
+                {
+                  "label": "到达时间",
+                  "value": "09:30",
+                  "format": "text"
+                },
+                {
+                  "label": "预留缓冲（分钟）",
+                  "value": 15,
+                  "format": "number"
+                },
+                {
+                  "label": "交通方式",
+                  "value": "driving",
+                  "format": "text"
+                },
+                {
+                  "label": "起点",
+                  "value": "测试家园",
+                  "format": "text"
+                },
+                {
+                  "label": "终点",
+                  "value": "测试公司",
+                  "format": "text"
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ],
+      "workflow_execution_ids": [
+        "69ef0bd7-15b4-48d3-8769-664c3da5f76f",
+        "9d574856-ca03-4f6d-92d9-eb9f153b1913",
+        "cc73c1c9-214e-4d6d-bda5-63ebba499fba",
+        "9ea8ce17-5334-4c6f-b9b4-ac25c3ce7b55",
+        "b4302642-8452-4895-9d55-710540c2284c"
+      ],
+      "source": "/private/tmp/assistant-commute-ai-20261103-d/commute_modify_exact_name.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-commute-ai-20261103-d/commute_modify_exact_name.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "commute_modify",
+      "input": "把我现有的测试上班通勤计划长期改为每天09:30到达，预留15分钟；原来每周一至周五、出发地、目的地、交通方式和其他设置保持。不要新建计划。",
+      "status": "failed",
+      "business_status": "passed",
+      "presentation_status": "failed",
+      "error": "AI-requested card was rejected or omitted after the business operation",
+      "elapsed_seconds": 168.02,
+      "answer": "改好了，现有的通勤计划已经改成 09:30 到达、预留 15 分钟缓冲；每周一至周五、出发地、目的地、交通方式和其他设置都没有动，也没有新建计划。检查时间如果原本安排在到达时间之前，就继续沿用。",
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "search",
+          "search_query": "查询通勤计划列表 按名称查找已有通勤计划"
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先找到现有的“测试上班通勤计划”，确认是哪一条再改"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+            "path_parameters": {
+              "plan_id": {
+                "$result": "",
+                "where": {
+                  "name": "测试上班通勤计划"
+                },
+                "field": "id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "读取“测试上班通勤计划”的当前配置和修订号，以便只修改到达时间与预留时间"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+            "path_parameters": {
+              "plan_id": {
+                "$result": "",
+                "field": "id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "读取现有通勤计划（唯一一条）的完整配置与当前修订号，用于把到达时间改为09:30、预留缓冲改为15分钟"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+            "path_parameters": {
+              "plan_id": {
+                "$result": "",
+                "where": {
+                  "name": "测试上班通勤计划"
+                },
+                "field": "id"
+              }
+            },
+            "summary": "读取现有“测试上班通勤计划”的完整配置与当前修订号，为按 09:30 到达、预留 15 分钟做准备（尚未修改）"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+            "path_parameters": {
+              "plan_id": {
+                "$result": "/0/id"
+              }
+            },
+            "summary": "读取现有通勤计划的完整配置和当前修订号，为修改到达时间做准备"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "update_commute_plan_api_v1_commute_plans__plan_id__put",
+            "path_parameters": {
+              "plan_id": {
+                "$result": "/id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {
+              "If-Match": {
+                "$result": "/revision",
+                "as": "string"
+              }
+            },
+            "body": {
+              "$result": "",
+              "pick": [
+                "effective_from",
+                "name",
+                "enabled",
+                "timezone",
+                "weekdays",
+                "arrival_local_time",
+                "check_local_time",
+                "transport_mode",
+                "buffer_minutes",
+                "rain_probability_threshold",
+                "rain_extra_buffer_minutes",
+                "notify_enabled",
+                "origin",
+                "destination"
+              ],
+              "overrides": {
+                "arrival_local_time": "09:30",
+                "buffer_minutes": 15
+              }
+            },
+            "summary": "按原计划原有 ID 完整更新现有“测试上班通勤计划”：到达时间改为 09:30、预留 15 分钟，周一至周五、出发地目的地、交通方式及其他设置保持不变，不新建计划"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "改好了，现有的通勤计划已经改成 09:30 到达、预留 15 分钟缓冲；每周一至周五、出发地、目的地、交通方式和其他设置都没有动，也没有新建计划。检查时间如果原本安排在到达时间之前，就继续沿用。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "通勤计划已更新",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "计划名称",
+                      "value": {
+                        "$result": "/name",
+                        "step": 6
+                      }
+                    },
+                    {
+                      "label": "到达时间",
+                      "value": {
+                        "$result": "/arrival_local_time",
+                        "step": 6
+                      },
+                      "format": "time"
+                    },
+                    {
+                      "label": "预留缓冲",
+                      "value": {
+                        "$result": "/buffer_minutes",
+                        "step": 6
+                      },
+                      "format": "number"
+                    },
+                    {
+                      "label": "生效星期",
+                      "value": {
+                        "$result": "/weekdays",
+                        "step": 6
+                      }
+                    },
+                    {
+                      "label": "出发地",
+                      "value": {
+                        "$result": "/origin/label",
+                        "step": 6
+                      }
+                    },
+                    {
+                      "label": "目的地",
+                      "value": {
+                        "$result": "/destination/label",
+                        "step": 6
+                      }
+                    },
+                    {
+                      "label": "交通方式",
+                      "value": {
+                        "$result": "/transport_mode",
+                        "step": 6
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": [
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "list_commute_plans_api_v1_commute_plans_get",
+          "references": {},
+          "result_shape": {
+            "": {
+              "type": "array",
+              "count": 1,
+              "item_fields": [
+                "effective_from",
+                "name",
+                "enabled",
+                "timezone",
+                "weekdays",
+                "arrival_local_time",
+                "check_local_time",
+                "transport_mode",
+                "buffer_minutes",
+                "rain_probability_threshold",
+                "rain_extra_buffer_minutes",
+                "notify_enabled",
+                "origin",
+                "destination",
+                "matter_id",
+                "first_schedule_id",
+                "id",
+                "revision",
+                "created_at",
+                "updated_at"
+              ]
+            }
+          },
+          "step": 1
+        },
+        {
+          "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+          "status": "failed",
+          "http_status": 422,
+          "error_code": "api_result_selection_invalid",
+          "step": 2
+        },
+        {
+          "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+          "status": "failed",
+          "http_status": 422,
+          "error_code": "api_result_selection_invalid",
+          "step": 3
+        },
+        {
+          "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+          "status": "failed",
+          "http_status": 422,
+          "error_code": "api_result_selection_invalid",
+          "step": 4
+        },
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "get_commute_plan_api_v1_commute_plans__plan_id__get",
+          "references": {
+            "revision": 1
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "effective_from",
+                "name",
+                "enabled",
+                "timezone",
+                "weekdays",
+                "arrival_local_time",
+                "check_local_time",
+                "transport_mode",
+                "buffer_minutes",
+                "rain_probability_threshold",
+                "rain_extra_buffer_minutes",
+                "notify_enabled",
+                "origin",
+                "destination",
+                "matter_id",
+                "first_schedule_id",
+                "id",
+                "revision",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/weekdays": {
+              "type": "array",
+              "count": 5,
+              "item_fields": []
+            },
+            "/origin": {
+              "type": "object",
+              "fields": [
+                "label",
+                "latitude",
+                "longitude"
+              ]
+            },
+            "/destination": {
+              "type": "object",
+              "fields": [
+                "label",
+                "latitude",
+                "longitude"
+              ]
+            }
+          },
+          "step": 5
+        },
+        {
+          "status": "succeeded",
+          "http_status": 200,
+          "operation_id": "update_commute_plan_api_v1_commute_plans__plan_id__put",
+          "references": {
+            "revision": 2
+          },
+          "result_shape": {
+            "": {
+              "type": "object",
+              "fields": [
+                "effective_from",
+                "name",
+                "enabled",
+                "timezone",
+                "weekdays",
+                "arrival_local_time",
+                "check_local_time",
+                "transport_mode",
+                "buffer_minutes",
+                "rain_probability_threshold",
+                "rain_extra_buffer_minutes",
+                "notify_enabled",
+                "origin",
+                "destination",
+                "matter_id",
+                "first_schedule_id",
+                "id",
+                "revision",
+                "created_at",
+                "updated_at"
+              ]
+            },
+            "/weekdays": {
+              "type": "array",
+              "count": 5,
+              "item_fields": []
+            },
+            "/origin": {
+              "type": "object",
+              "fields": [
+                "label",
+                "latitude",
+                "longitude"
+              ]
+            },
+            "/destination": {
+              "type": "object",
+              "fields": [
+                "label",
+                "latitude",
+                "longitude"
+              ]
+            }
+          },
+          "step": 6
+        }
+      ],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [
+          {
+            "plan_id": "f4c64023-cb31-4f46-ba42-2418389d7753",
+            "matter_id": null,
+            "first_schedule_id": null,
+            "name": "测试上班通勤",
+            "revision": 1,
+            "enabled": true,
+            "timezone": "Asia/Shanghai",
+            "weekdays_json": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "arrival_local_time": "09:00",
+            "check_local_time": "07:00",
+            "transport_mode": "driving",
+            "buffer_minutes": 10,
+            "effective_from": "2030-11-04",
+            "notify_enabled": false,
+            "rain_probability_threshold": 0.4,
+            "rain_extra_buffer_minutes": 10,
+            "origin_label": "测试家园",
+            "origin_latitude": 31.2231,
+            "origin_longitude": 121.4456,
+            "destination_label": "测试公司",
+            "destination_latitude": 31.2304,
+            "destination_longitude": 121.4737
+          }
+        ],
+        "routes": []
+      },
+      "after": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [
+          {
+            "plan_id": "f4c64023-cb31-4f46-ba42-2418389d7753",
+            "matter_id": null,
+            "first_schedule_id": null,
+            "name": "测试上班通勤",
+            "revision": 2,
+            "enabled": true,
+            "timezone": "Asia/Shanghai",
+            "weekdays_json": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "arrival_local_time": "09:30",
+            "check_local_time": "07:00",
+            "transport_mode": "driving",
+            "buffer_minutes": 15,
+            "effective_from": "2030-11-04",
+            "notify_enabled": false,
+            "rain_probability_threshold": 0.4,
+            "rain_extra_buffer_minutes": 10,
+            "origin_label": "测试家园",
+            "origin_latitude": 31.2231,
+            "origin_longitude": 121.4456,
+            "destination_label": "测试公司",
+            "destination_latitude": 31.2304,
+            "destination_longitude": 121.4737
+          }
+        ],
+        "routes": []
+      },
+      "cards": [],
+      "workflow_execution_ids": [
+        "8ca2c8ab-5aad-4323-b1fb-6ee8daebbd4b",
+        "d4cf8313-2958-4ffd-aab8-b526ce0682a9",
+        "7bae5682-52d7-4cef-8c37-f30a32df7953",
+        "ba5c5e60-b5a9-4f41-8e6e-ce89ad8ef6df",
+        "165afff8-c723-4aec-b2bb-5d8b9ae74c7e",
+        "ddb19caa-a102-4694-b0f2-4c48976edcad",
+        "bf5f226d-2f95-4ebb-92d5-ddf1daabff20",
+        "95a58e39-43b8-4b33-a461-9e3ce290848f"
+      ],
+      "source": "/private/tmp/assistant-commute-ai-20261103-c/commute_modify.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-commute-ai-20261103-b/commute_modify.json",
+          "status": "failed",
+          "error": ""
+        },
+        {
+          "source": "/private/tmp/assistant-commute-ai-20261103-c/commute_modify.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "commute_missing",
+      "input": "帮我安排每天上班的通勤，早上九点到。",
+      "status": "passed",
+      "business_status": "passed",
+      "presentation_status": "not_requested",
+      "error": null,
+      "elapsed_seconds": 26.95,
+      "answer": null,
+      "question": "没问题～请告诉我你从哪里出发、到哪里上班，以及所在城市（比如“从静安寺到张江科技园，上海”），我再帮你排每天9点前到的通勤。",
+      "model_decisions": [
+        {
+          "decision": "ask_user",
+          "question": "没问题～请告诉我你从哪里出发、到哪里上班，以及所在城市（比如“从静安寺到张江科技园，上海”），我再帮你排每天9点前到的通勤。"
+        }
+      ],
+      "actual_calls": [],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "after": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [],
+        "routes": []
+      },
+      "cards": [],
+      "workflow_execution_ids": [
+        "56f702b9-b55b-44c8-bb40-1388ccf5ab2e"
+      ],
+      "source": "/private/tmp/assistant-commute-ai-20261103-a/commute_missing.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-commute-ai-20261103-a/commute_missing.json",
+          "status": "passed",
+          "error": null
+        }
+      ]
+    },
+    {
+      "case": "commute_vague",
+      "input": "把现有测试上班通勤往后挪一点。",
+      "status": "failed",
+      "business_status": "failed",
+      "presentation_status": "not_evaluated",
+      "error": "调用的接口未发布或不可用于助手",
+      "elapsed_seconds": 19.19,
+      "answer": null,
+      "question": null,
+      "model_decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "search_tools",
+            "path_parameters": {},
+            "query_parameters": {
+              "query": "查询并修改已有通勤计划"
+            }
+          }
+        }
+      ],
+      "actual_calls": [],
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [
+          {
+            "plan_id": "52b2b2e1-91df-4647-ba8d-92d2eff182d9",
+            "matter_id": null,
+            "first_schedule_id": null,
+            "name": "测试上班通勤",
+            "revision": 1,
+            "enabled": true,
+            "timezone": "Asia/Shanghai",
+            "weekdays_json": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "arrival_local_time": "09:00",
+            "check_local_time": "07:00",
+            "transport_mode": "driving",
+            "buffer_minutes": 10,
+            "effective_from": "2030-11-04",
+            "notify_enabled": false,
+            "rain_probability_threshold": 0.4,
+            "rain_extra_buffer_minutes": 10,
+            "origin_label": "测试家园",
+            "origin_latitude": 31.2231,
+            "origin_longitude": 121.4456,
+            "destination_label": "测试公司",
+            "destination_latitude": 31.2304,
+            "destination_longitude": 121.4737
+          }
+        ],
+        "routes": []
+      },
+      "after": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": [],
+        "commute_plans": [
+          {
+            "plan_id": "52b2b2e1-91df-4647-ba8d-92d2eff182d9",
+            "matter_id": null,
+            "first_schedule_id": null,
+            "name": "测试上班通勤",
+            "revision": 1,
+            "enabled": true,
+            "timezone": "Asia/Shanghai",
+            "weekdays_json": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "arrival_local_time": "09:00",
+            "check_local_time": "07:00",
+            "transport_mode": "driving",
+            "buffer_minutes": 10,
+            "effective_from": "2030-11-04",
+            "notify_enabled": false,
+            "rain_probability_threshold": 0.4,
+            "rain_extra_buffer_minutes": 10,
+            "origin_label": "测试家园",
+            "origin_latitude": 31.2231,
+            "origin_longitude": 121.4456,
+            "destination_label": "测试公司",
+            "destination_latitude": 31.2304,
+            "destination_longitude": 121.4737
+          }
+        ],
+        "routes": []
+      },
+      "cards": [],
+      "workflow_execution_ids": [
+        "e8b5d42e-04f4-4c59-8912-e9a085141de0"
+      ],
+      "source": "/private/tmp/assistant-intent-commute-ai-20261103-b/commute_vague.json",
+      "attempts": [
+        {
+          "source": "/private/tmp/assistant-intent-commute-ai-20261103-b/commute_vague.json",
+          "status": "failed",
+          "error": "调用的接口未发布或不可用于助手"
+        }
+      ]
+    }
+  ],
+  "focused_check": {
+    "test": "tests/test_record_prompt_context.py::test_commute_list_keeps_detail_and_update_reachable_after_search",
+    "before_change": "failed: list continuation empty",
+    "after_change": "passed in 0.08s",
+    "real_model_retest": "commute_modify business passed; presentation failed"
+  },
+  "unresolved": [
+    {
+      "priority": "P0",
+      "case": "commute_day_modify",
+      "cause": "AI used generic update_schedule.ends_at for target arrival. Existing commute_lifecycle.revision_draft is reached by the legacy planner, not exposed as a structured AI-callable controller; generic schedule editing neither recalculates departure nor saves a new route measurement.",
+      "effect": "Same schedule ends_at changed from 08:50 to 10:00 local; departure remains 08:20, route target remains09:00, but AI claims success."
+    },
+    {
+      "priority": "P1",
+      "case": "commute_vague",
+      "cause": "AI generated call.operation_id=search_tools, not decision=search. The operation is unpublished. Validation rejects it and terminates without a corrective model turn.",
+      "effect": "No business changes, but no specific clarification question returned."
+    },
+    {
+      "priority": "P1",
+      "case": "commute_modify",
+      "cause": "AI bound weekday array /weekdays into scalar CardField.value. Local card validation rejects it and advance returns the answer with cards=[].",
+      "effect": "Original plan updated correctly, but requested result card absent."
+    }
+  ]
+}

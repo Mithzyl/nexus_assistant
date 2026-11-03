@@ -123,3 +123,13 @@ class SseEvent(StrictRequest):
     id: str | None = None
     event: str = "message"
     data: str
+
+
+class WorkflowErrorRead(UpstreamModel):
+    """Nexus public error contract; never expose raw provider error bodies."""
+    error_code: str
+    error_type: str = "workflow_error"
+    public_message: str = "AI 服务未能完成这次请求。"
+    is_retryable: bool = False
+    outcome_is_known: bool = False
+    details_reference_id: str | None = None

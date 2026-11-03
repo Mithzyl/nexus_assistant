@@ -7,8 +7,9 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Literal
-from sqlalchemy import update
+from typing import Annotated, Literal
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from assistant_api.models import MatterDraft, CommutePlan
 from assistant_api.models.base import new_id
 from assistant_api.core.errors import ConflictError, InvalidRequestError
@@ -21,7 +22,43 @@ class CommuteIntent(BaseModel):
     arrival_local_time: str = Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
     buffer_minutes: int | None = Field(default=None, ge=0, le=120)
     effective_from: date | None = None
-    weekdays: list[int] | None = None
+    weekdays: list[Annotated[int, Field(ge=1, le=7)]] | None = Field(default=None, min_length=1, max_length=7)
+
+
+class CreateDraftRequest(CommuteIntent):
+    """Prepare the existing commute quote workflow from explicit user places and arrival time."""
+    model_config = ConfigDict(extra='forbid')
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    title: str = Field(default='日常通勤安排', min_length=1, max_length=255)
+
+
+async def create_input_draft(db, runtime, settings, user, payload: CreateDraftRequest):
+    """Expose existing commute draft creation without running another intent model."""
+    from assistant_api.services import matters
+    user_id = user.user_id
+    original = payload.model_dump(mode='json')
+    existing = await db.scalar(select(MatterDraft).where(
+        MatterDraft.user_id == user_id, MatterDraft.origin_key == payload.idempotency_key))
+    if existing is not None:
+        if (existing.payload_json or {}).get('analysis', {}).get('creation_request') != original:
+            raise ConflictError('idempotency_key_reused', '该请求标识已用于另一项操作。')
+        return matters._serialize_draft(existing)
+    timezone = await matters.user_timezone(db, user, settings.matter_default_timezone)
+    parsed = {'commute': payload.model_dump(exclude={'idempotency_key', 'title'}), 'title': payload.title}
+    try:
+        draft = await create_draft(db, runtime, settings, user, None, parsed, payload.title,
+                                   origin_key=payload.idempotency_key, creation_request=original,
+                                   timezone_override=timezone)
+    except IntegrityError:
+        await db.rollback()
+        winner = await db.scalar(select(MatterDraft).where(
+            MatterDraft.user_id == user_id, MatterDraft.origin_key == payload.idempotency_key))
+        if winner is None:
+            raise
+        if (winner.payload_json or {}).get('analysis', {}).get('creation_request') != original:
+            raise ConflictError('idempotency_key_reused', '该请求标识已用于另一项操作。')
+        return matters._serialize_draft(winner)
+    return matters._serialize_draft(draft)
 
 class QuoteRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -29,19 +66,20 @@ class QuoteRequest(BaseModel):
     origin_token: str
     destination_token: str
     effective_from: date
-    weekdays: list[int] = Field(min_length=1,max_length=7)
+    weekdays: list[Annotated[int, Field(ge=1, le=7)]] = Field(min_length=1,max_length=7)
     buffer_minutes: int = Field(ge=0,le=120)
     mode: Literal['driving','transit'] = 'driving'
     test_only: bool = False
 
-async def create_draft(db,runtime,settings,user,run,parsed,text):
+async def create_draft(db,runtime,settings,user,run,parsed,text,*,origin_key=None,creation_request=None,timezone_override=None):
+    """Prepare one persisted commute draft and server-issued place candidates; formal save stays separate."""
     intent=CommuteIntent.model_validate(parsed['commute'])
-    timezone=(run.context_json or {}).get('timezone') or settings.matter_default_timezone
-    draft=MatterDraft(user_id=user.user_id,ai_run_id=run.local_run_id,kind='create',status='preview',version=1,payload_json={})
+    timezone=timezone_override or ((run.context_json or {}).get('timezone') if run else None) or settings.matter_default_timezone
+    draft=MatterDraft(user_id=user.user_id,ai_run_id=run.local_run_id if run else None,kind='create',status='preview',version=1,payload_json={},origin_key=origin_key)
     db.add(draft);await db.flush()
     # Persist identity before any upstream request; recovery finds the same draft.
     state={'intent':intent.model_dump(mode='json'),'timezone':timezone,'status':'locating'}
-    draft.payload_json={'kind':'create','title':'日常通勤安排','goal':text,'source_text':text,'schedule':None,'todos':[], 'complete_todo_ids':[], 'matter_action':'none','commute':state}
+    draft.payload_json={'kind':'create','title':parsed.get('title') or '日常通勤安排','goal':text,'source_text':text,'schedule':None,'todos':[], 'complete_todo_ids':[], 'matter_action':'none','commute':state,'analysis': {'creation_request': creation_request} if creation_request else {}}
     await db.commit()
     for side,kind in [('origin','place'),('destination','address')]:
         state[side+'_search']=await commute_places.search_places(runtime,secret=settings.tool_callback_token.get_secret_value(),user_id=user.user_id,draft_id=draft.draft_id,query=getattr(intent,side+'_query'),city=intent.city,search_type=kind,limit=5)

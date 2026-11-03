@@ -15,6 +15,7 @@ The current server contract is:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
@@ -62,6 +63,7 @@ class NexusPilotClient:
         trust_env: bool = False,
     ) -> None:
         self.application_id = application_id
+        self._workflow_observation_timeout_seconds = stream_timeout_seconds
         self._token = application_token
         # trust_env=False on purpose: a deployment that exports HTTP_PROXY must not
         # route application credentials and user requests through an unknown proxy.
@@ -148,29 +150,47 @@ class NexusPilotClient:
     async def start_workflow_events(
         self, external_user_id: str, run_id: str, payload: WorkflowCreateRequest
     ) -> AsyncIterator[SseEvent]:
-        """Start the general Agent with stream=true and yield its committed SSE frames.
+        """Start once, then resume finite event batches by cursor until the same workflow ends.
 
-        The first frame contains the workflow id. The caller must keep iterating to
-        terminal so the execution is observed and the result can be persisted.
+        Current Nexus can close the acceptance response before model execution
+        finishes. Subsequent requests only read committed events; no Run or
+        workflow creation is retried. Observation is bounded by stream timeout.
         """
-
-        headers = self._headers(
-            external_user_id,
-            accept="text/event-stream",
-            extra={"Cache-Control": "no-cache"},
-        )
+        headers = self._headers(external_user_id, accept="text/event-stream", extra={"Cache-Control": "no-cache"})
+        workflow_id = None
+        cursor = None
+        terminal = False
+        deadline = asyncio.get_running_loop().time() + self._workflow_observation_timeout_seconds
+        method, path = "POST", f"{APPLICATION_PREFIX}/runs/{run_id}/agent-workflows"
         try:
-            async with self._client.stream(
-                "POST",
-                f"{APPLICATION_PREFIX}/runs/{run_id}/agent-workflows",
-                json=payload.model_dump(mode="json", exclude_none=True),
-                headers=headers,
-            ) as response:
-                if response.status_code >= 400:
-                    await response.aread()
-                    raise error_for_status(response.status_code, _detail_from(response))
-                async for event in iter_sse(response.aiter_lines()):
-                    yield event
+            while True:
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise NexusTimeoutError("NexusPilot workflow event observation timed out")
+                request_headers = {**headers, **({"Last-Event-ID": cursor} if cursor else {})}
+                kwargs = {"json": payload.model_dump(mode="json", exclude_none=True)} if method == "POST" else {}
+                async with self._client.stream(method, path, headers=request_headers, **kwargs) as response:
+                    if response.status_code >= 400:
+                        await response.aread()
+                        raise error_for_status(response.status_code, _detail_from(response))
+                    async for event in iter_sse(response.aiter_lines()):
+                        data = self.event_payload(event)
+                        event_id = event.id
+                        if event_id and cursor and event_id.isdigit() and cursor.isdigit() and int(event_id) <= int(cursor):
+                            continue
+                        if event_id:
+                            cursor = event_id
+                        workflow_id = data.get("workflow_execution_id") or workflow_id
+                        terminal = data.get("workflow_status") in {"completed", "succeeded", "failed", "cancelled", "outcome_unknown", "unknown"}
+                        yield event
+                        if terminal:
+                            return
+                if not workflow_id:
+                    return
+                method, path = "GET", f"{APPLICATION_PREFIX}/agent-workflows/{workflow_id}/events"
+                # The first continuation is immediate; empty/running finite
+                # batches subsequently wait briefly rather than busy-polling.
+                if cursor:
+                    await asyncio.sleep(0.25)
         except httpx.TimeoutException as exc:
             raise NexusTimeoutError("NexusPilot workflow stream timed out") from exc
         except httpx.HTTPError as exc:

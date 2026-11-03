@@ -26,6 +26,11 @@ DEFAULT_FIELDS: dict[str, list[str]] = {
 
 
 class DataSourceCreate(BaseModel):
+    """Register selected device scopes; upload_fields must match source_type and include required fields.
+
+    calendar requires title/start, reminders and notes require title. Empty
+    upload_fields selects defaults; source-specific fields are listed below.
+    """
     model_config = ConfigDict(extra="forbid")
 
     source_type: SourceType
@@ -52,6 +57,11 @@ class DataSourceCreate(BaseModel):
 
 
 class DataSourceUpdate(BaseModel):
+    """Supply at least one field; uploaded fields must fit the existing source type.
+
+    Scope keys and field names are unique nonblank strings. Authorization to
+    synchronize and authorization for Assistant remain independent settings.
+    """
     model_config = ConfigDict(extra="forbid")
 
     display_name: str | None = Field(default=None, min_length=1, max_length=120)
@@ -96,6 +106,12 @@ class SyncItem(BaseModel):
 
 
 class SyncRequest(BaseModel):
+    """Upsert a source-scoped batch or remove external IDs, never both for the same ID.
+
+    Each external_id must be unique within items and within removals. Uploaded
+    fields/scopes must already be authorized; ends_at cannot precede starts_at.
+    The same source and batch_id replay the existing result without resyncing.
+    """
     model_config = ConfigDict(extra="forbid")
 
     batch_id: str = Field(min_length=1, max_length=128)

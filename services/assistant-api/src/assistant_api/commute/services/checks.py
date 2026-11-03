@@ -145,7 +145,8 @@ async def create_manual_check(
     if route_snapshot is not None:
         _validate_route_snapshot(plan, route_snapshot, now=now)
     day = local_today(now, plan.timezone)
-    target = target_arrival_for(day, plan.arrival_local_time, plan.timezone)
+    instance = await ensure_instance(db, plan, now=now, allow_non_scheduled_day=True)
+    target = ensure_aware(instance.target_arrival_at) if instance else target_arrival_for(day, plan.arrival_local_time, plan.timezone)
     if now >= target:
         raise ConflictError(
             "check_window_closed", "今天的目标到达时间已过，不再生成通勤建议。"
@@ -888,6 +889,7 @@ async def execute_check(
         or not plan.enabled
         or instance.status != "active"
         or ensure_aware(instance.target_arrival_at) <= now
+        or ensure_aware(instance.target_arrival_at) != ensure_aware(values["target_arrival_at"])
     ):
         await db.rollback()
         # Discard this executor's unsaved work, but only cancel the row while

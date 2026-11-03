@@ -88,10 +88,10 @@ class CommutePlanInput(BaseModel):
     effective_from: date | None = None
     name: str = Field(min_length=1, max_length=120)
     enabled: bool = True
-    timezone: str = Field(min_length=1, max_length=64)
-    weekdays: list[int] = Field(min_length=1, max_length=7)
+    timezone: str = Field(min_length=1, max_length=64, description="有效IANA时区，如Asia/Shanghai，不接受UTC偏移字符串。")
+    weekdays: list[Annotated[int, Field(ge=1, le=7)]] = Field(min_length=1, max_length=7, description="ISO星期1至7；服务端排序去重。")
     arrival_local_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
-    check_local_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    check_local_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="同一天的检查时间，必须早于arrival_local_time；不支持跨夜检查。")
     transport_mode: TransportMode
     buffer_minutes: int = Field(default=10, ge=0, le=120)
     rain_probability_threshold: float = Field(default=0.4, ge=0, le=1, allow_inf_nan=False)
@@ -204,9 +204,15 @@ class RouteCandidateInput(BaseModel):
 
 
 class RouteSnapshotInput(BaseModel):
-    """Client-provided map result; never described as Apple-signed."""
+    """Client map snapshot: unique candidate references and one time matching query_type."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
+        {"oneOf": [
+            {"required": ["requested_departure_at"], "properties": {"query_type": {"const": "departure_time"}, "requested_departure_at": {"type": "string"}, "requested_arrival_at": {"type": "null"}}},
+            {"required": ["requested_arrival_at"], "properties": {"query_type": {"const": "arrival_deadline"}, "requested_arrival_at": {"type": "string"}, "requested_departure_at": {"type": "null"}}},
+        ]},
+        {"if": {"required": ["eta_scope"], "properties": {"eta_scope": {"const": "route"}}}, "then": {"required": ["route_reference"], "properties": {"route_reference": {"type": "string", "minLength": 1}}}},
+    ]})
 
     provider: Literal["mapkit_client", "client", "stub"]
     origin: RoutePoint
@@ -229,6 +235,7 @@ class RouteSnapshotInput(BaseModel):
 
     @model_validator(mode="after")
     def _shape(self):
+        """Require the query's matching time and unique references for candidate routes."""
         if (self.requested_departure_at is None) == (self.requested_arrival_at is None):
             raise ValueError("exactly one requested time is required")
         if self.query_type == "departure_time" and self.requested_departure_at is None:
@@ -425,3 +432,24 @@ class RuntimeRead(BaseModel):
     route_provider_available: bool
     auto_analysis_enabled: bool = False
     auto_analysis_mode: Literal["full", "weather_only"] = "weather_only"
+
+
+class CommuteDayQuery(BaseModel):
+    """Identify one local service date consistently in JSON for all day operations."""
+    model_config = ConfigDict(extra='forbid')
+    service_date: date = Field(description='通勤发生的当地日期，YYYY-MM-DD，按计划timezone解释；放在JSON请求体，不放路径或query。')
+
+
+class CommuteDayChange(CommuteDayQuery):
+    """Change an explicit service day's arrival; backend derives departure and route."""
+    model_config = ConfigDict(extra='forbid')
+    idempotency_key: str = Field(min_length=8,max_length=128)
+    expected_plan_revision: int = Field(ge=1,description='来自get_commute_day.revision，不猜版本。')
+    expected_matter_version: int = Field(ge=1,description='来自get_commute_day.version。')
+    arrival_local_time: str = Field(pattern=r'^([01]\d|2[0-3]):[0-5]\d$',description='用户指定的当地目标到达时间；不是日程结束时间。')
+
+
+class CommuteDayRefresh(CommuteDayQuery):
+    """Refresh a future day immediately, retaining its explicit override and recurring plan."""
+    model_config = ConfigDict(extra='forbid')
+    idempotency_key: str = Field(min_length=8,max_length=128)

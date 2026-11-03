@@ -63,6 +63,7 @@ class CommutePlan(TimestampMixin, Base):
 class CommuteInstance(TimestampMixin, Base):
     """One (plan, local service date) execution instance.
 
+    A nullable arrival override applies only to this service date.
     The unique key survives plan edits, which is what keeps the twice-a-day
     reminder cap working across plan revisions.
     """
@@ -84,6 +85,7 @@ class CommuteInstance(TimestampMixin, Base):
     plan_revision: Mapped[int] = mapped_column(Integer)
     local_service_date: Mapped[date] = mapped_column(Date)
     timezone: Mapped[str] = mapped_column(String(64))
+    arrival_local_time_override: Mapped[str | None] = mapped_column(String(5))
     target_arrival_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     check_window_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(16), default="active")

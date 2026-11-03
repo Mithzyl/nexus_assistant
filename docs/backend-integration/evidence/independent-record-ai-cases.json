@@ -1,0 +1,2617 @@
+{
+  "status": "passed",
+  "scope": "synthetic local records and real Nexus model decisions; no production Assistant writes",
+  "cases_passed": 16,
+  "prompt_current_input_version": 15,
+  "passed_cases_not_replayed": true,
+  "code_verification": "13 newly added focused tests passed; existing test suites were not run",
+  "operations": 112,
+  "ai_operations": 56,
+  "schema_components": 150,
+  "limitations": "Successful cases come from successive implementation iterations; only failed or tightened cases were reevaluated. No full rerun on the final prompt, browser regression or deployment was performed.",
+  "cases": [
+    {
+      "case": "todo_only",
+      "input": "新增一个整理销售品清单的待办，不设截止时间和提醒。",
+      "status": "passed",
+      "source_batch": "b",
+      "input_versions": [
+        11
+      ],
+      "elapsed_seconds": 17.86,
+      "max_input_characters": 93200,
+      "outcome": "answer",
+      "answer": "已新增待办「整理销售品清单」，没有设置截止时间和提醒。",
+      "question": null,
+      "local_run_id": "d69a21d7-1646-492c-8cc9-5953d9592aba",
+      "workflow_execution_ids": [
+        "c60da67c-6788-4757-91ad-15c27707d988",
+        "ba949b2e-13f2-4682-84ea-092857557d0c"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_todo",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "整理销售品清单",
+              "idempotency_key": "api-call-746a4773-72f3-441f-ab80-10919d7d17a3-0"
+            },
+            "summary": "新增待办“整理销售品清单”，不设截止时间和提醒"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "已新增待办「整理销售品清单」，没有设置截止时间和提醒。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已创建",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "待办",
+                      "value": {
+                        "$result": "/todo/title"
+                      }
+                    },
+                    {
+                      "label": "所属事项",
+                      "value": {
+                        "$result": "/matter/title"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "824ddcdb-4113-4c92-bf25-afa51d9a2670",
+            "title": "整理销售品清单",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "8363b124-9746-4cb4-a32a-895843e009c6",
+            "matter_id": "824ddcdb-4113-4c92-bf25-afa51d9a2670",
+            "title": "整理销售品清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": null
+          }
+        ],
+        "schedules": [],
+        "reminders": []
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-b/todo_only.json"
+    },
+    {
+      "case": "schedule_only",
+      "input": "新增2030年5月9日下午3点的产品讨论日程，地点会议室A，只添加日程，不添加待办。",
+      "status": "passed",
+      "source_batch": "b",
+      "input_versions": [
+        11
+      ],
+      "elapsed_seconds": 14.18,
+      "max_input_characters": 95449,
+      "outcome": "answer",
+      "answer": "加好了，2030年5月9日下午3点的产品讨论日程已保存，地点会议室A；这次只加了日程，没有生成待办。",
+      "question": null,
+      "local_run_id": "cf41eb58-7a48-4654-bb16-cba2d3a88859",
+      "workflow_execution_ids": [
+        "6fea7279-3001-4d8a-b9da-de9175ac27dd",
+        "1e0a6c18-2fed-47fa-bd53-8f07854f6dfe"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_schedule",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "产品讨论",
+              "starts_at": "2030-05-09T15:00:00+08:00",
+              "location": "会议室A",
+              "idempotency_key": "api-call-74e728e2-463c-42d4-83a4-4851c537c18f-0"
+            },
+            "summary": "帮你新建 2030年5月9日 15:00 的“产品讨论”日程，地点会议室A，只建日程不建待办。"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "加好了，2030年5月9日下午3点的产品讨论日程已保存，地点会议室A；这次只加了日程，没有生成待办。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "日程已添加",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "地点",
+                      "value": {
+                        "$result": "/schedule/location"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "f793bf50-124e-4e38-81eb-33a8eac83fb8",
+            "title": "产品讨论",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "cb2a6657-b86b-4891-9e70-ad0f5def421c",
+            "matter_id": "f793bf50-124e-4e38-81eb-33a8eac83fb8",
+            "title": "产品讨论",
+            "status": "scheduled",
+            "starts_at": "2030-05-09 07:00:00",
+            "location": "会议室A",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-b/schedule_only.json"
+    },
+    {
+      "case": "combined",
+      "input": "新建2030年6月1日下午3点的客户交流日程，在同一事项下加一个准备材料的待办，待办5月31日下午5点截止，下午4点提醒。",
+      "status": "passed",
+      "source_batch": "b",
+      "input_versions": [
+        11
+      ],
+      "elapsed_seconds": 30.45,
+      "max_input_characters": 97498,
+      "outcome": "answer",
+      "answer": "都安排好了：6月1日下午3点的客户交流日程已经建好，同一事项下也加上了“准备材料”待办，5月31日下午5点截止、下午4点提醒。具体时间见卡片。",
+      "question": null,
+      "local_run_id": "3900b122-5c6b-429b-a324-b52586840000",
+      "workflow_execution_ids": [
+        "453fa6b4-c8c7-41dd-800c-bb7bb827e04b",
+        "e63794ed-2665-4ca1-b68c-7f3d80d141fc",
+        "c9638ccf-cc8f-4e52-ac82-651dfd5624d4"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_structured_draft",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "客户交流",
+              "schedule": {
+                "title": "客户交流",
+                "starts_at": "2030-06-01T15:00:00+08:00"
+              },
+              "todos": [
+                {
+                  "title": "准备材料",
+                  "due_at": "2030-05-31T17:00:00+08:00",
+                  "reminder_at": "2030-05-31T16:00:00+08:00"
+                }
+              ],
+              "idempotency_key": "api-call-270011d9-97ad-4b09-ba9b-169d08994933-0"
+            },
+            "summary": "正在准备同一事项下的客户交流日程和“准备材料”待办的草稿，尚未正式保存。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "confirm_draft_api_v1_matters_drafts__draft_id__confirm_post",
+            "path_parameters": {
+              "draft_id": {
+                "$result": "/draft_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {
+              "Idempotency-Key": "api-call-270011d9-97ad-4b09-ba9b-169d08994933-1"
+            },
+            "body": {
+              "expected_version": {
+                "$result": "/version"
+              }
+            },
+            "summary": "保存这份草稿，把客户交流日程和准备材料的待办一起正式创建到同一事项下"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "都安排好了：6月1日下午3点的客户交流日程已经建好，同一事项下也加上了“准备材料”待办，5月31日下午5点截止、下午4点提醒。具体时间见卡片。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "日程和待办已创建",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "日程",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "开始时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "所属事项",
+                      "value": {
+                        "$result": "/matter/title"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "timeline",
+                  "items": {
+                    "$each": "/todos",
+                    "template": {
+                      "title": {
+                        "$item": "/title"
+                      },
+                      "category": "待办",
+                      "fields": [
+                        {
+                          "label": "截止时间",
+                          "value": {
+                            "$item": "/due_at"
+                          },
+                          "format": "datetime"
+                        },
+                        {
+                          "label": "提醒时间",
+                          "value": {
+                            "$item": "/reminder_at"
+                          },
+                          "format": "datetime"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "ff0dfe6f-9862-4a84-a8e0-b57d87046d97",
+            "title": "客户交流",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "d1be26ac-e1dc-4195-97c9-8927df201006",
+            "matter_id": "ff0dfe6f-9862-4a84-a8e0-b57d87046d97",
+            "title": "准备材料",
+            "status": "open",
+            "due_at": "2030-05-31 09:00:00",
+            "reminder_at": "2030-05-31 08:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "8db93744-5187-47c6-90a2-72a8dfa62496",
+            "matter_id": "ff0dfe6f-9862-4a84-a8e0-b57d87046d97",
+            "title": "客户交流",
+            "status": "scheduled",
+            "starts_at": "2030-06-01 07:00:00",
+            "location": null,
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "4ba5ec57-70c3-4d9b-aba0-bbec6d8a93b2",
+            "matter_id": "ff0dfe6f-9862-4a84-a8e0-b57d87046d97",
+            "todo_id": "d1be26ac-e1dc-4195-97c9-8927df201006",
+            "schedule_id": null,
+            "trigger_at": "2030-05-31 08:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          }
+        ]
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-b/combined.json"
+    },
+    {
+      "case": "append_todo",
+      "input": "给当前项目评审事项补一个核对报价的待办，不设时间，不修改原日程。",
+      "status": "passed",
+      "source_batch": "c",
+      "input_versions": [
+        12
+      ],
+      "elapsed_seconds": 83.73,
+      "max_input_characters": 60090,
+      "outcome": "answer",
+      "answer": "已经加好了：项目评审事项下新增了一条“核对报价”的待办，没有设时间，原来的日程也没有改动。",
+      "question": null,
+      "local_run_id": "5fc3548f-0eca-47b9-ad02-d3a179d8bcf0",
+      "workflow_execution_ids": [
+        "ba431834-f9f9-4ebe-ab62-b2cb656ba7ba",
+        "aafdc7bb-810c-49ca-9f6e-0f575957af64",
+        "3e1f380a-358f-45b3-80d6-25b272366c33",
+        "d0674b1f-4ac5-4b50-8cae-a8fbb48e32e6"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "a57e571c-959b-4e51-a5de-3a058f99fc3a"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先查看这个项目评审事项的最新版本，再追加“核对报价”待办。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_structured_draft",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-bf0ea47b-e8ba-43f7-9e99-aa047183b36a-1",
+              "matter_id": "a57e571c-959b-4e51-a5de-3a058f99fc3a",
+              "expected_matter_version": 1,
+              "todos": [
+                {
+                  "title": "核对报价",
+                  "status": "open"
+                }
+              ]
+            },
+            "summary": "为当前项目评审事项准备一条“核对报价”待办草稿，不设截止时间，也不改动原日程。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "confirm_draft_api_v1_matters_drafts__draft_id__confirm_post",
+            "path_parameters": {
+              "draft_id": "4d9b50ba-6b99-4347-a3e6-fcb8ca26bd2c"
+            },
+            "query_parameters": {},
+            "headers": {
+              "Idempotency-Key": "api-call-bf0ea47b-e8ba-43f7-9e99-aa047183b36a-2"
+            },
+            "body": {
+              "expected_version": 1,
+              "matter_id": "a57e571c-959b-4e51-a5de-3a058f99fc3a",
+              "create_schedule": false,
+              "sync_to_ios": false
+            },
+            "summary": "保存草稿，在“项目评审”事项下新增“核对报价”待办（不设时间、不改动原日程）"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "已经加好了：项目评审事项下新增了一条“核对报价”的待办，没有设时间，原来的日程也没有改动。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已添加",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "待办",
+                      "value": {
+                        "$result": "/todos/0/title"
+                      }
+                    },
+                    {
+                      "label": "状态",
+                      "value": {
+                        "$result": "/todos/0/status"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "a57e571c-959b-4e51-a5de-3a058f99fc3a",
+            "title": "项目评审",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "d1c46c20-fd8f-4790-aaa3-98410ca98d00",
+            "matter_id": "a57e571c-959b-4e51-a5de-3a058f99fc3a",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "a57e571c-959b-4e51-a5de-3a058f99fc3a",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "2100321f-85be-41cb-933e-5a374f174154",
+            "matter_id": "a57e571c-959b-4e51-a5de-3a058f99fc3a",
+            "title": "核对报价",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": null
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "d1c46c20-fd8f-4790-aaa3-98410ca98d00",
+            "matter_id": "a57e571c-959b-4e51-a5de-3a058f99fc3a",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-c/append_todo.json"
+    },
+    {
+      "case": "rename_schedule",
+      "input": "把当前事项2030年7月1日下午3点、地点会议室B的项目评审日程，名称改为团建，时间地点保持。",
+      "status": "passed",
+      "source_batch": "b",
+      "input_versions": [
+        11
+      ],
+      "elapsed_seconds": 27.47,
+      "max_input_characters": 90134,
+      "outcome": "answer",
+      "answer": "改好了，名称已经换成团建，时间和地点都保持原样。",
+      "question": null,
+      "local_run_id": "643e661a-41b7-411f-9cae-1607658fc222",
+      "workflow_execution_ids": [
+        "33e3cb0f-f4ed-4363-b891-c85dabe08386",
+        "b328c1e1-b90f-4206-b78e-52a7b8a07aff",
+        "057091b6-2bb8-4a76-8fdf-10a99af722b2"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "93cb9822-49d5-43f1-879b-83800998ed27"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {},
+            "summary": "先读取当前事项详情，定位2030年7月1日下午3点、会议室B的项目评审日程及其版本，再修改名称。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "update_schedule",
+            "path_parameters": {
+              "schedule_id": {
+                "$result": "/schedules",
+                "where": {
+                  "starts_at": "2030-07-01T15:00:00+08:00",
+                  "location": "会议室B"
+                },
+                "field": "schedule_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-6c817862-0c23-46ce-bdd0-45e5ac6d36fd-1",
+              "expected_matter_version": {
+                "$result": "/version"
+              },
+              "title": "团建"
+            },
+            "summary": "把该事项中2030年7月1日下午3点、会议室B的日程名称改为「团建」，时间和地点保持不变。"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "改好了，名称已经换成团建，时间和地点都保持原样。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "日程已更新",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "地点",
+                      "value": {
+                        "$result": "/schedule/location"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "93cb9822-49d5-43f1-879b-83800998ed27",
+            "title": "项目评审",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "316a42ca-8b5d-49d4-8e33-365ed9126aee",
+            "matter_id": "93cb9822-49d5-43f1-879b-83800998ed27",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "93cb9822-49d5-43f1-879b-83800998ed27",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "316a42ca-8b5d-49d4-8e33-365ed9126aee",
+            "matter_id": "93cb9822-49d5-43f1-879b-83800998ed27",
+            "title": "团建",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-b/rename_schedule.json"
+    },
+    {
+      "case": "edit_todo",
+      "input": "把当前事项的提交清单待办改名为整理清单，并标记为已完成；日程不变。",
+      "status": "passed",
+      "source_batch": "b",
+      "input_versions": [
+        11
+      ],
+      "elapsed_seconds": 46.9,
+      "max_input_characters": 97258,
+      "outcome": "answer",
+      "answer": "改好了：待办已改名为「整理清单」，并标记为已完成；日程没有改动。",
+      "question": null,
+      "local_run_id": "3b8610a1-2d6f-4d1f-8cbe-615ad584fca5",
+      "workflow_execution_ids": [
+        "4da324df-853a-4409-8328-412a4d51832f",
+        "3fb5eddf-05df-4d3e-b43f-a176ed526460",
+        "53bde125-2b01-485a-9574-849a60a71a60",
+        "a725867c-178b-4213-8fc7-85235edd899e",
+        "4c482a0f-02f3-4f41-9132-5d66da9b1cf3"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先读取这个事项，找到“提交清单”待办及其当前版本，再据此改名并标记完成。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_edit_draft_api_v1_matters__matter_id__drafts_post",
+            "path_parameters": {
+              "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-531b0493-d607-4fd9-a191-fa8ba70011c0-1",
+              "todo_id": {
+                "$result": "/todos",
+                "where": {
+                  "title": "提交清单"
+                },
+                "field": "todo_id"
+              }
+            },
+            "summary": "为事项里那条“提交清单”待办打开修改草稿，准备改成“整理清单”并标记完成，日程保持不动"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "patch_draft_api_v1_matters_drafts__draft_id__patch",
+            "path_parameters": {
+              "draft_id": {
+                "$result": "/draft_id",
+                "step": 1
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "expected_version": {
+                "$result": "/version",
+                "step": 1
+              },
+              "todos": [
+                {
+                  "todo_id": {
+                    "$result": "/todos",
+                    "where": {
+                      "title": "提交清单"
+                    },
+                    "field": "todo_id",
+                    "step": 0
+                  },
+                  "title": "整理清单",
+                  "status": "done"
+                }
+              ]
+            },
+            "summary": "准备把草稿中的“提交清单”待办改名为“整理清单”并标为已完成，日程保持不变"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "confirm_draft_api_v1_matters_drafts__draft_id__confirm_post",
+            "path_parameters": {
+              "draft_id": "5c8bac43-0cab-42ed-83f4-358f1c2ed8cb"
+            },
+            "query_parameters": {},
+            "headers": {
+              "Idempotency-Key": "api-call-531b0493-d607-4fd9-a191-fa8ba70011c0-3"
+            },
+            "body": {
+              "expected_version": 2,
+              "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938"
+            },
+            "summary": "保存待办改名和完成状态的修改，日程保持不变"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "改好了：待办已改名为「整理清单」，并标记为已完成；日程没有改动。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已更新",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/todos/0/title"
+                      }
+                    },
+                    {
+                      "label": "状态",
+                      "value": {
+                        "$result": "/todos/0/status"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "e2420a7b-16fe-4d59-8d5a-fc44c5ea9a57",
+            "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "b39612be-cff0-4140-ae0a-612f07aeaf2b",
+            "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "a54c4c3c-3099-48de-8771-ef60c00f1283",
+            "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938",
+            "todo_id": "e2420a7b-16fe-4d59-8d5a-fc44c5ea9a57",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          }
+        ]
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938",
+            "title": "项目评审",
+            "version": 3,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "e2420a7b-16fe-4d59-8d5a-fc44c5ea9a57",
+            "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938",
+            "title": "整理清单",
+            "status": "done",
+            "due_at": null,
+            "reminder_at": null
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "b39612be-cff0-4140-ae0a-612f07aeaf2b",
+            "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "a54c4c3c-3099-48de-8771-ef60c00f1283",
+            "matter_id": "2c277af4-b5ef-4ce2-af02-2a97f62ee938",
+            "todo_id": "e2420a7b-16fe-4d59-8d5a-fc44c5ea9a57",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "cancelled"
+          }
+        ]
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-b/edit_todo.json"
+    },
+    {
+      "case": "relative_reminder",
+      "input": "在当前项目评审事项新建准备评审材料待办，明确在该日程开始前一小时提醒，不设截止时间。",
+      "status": "passed",
+      "source_batch": "c",
+      "input_versions": [
+        12
+      ],
+      "elapsed_seconds": 59.47,
+      "max_input_characters": 61406,
+      "outcome": "answer",
+      "answer": "加好了。已经在当前评审事项里新增了「准备评审材料」待办，并设置为在该日程开始前一小时提醒，没有设置截止时间。",
+      "question": null,
+      "local_run_id": "7f1f6f65-ddf0-4468-8e53-ca8a70912ef0",
+      "workflow_execution_ids": [
+        "1d71901c-c2c5-465f-beb5-44c5b3cd09f5",
+        "e6853a2d-ea7e-4946-b44e-e32505250b1e",
+        "169e1d83-5dad-4dc5-acb5-574fdef0bcec",
+        "b80ac543-a88f-4c0f-9d01-6aba24989378"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先读取当前评审事项的详情，确认版本和对应日程，再新建待办并设置提前一小时的提醒"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_structured_draft",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb",
+              "expected_matter_version": 1,
+              "idempotency_key": "api-call-61520a08-e8b7-4a22-81a4-ca5fd9cbf6df-1",
+              "todos": [
+                {
+                  "title": "准备评审材料",
+                  "schedule_reminder": {
+                    "schedule_id": {
+                      "$result": "/schedules",
+                      "where": {
+                        "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb"
+                      },
+                      "field": "schedule_id"
+                    },
+                    "offset_seconds": -3600
+                  }
+                }
+              ]
+            },
+            "summary": "在当前评审事项中新建“准备评审材料”待办，并设为在该评审日程开始前一小时提醒，不设截止时间。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "confirm_draft_api_v1_matters_drafts__draft_id__confirm_post",
+            "path_parameters": {
+              "draft_id": "880f177b-6144-4549-8c63-1617fa460098"
+            },
+            "query_parameters": {},
+            "headers": {
+              "Idempotency-Key": "confirm-draft-880f177b-6144-4549-8c63-1617fa460098"
+            },
+            "body": {
+              "expected_version": 1,
+              "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb"
+            },
+            "summary": "保存“准备评审材料”待办，并设置为在该日程开始前一小时提醒，不设截止时间"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "加好了。已经在当前评审事项里新增了「准备评审材料」待办，并设置为在该日程开始前一小时提醒，没有设置截止时间。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已添加",
+              "blocks": [
+                {
+                  "type": "text",
+                  "text": "「准备评审材料」已加入当前评审事项，提醒设置在该日程开始前一小时，未设截止时间。"
+                },
+                {
+                  "type": "timeline",
+                  "items": {
+                    "$each": "/todos",
+                    "template": {
+                      "title": {
+                        "$item": "/title"
+                      },
+                      "subtitle": "新增待办"
+                    }
+                  }
+                },
+                {
+                  "type": "timeline",
+                  "items": {
+                    "$each": "/reminders",
+                    "template": {
+                      "title": {
+                        "$item": "/title"
+                      },
+                      "time": {
+                        "$item": "/trigger_at"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb",
+            "title": "项目评审",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "cdcdfe07-acf3-4c1c-a5d1-4a4661d4357e",
+            "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "839271fc-9435-4d96-a577-1843b63eca05",
+            "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb",
+            "title": "准备评审材料",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-07-01 06:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "cdcdfe07-acf3-4c1c-a5d1-4a4661d4357e",
+            "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "24ff1015-5367-4b93-a7ba-1963db5b3030",
+            "matter_id": "879ee6d5-bc8f-4367-8472-2270449247fb",
+            "todo_id": "839271fc-9435-4d96-a577-1843b63eca05",
+            "schedule_id": "cdcdfe07-acf3-4c1c-a5d1-4a4661d4357e",
+            "trigger_at": "2030-07-01 06:00:00",
+            "schedule_offset_seconds": -3600,
+            "status": "pending"
+          }
+        ]
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-c/relative_reminder.json"
+    },
+    {
+      "case": "move_with_dependency",
+      "input": "把当前事项2030年7月1日下午3点的项目评审日程推迟到当天17点，地点不变。",
+      "status": "passed",
+      "source_batch": "b",
+      "input_versions": [
+        11
+      ],
+      "elapsed_seconds": 29.37,
+      "max_input_characters": 90397,
+      "outcome": "answer",
+      "answer": "改好了，项目评审日程已从下午3点推迟到当天17点，地点保持不变。",
+      "question": null,
+      "local_run_id": "13c38ad7-5193-488a-8a61-54f006835b94",
+      "workflow_execution_ids": [
+        "4bf82775-46e2-4e8b-93be-8652660504f6",
+        "f8a38a8f-b58c-4e1e-99f7-604c14747b95",
+        "749df315-8c79-4b56-8ed7-0e10f411d203"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先读取当前事项详情，找到2030年7月1日下午3点的“项目评审”日程及其版本，再据此修改时间"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "update_schedule",
+            "path_parameters": {
+              "schedule_id": {
+                "$result": "/schedules",
+                "where": {
+                  "starts_at": "2030-07-01T15:00:00+08:00"
+                },
+                "field": "schedule_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-d39c161c-c458-4016-a663-d89e08525c02-1",
+              "expected_matter_version": {
+                "$result": "/version"
+              },
+              "starts_at": "2030-07-01T17:00:00+08:00"
+            },
+            "summary": "把 2030年7月1日下午3点的项目评审日程开始时间改到当天 17:00，地点保持不变。"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "改好了，项目评审日程已从下午3点推迟到当天17点，地点保持不变。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "日程已推迟",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "开始时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "地点",
+                      "value": {
+                        "$result": "/schedule/location"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "title": "项目评审",
+            "version": 3,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "efbc19d8-737d-4c0c-b53e-38b43ec9ce7a",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          },
+          {
+            "todo_id": "109dc508-bf04-4be4-839d-0233c827d776",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "title": "准备评审材料",
+            "status": "open",
+            "due_at": "2030-06-30 10:00:00",
+            "reminder_at": "2030-07-01 06:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "9e7c0550-7a3d-487f-9542-d4f69b42c58a",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "a82e478e-54e5-46ef-b251-af6b32861df7",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "todo_id": "efbc19d8-737d-4c0c-b53e-38b43ec9ce7a",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          },
+          {
+            "reminder_id": "bf3ac8e8-ecdf-45ee-afac-be5a887e55cb",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "todo_id": "109dc508-bf04-4be4-839d-0233c827d776",
+            "schedule_id": "9e7c0550-7a3d-487f-9542-d4f69b42c58a",
+            "trigger_at": "2030-07-01 06:00:00",
+            "schedule_offset_seconds": -3600,
+            "status": "pending"
+          }
+        ]
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "title": "项目评审",
+            "version": 4,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "efbc19d8-737d-4c0c-b53e-38b43ec9ce7a",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          },
+          {
+            "todo_id": "109dc508-bf04-4be4-839d-0233c827d776",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "title": "准备评审材料",
+            "status": "open",
+            "due_at": "2030-06-30 10:00:00",
+            "reminder_at": "2030-07-01 08:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "9e7c0550-7a3d-487f-9542-d4f69b42c58a",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 09:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "a82e478e-54e5-46ef-b251-af6b32861df7",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "todo_id": "efbc19d8-737d-4c0c-b53e-38b43ec9ce7a",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          },
+          {
+            "reminder_id": "bf3ac8e8-ecdf-45ee-afac-be5a887e55cb",
+            "matter_id": "5b300d09-1af6-484b-bc5b-0db034fb2397",
+            "todo_id": "109dc508-bf04-4be4-839d-0233c827d776",
+            "schedule_id": "9e7c0550-7a3d-487f-9542-d4f69b42c58a",
+            "trigger_at": "2030-07-01 08:00:00",
+            "schedule_offset_seconds": -3600,
+            "status": "pending"
+          }
+        ]
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-b/move_with_dependency.json"
+    },
+    {
+      "case": "cancel_preserves_todos",
+      "input": "取消当前事项2030年7月1日下午3点的项目评审日程，保留两条待办和独立提醒。",
+      "status": "passed",
+      "source_batch": "b",
+      "input_versions": [
+        11
+      ],
+      "elapsed_seconds": 28.33,
+      "max_input_characters": 91017,
+      "outcome": "answer",
+      "answer": "已经取消了 2030年7月1日下午3点的项目评审日程，两条待办和独立提醒都没有改动。",
+      "question": null,
+      "local_run_id": "17a298c7-1312-4f7c-966a-80fdac9596d3",
+      "workflow_execution_ids": [
+        "9b62d2db-db24-46f8-8b2a-9b11e8f72064",
+        "14a9b93b-fde6-49d6-bd7c-07803c56bb58",
+        "04836870-baaf-42ef-ac0a-1c8c98160783"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "读取该事项的日程、待办和提醒，确认要取消的项目评审及其版本"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "cancel_schedule",
+            "path_parameters": {
+              "schedule_id": {
+                "$result": "/schedules",
+                "where": {
+                  "starts_at": "2030-07-01T15:00:00+08:00"
+                },
+                "field": "schedule_id",
+                "step": 0
+              }
+            },
+            "query_parameters": {
+              "expected_matter_version": {
+                "$result": "/version",
+                "step": 0
+              }
+            },
+            "headers": {
+              "Idempotency-Key": "api-call-95ca2c1e-15ce-4faa-b163-422516a29495-1"
+            },
+            "summary": "取消 2030年7月1日下午3点的「项目评审」日程，事项本身和两条待办、独立提醒都保留不动"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "已经取消了 2030年7月1日下午3点的项目评审日程，两条待办和独立提醒都没有改动。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "项目评审日程已取消",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "日程",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "原定时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "状态",
+                      "value": {
+                        "$result": "/schedule/status"
+                      }
+                    },
+                    {
+                      "label": "未完成待办",
+                      "value": {
+                        "$result": "/matter/open_todos"
+                      },
+                      "format": "number"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "这次只取消了这条日程，同事项下的待办和独立提醒都保持原样。"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "title": "项目评审",
+            "version": 3,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "35392f65-ff31-4194-87f5-e16c72fad9ab",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          },
+          {
+            "todo_id": "3afd3780-8bb4-429f-aa93-9ef9452cedf4",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "title": "准备评审材料",
+            "status": "open",
+            "due_at": "2030-06-30 10:00:00",
+            "reminder_at": "2030-07-01 06:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "b1a2cad4-d7ed-4d88-be31-969c916e37a3",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "55d100aa-9da3-45da-abb9-055a028591e6",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "todo_id": "35392f65-ff31-4194-87f5-e16c72fad9ab",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          },
+          {
+            "reminder_id": "e1c201a0-df34-49a4-8ae8-9636cbf386b8",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "todo_id": "3afd3780-8bb4-429f-aa93-9ef9452cedf4",
+            "schedule_id": "b1a2cad4-d7ed-4d88-be31-969c916e37a3",
+            "trigger_at": "2030-07-01 06:00:00",
+            "schedule_offset_seconds": -3600,
+            "status": "pending"
+          }
+        ]
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "title": "项目评审",
+            "version": 4,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "35392f65-ff31-4194-87f5-e16c72fad9ab",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          },
+          {
+            "todo_id": "3afd3780-8bb4-429f-aa93-9ef9452cedf4",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "title": "准备评审材料",
+            "status": "open",
+            "due_at": "2030-06-30 10:00:00",
+            "reminder_at": null
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "b1a2cad4-d7ed-4d88-be31-969c916e37a3",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "title": "项目评审",
+            "status": "cancelled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": "2026-11-03 04:56:44.401167"
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "55d100aa-9da3-45da-abb9-055a028591e6",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "todo_id": "35392f65-ff31-4194-87f5-e16c72fad9ab",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          },
+          {
+            "reminder_id": "e1c201a0-df34-49a4-8ae8-9636cbf386b8",
+            "matter_id": "f6ef93dc-34cf-4c14-ba5c-c3bfff039dd7",
+            "todo_id": "3afd3780-8bb4-429f-aa93-9ef9452cedf4",
+            "schedule_id": "b1a2cad4-d7ed-4d88-be31-969c916e37a3",
+            "trigger_at": "2030-07-01 06:00:00",
+            "schedule_offset_seconds": -3600,
+            "status": "cancelled"
+          }
+        ]
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-b/cancel_preserves_todos.json"
+    },
+    {
+      "case": "missing_time",
+      "input": "帮我新增一个产品讨论日程。",
+      "status": "passed",
+      "source_batch": "b",
+      "input_versions": [
+        11
+      ],
+      "elapsed_seconds": 4.46,
+      "max_input_characters": 96393,
+      "outcome": "needs_clarification",
+      "answer": null,
+      "question": "产品讨论日程安排在什么时候？告诉我日期和开始时间就行。",
+      "local_run_id": "0903718c-4ef9-4176-8de6-104637a00071",
+      "workflow_execution_ids": [
+        "69d32f20-4777-4efb-99ee-1734c7bb1bd7"
+      ],
+      "decisions": [
+        {
+          "decision": "ask_user",
+          "question": "产品讨论日程安排在什么时候？告诉我日期和开始时间就行。"
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": []
+      },
+      "after": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": []
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-b/missing_time.json"
+    },
+    {
+      "case": "ambiguous_schedule",
+      "input": "把当前事项里的项目评审日程改到下午5点。",
+      "status": "passed",
+      "source_batch": "g",
+      "input_versions": [
+        14
+      ],
+      "elapsed_seconds": 121.55,
+      "max_input_characters": 55931,
+      "outcome": "needs_clarification",
+      "answer": null,
+      "question": "事项里有两条日程，我还无法确定哪条是“项目评审”。能说下它的日期或开始时间吗？比如“11月5日下午2点”这样的信息就够了。",
+      "local_run_id": "cab6b9c5-9bfd-4611-8adb-91c4779bb201",
+      "workflow_execution_ids": [
+        "8c5bc998-f5a9-4b67-b50b-3ce77ab87e6c",
+        "79ef6d40-56ab-4513-b1ea-64f080b7e6b7",
+        "8d237fc6-d7c3-414e-8e4d-942cf76b71c7",
+        "e495a0ba-9465-4cd1-983b-5543fddbddc7",
+        "14426b62-b446-4ad2-b952-3eacb11bd935",
+        "fa47e832-2665-4471-a489-969666ef37f7"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "a907ff77-c88f-4597-802a-23464f239940"
+            },
+            "summary": "先查看这个事项里的项目评审日程和当前版本"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_edit_draft_api_v1_matters__matter_id__drafts_post",
+            "path_parameters": {
+              "matter_id": "a907ff77-c88f-4597-802a-23464f239940"
+            },
+            "body": {
+              "idempotency_key": "api-call-93f56f0b-9096-4551-a027-4a09702eacbe-1",
+              "schedule_id": {
+                "$result": "/schedules",
+                "where": {
+                  "title": "项目评审"
+                },
+                "field": "schedule_id",
+                "step": 0
+              },
+              "todo_id": null
+            },
+            "summary": "打开这个事项里「项目评审」日程的编辑草稿，准备把时间改到下午5点"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_edit_draft_api_v1_matters__matter_id__drafts_post",
+            "path_parameters": {
+              "matter_id": "a907ff77-c88f-4597-802a-23464f239940"
+            },
+            "body": {
+              "idempotency_key": "api-call-93f56f0b-9096-4551-a027-4a09702eacbe-2",
+              "schedule_id": {
+                "$result": "/schedules",
+                "where": {
+                  "title": "项目评审"
+                },
+                "field": "schedule_id",
+                "step": 0
+              },
+              "todo_id": null
+            },
+            "summary": "按标题“项目评审”定位当前事项里的那条日程，打开它的修改草稿"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "list_schedules",
+            "path_parameters": {},
+            "query_parameters": {
+              "matter_id": "a907ff77-c88f-4597-802a-23464f239940",
+              "query": "项目评审",
+              "limit": 30
+            },
+            "headers": {},
+            "summary": "在当前事项里找到“项目评审”这条日程，确认后再改时间"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_edit_draft_api_v1_matters__matter_id__drafts_post",
+            "path_parameters": {
+              "matter_id": "a907ff77-c88f-4597-802a-23464f239940"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-93f56f0b-9096-4551-a027-4a09702eacbe-4",
+              "schedule_id": {
+                "$result": "/items",
+                "where": {
+                  "matter_id": "a907ff77-c88f-4597-802a-23464f239940",
+                  "title": "项目评审"
+                },
+                "field": "schedule_id"
+              }
+            },
+            "summary": "按“项目评审”定位原日程并创建修改草稿"
+          }
+        },
+        {
+          "decision": "ask_user",
+          "question": "事项里有两条日程，我还无法确定哪条是“项目评审”。能说下它的日期或开始时间吗？比如“11月5日下午2点”这样的信息就够了。"
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "a907ff77-c88f-4597-802a-23464f239940",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "2617c4bf-b193-4497-805f-d0c6ed6d818f",
+            "matter_id": "a907ff77-c88f-4597-802a-23464f239940",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          },
+          {
+            "schedule_id": "69342c0c-d445-401d-b9d3-b4723231c1b1",
+            "matter_id": "a907ff77-c88f-4597-802a-23464f239940",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-02 07:00:00",
+            "location": "会议室C",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "a907ff77-c88f-4597-802a-23464f239940",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "2617c4bf-b193-4497-805f-d0c6ed6d818f",
+            "matter_id": "a907ff77-c88f-4597-802a-23464f239940",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          },
+          {
+            "schedule_id": "69342c0c-d445-401d-b9d3-b4723231c1b1",
+            "matter_id": "a907ff77-c88f-4597-802a-23464f239940",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-02 07:00:00",
+            "location": "会议室C",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-g/ambiguous_schedule.json"
+    },
+    {
+      "case": "duplicate_request",
+      "input": "新增一个提交销售材料的待办，不设截止或提醒时间。",
+      "status": "passed",
+      "source_batch": "b",
+      "input_versions": [
+        11
+      ],
+      "elapsed_seconds": 25.77,
+      "max_input_characters": 93199,
+      "outcome": "answer",
+      "answer": "加好了，待办「提交销售材料」已经建好，没设截止时间，也没有提醒。",
+      "question": null,
+      "local_run_id": "c7515afe-93f7-46db-8f4b-6f1e9de15d70",
+      "workflow_execution_ids": [
+        "150f4312-1728-47e3-8a50-fc12842d06bf",
+        "68fc897a-b0fc-41a2-9d02-51834176019e"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_todo",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "提交销售材料",
+              "idempotency_key": "api-call-1e527041-52d0-40d1-836d-db229f1c8f4b-0"
+            },
+            "summary": "新增一个“提交销售材料”的待办，不设截止时间，也不需要提醒"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "加好了，待办「提交销售材料」已经建好，没设截止时间，也没有提醒。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已添加",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "待办",
+                      "value": {
+                        "$result": "/todo/title"
+                      }
+                    },
+                    {
+                      "label": "所属事项",
+                      "value": {
+                        "$result": "/matter/title"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "d0112bcb-41d9-4f72-b4e6-d6f9bc7233ae",
+            "title": "提交销售材料",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "b1d17285-b83d-4f0a-9668-30681b7465c7",
+            "matter_id": "d0112bcb-41d9-4f72-b4e6-d6f9bc7233ae",
+            "title": "提交销售材料",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": null
+          }
+        ],
+        "schedules": [],
+        "reminders": []
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-b/duplicate_request.json"
+    },
+    {
+      "case": "find_existing_schedule",
+      "input": "把2030年7月1日下午3点、地点会议室B的项目评审日程改名为团建，时间地点保持。",
+      "status": "passed",
+      "source_batch": "e",
+      "input_versions": [
+        13
+      ],
+      "elapsed_seconds": 127.3,
+      "max_input_characters": 50068,
+      "outcome": "answer",
+      "answer": "改好了，名称已经换成团建，时间和地点都还是原来的。",
+      "question": null,
+      "local_run_id": "87537ddf-8a67-47a4-9360-d22b336eea8f",
+      "workflow_execution_ids": [
+        "fe7d15fc-b85b-4940-a592-754dc65c4754",
+        "3db9eff1-edcc-49c8-8316-4c8f0015c99d",
+        "46000afb-a743-43c3-ac73-951ac83ffc20",
+        "1d59fd60-7465-4d43-b0d8-14ad35d6500c",
+        "43ff0b7d-7aa7-4cdd-8f61-279bb9a3cf96",
+        "32d579f3-0746-4cf1-b99b-325cd2f73f7f",
+        "4168c29b-a13e-4a9e-a887-5913353f1a5f",
+        "cafd2575-60fe-4583-9046-fa774caa5f4b"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "list_schedules",
+            "path_parameters": {},
+            "query_parameters": {
+              "query": "项目评审"
+            },
+            "headers": {},
+            "summary": "先查找这个项目评审日程，确认对应的原记录后再改名为团建。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": {
+                "$result": "/items",
+                "where": {
+                  "starts_at": "2030-07-01T15:00:00+08:00",
+                  "location": "会议室B"
+                },
+                "field": "matter_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "读取这条项目评审日程所属事项的当前版本，以便只修改名称并保留原时间地点"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": {
+                "$result": "/items",
+                "step": 0,
+                "where": {
+                  "starts_at": "2030-07-01T15:00:00+08:00",
+                  "location": "会议室B"
+                },
+                "field": "matter_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先读取这条评审日程所属事项的当前版本，拿到后再把标题改成团建"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": {
+                "$result": "/items",
+                "where": {
+                  "starts_at": "2030-07-01T15:00:00+08:00",
+                  "location": "会议室B"
+                },
+                "field": "matter_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "读取该日程所属事项的最新版本，随后把它的名称改成“团建”，时间和地点保持不变。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": {
+                "$result": "/items",
+                "where": {
+                  "starts_at": "2030-07-01T15:00:00+08:00",
+                  "location": "会议室B"
+                },
+                "field": "matter_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "读取这条项目评审日程所属事项的当前版本，好把标题改成「团建」并保存。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": {
+                "$result": "/items",
+                "where": {
+                  "location": "会议室B"
+                },
+                "field": "matter_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先读取这个日程所属事项的最新版本，再把标题改成“团建”。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "update_schedule",
+            "path_parameters": {
+              "schedule_id": {
+                "$result": "/schedules",
+                "step": 5,
+                "where": {
+                  "starts_at": "2030-07-01T15:00:00+08:00",
+                  "location": "会议室B"
+                },
+                "field": "schedule_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-1c9e5691-09a3-441c-ac0f-866be844edfc-6",
+              "expected_matter_version": {
+                "$result": "/version",
+                "step": 5
+              },
+              "title": "团建"
+            },
+            "summary": "把2030年7月1日下午3点、会议室B的项目评审日程标题改为“团建”，时间地点保持不变"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "改好了，名称已经换成团建，时间和地点都还是原来的。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "日程已更新",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "地点",
+                      "value": {
+                        "$result": "/schedule/location"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "866e4a39-18c2-40e9-9d3e-5748c3a7d59f",
+            "title": "项目评审",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "1ae6ceb0-ac75-443a-a544-d475c110bcf6",
+            "matter_id": "866e4a39-18c2-40e9-9d3e-5748c3a7d59f",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "866e4a39-18c2-40e9-9d3e-5748c3a7d59f",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "1ae6ceb0-ac75-443a-a544-d475c110bcf6",
+            "matter_id": "866e4a39-18c2-40e9-9d3e-5748c3a7d59f",
+            "title": "团建",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": []
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-e/find_existing_schedule.json"
+    },
+    {
+      "case": "find_existing_todo",
+      "input": "把提交清单待办改名为整理清单，原有提醒和日程不变。",
+      "status": "passed",
+      "source_batch": "e",
+      "input_versions": [
+        13
+      ],
+      "elapsed_seconds": 97.11,
+      "max_input_characters": 54756,
+      "outcome": "answer",
+      "answer": "改好了，名称已经换成「整理清单」，提醒保持原样没动。",
+      "question": null,
+      "local_run_id": "ee689b13-6ee8-47e4-b5d8-0c19d7ff4e9a",
+      "workflow_execution_ids": [
+        "c2b69f98-97d8-4492-a894-40d9d4a04237",
+        "2bdbada4-68a0-48f0-97f8-884239823079",
+        "3cb9c679-058e-4142-9317-4911148e0074",
+        "5f8b8ddc-ac81-4c6b-9792-7aa66fea2a85",
+        "1642abd0-27ab-4d3c-869d-0d5ba9c83822",
+        "3fc6d3d0-b835-47e6-85ba-8da7ab28fcd7",
+        "6030f0ff-a14c-4818-b78b-a17dc1329161",
+        "4edf48aa-9e29-4869-93c2-32561ad1c644",
+        "d0ffc138-3cd5-4a28-b0d0-79cf32dfb104"
+      ],
+      "decisions": [
+        {
+          "decision": "search",
+          "search_query": "按标题搜索待办或事项列表"
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "list_todos",
+            "path_parameters": {},
+            "query_parameters": {
+              "query": "提交清单"
+            },
+            "headers": {},
+            "summary": "先查找“提交清单”这条待办，确认唯一对应的记录"
+          }
+        },
+        {
+          "decision": "search",
+          "search_query": "查询事项列表及版本 matter_id version"
+        },
+        {
+          "decision": "search",
+          "search_query": "修改已有待办标题 编辑草稿 PATCH 待办"
+        },
+        {
+          "decision": "search",
+          "search_query": "查询待办所属事项或事项列表"
+        },
+        {
+          "decision": "search",
+          "search_query": "待办详情及所属事项"
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_todo",
+            "path_parameters": {
+              "todo_id": {
+                "$result": "/items",
+                "where": {
+                  "title": "提交清单"
+                },
+                "field": "todo_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先读取“提交清单”这条待办的当前内容和所属事项版本，为改名做准备。"
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "update_todo",
+            "path_parameters": {
+              "todo_id": {
+                "$result": "/todo/todo_id",
+                "step": 6
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-8e2ba6e0-f065-4793-9b10-854e1c08c353-7",
+              "expected_matter_version": {
+                "$result": "/matter/version",
+                "step": 6
+              },
+              "title": "整理清单"
+            },
+            "summary": "把这条待办的名称改为「整理清单」，保留原有提醒和日程不变。"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "改好了，名称已经换成「整理清单」，提醒保持原样没动。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "待办已更新",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/todo/title"
+                      }
+                    },
+                    {
+                      "label": "提醒",
+                      "value": {
+                        "$result": "/todo/reminder_at"
+                      },
+                      "format": "datetime"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "2a5f4c6a-8a15-408b-8266-9460856f8249",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "59f59b53-5046-4629-a33a-e3d2321df09b",
+            "matter_id": "2a5f4c6a-8a15-408b-8266-9460856f8249",
+            "title": "提交清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "87e39f6d-0e3b-4df7-9a4e-f1664fd40599",
+            "matter_id": "2a5f4c6a-8a15-408b-8266-9460856f8249",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "181572b4-a14f-4d49-8133-c05822a2c7f8",
+            "matter_id": "2a5f4c6a-8a15-408b-8266-9460856f8249",
+            "todo_id": "59f59b53-5046-4629-a33a-e3d2321df09b",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          }
+        ]
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "2a5f4c6a-8a15-408b-8266-9460856f8249",
+            "title": "项目评审",
+            "version": 3,
+            "status": "active"
+          }
+        ],
+        "todos": [
+          {
+            "todo_id": "59f59b53-5046-4629-a33a-e3d2321df09b",
+            "matter_id": "2a5f4c6a-8a15-408b-8266-9460856f8249",
+            "title": "整理清单",
+            "status": "open",
+            "due_at": null,
+            "reminder_at": "2030-06-30 01:00:00"
+          }
+        ],
+        "schedules": [
+          {
+            "schedule_id": "87e39f6d-0e3b-4df7-9a4e-f1664fd40599",
+            "matter_id": "2a5f4c6a-8a15-408b-8266-9460856f8249",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "181572b4-a14f-4d49-8133-c05822a2c7f8",
+            "matter_id": "2a5f4c6a-8a15-408b-8266-9460856f8249",
+            "todo_id": "59f59b53-5046-4629-a33a-e3d2321df09b",
+            "schedule_id": null,
+            "trigger_at": "2030-06-30 01:00:00",
+            "schedule_offset_seconds": null,
+            "status": "pending"
+          }
+        ]
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-e/find_existing_todo.json"
+    },
+    {
+      "case": "schedule_relative_alert",
+      "input": "新增2030年10月2日下午3点的电话沟通日程，开始前30分钟提醒，只加日程，不添加待办。",
+      "status": "passed",
+      "source_batch": "h",
+      "input_versions": [
+        15
+      ],
+      "elapsed_seconds": 47.51,
+      "max_input_characters": 58777,
+      "outcome": "answer",
+      "answer": "加好了，2030年10月2日下午3点的电话沟通已经排进日程，开始前30分钟会提醒你，这次只加了日程，没有添待办。",
+      "question": null,
+      "local_run_id": "388e0d9c-cde9-49fa-90fd-b1aa62f881a4",
+      "workflow_execution_ids": [
+        "0018357b-681e-47f4-8e65-70027b82aa86",
+        "550d764c-9040-45c2-ab19-8e3d33f89573"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "create_schedule",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "title": "电话沟通",
+              "starts_at": "2030-10-02T15:00:00+08:00",
+              "reminder_offset_seconds": -1800,
+              "idempotency_key": "api-call-237f661f-ad8c-43e9-b072-a29a8527c6c4-0"
+            },
+            "summary": "新增2030年10月2日下午3点的电话沟通日程，开始前30分钟提醒，不添加待办。"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "加好了，2030年10月2日下午3点的电话沟通已经排进日程，开始前30分钟会提醒你，这次只加了日程，没有添待办。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "日程已添加",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "开始时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    },
+                    {
+                      "label": "提醒时间",
+                      "value": {
+                        "$result": "/reminders/0/trigger_at"
+                      },
+                      "format": "datetime"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [],
+        "todos": [],
+        "schedules": [],
+        "reminders": []
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "ca25b715-2a04-4f53-99ad-e732dc28bc97",
+            "title": "电话沟通",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "61ab7de5-c74c-42d6-b902-c578a745175f",
+            "matter_id": "ca25b715-2a04-4f53-99ad-e732dc28bc97",
+            "title": "电话沟通",
+            "status": "scheduled",
+            "starts_at": "2030-10-02 07:00:00",
+            "location": null,
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "e98b1500-de65-4afa-99ca-adb7fe7240fc",
+            "matter_id": "ca25b715-2a04-4f53-99ad-e732dc28bc97",
+            "todo_id": null,
+            "schedule_id": "61ab7de5-c74c-42d6-b902-c578a745175f",
+            "trigger_at": "2030-10-02 06:30:00",
+            "schedule_offset_seconds": -1800,
+            "status": "pending"
+          }
+        ]
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-h/schedule_relative_alert.json"
+    },
+    {
+      "case": "move_own_alert",
+      "input": "把当前事项2030年7月1日下午3点的项目评审日程改到当天17点，保留开始前30分钟的提醒。",
+      "status": "passed",
+      "source_batch": "h",
+      "input_versions": [
+        15
+      ],
+      "elapsed_seconds": 32.36,
+      "max_input_characters": 57267,
+      "outcome": "answer",
+      "answer": "改好了，项目评审已经挪到当天17:00，开始前30分钟的提醒也保留着。",
+      "question": null,
+      "local_run_id": "5d121ea5-2dc4-4439-87b6-bfaf352f67de",
+      "workflow_execution_ids": [
+        "2e1528d0-1ead-4f63-a3d4-657e9357d5e8",
+        "8f70ad66-21d9-48ee-82f1-3618dfee07de",
+        "e9c78000-ab3a-43cb-9d5e-e8aae64ed341"
+      ],
+      "decisions": [
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "get_matter_api_v1_matters__matter_id__get",
+            "path_parameters": {
+              "matter_id": "fdefed36-9d6c-4436-95f1-c80e6cd69ca9"
+            },
+            "query_parameters": {},
+            "headers": {},
+            "summary": "先读取这个事项，确认要改的项目评审日程和当前版本号。",
+            "body": null
+          }
+        },
+        {
+          "decision": "call",
+          "call": {
+            "operation_id": "update_schedule",
+            "path_parameters": {
+              "schedule_id": {
+                "$result": "/schedules",
+                "where": {
+                  "title": "项目评审",
+                  "starts_at": "2030-07-01T15:00:00+08:00"
+                },
+                "field": "schedule_id"
+              }
+            },
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "idempotency_key": "api-call-72683cfd-d223-480e-b9f9-1f5c237af63b-1",
+              "expected_matter_version": {
+                "$result": "/version"
+              },
+              "starts_at": "2030-07-01T17:00:00+08:00",
+              "reminder_offset_seconds": -1800
+            },
+            "summary": "把“项目评审”日程改到2030年7月1日17:00，并保留提前30分钟提醒。"
+          }
+        },
+        {
+          "decision": "answer",
+          "answer": "改好了，项目评审已经挪到当天17:00，开始前30分钟的提醒也保留着。",
+          "cards": [
+            {
+              "kind": "result",
+              "title": "日程已改到17:00",
+              "blocks": [
+                {
+                  "type": "fields",
+                  "items": [
+                    {
+                      "label": "名称",
+                      "value": {
+                        "$result": "/schedule/title"
+                      }
+                    },
+                    {
+                      "label": "开始时间",
+                      "value": {
+                        "$result": "/schedule/starts_at"
+                      },
+                      "format": "datetime"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "database_assertions_passed": true,
+      "before": {
+        "matters": [
+          {
+            "matter_id": "fdefed36-9d6c-4436-95f1-c80e6cd69ca9",
+            "title": "项目评审",
+            "version": 1,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "13bd59e4-1449-410e-bcc5-c2eec2c7a082",
+            "matter_id": "fdefed36-9d6c-4436-95f1-c80e6cd69ca9",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 07:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "dfb48c9e-ab94-4a25-b0ee-7d0d2c5f96c3",
+            "matter_id": "fdefed36-9d6c-4436-95f1-c80e6cd69ca9",
+            "todo_id": null,
+            "schedule_id": "13bd59e4-1449-410e-bcc5-c2eec2c7a082",
+            "trigger_at": "2030-07-01 06:30:00",
+            "schedule_offset_seconds": -1800,
+            "status": "pending"
+          }
+        ]
+      },
+      "after": {
+        "matters": [
+          {
+            "matter_id": "fdefed36-9d6c-4436-95f1-c80e6cd69ca9",
+            "title": "项目评审",
+            "version": 2,
+            "status": "active"
+          }
+        ],
+        "todos": [],
+        "schedules": [
+          {
+            "schedule_id": "13bd59e4-1449-410e-bcc5-c2eec2c7a082",
+            "matter_id": "fdefed36-9d6c-4436-95f1-c80e6cd69ca9",
+            "title": "项目评审",
+            "status": "scheduled",
+            "starts_at": "2030-07-01 09:00:00",
+            "location": "会议室B",
+            "deleted_at": null
+          }
+        ],
+        "reminders": [
+          {
+            "reminder_id": "dfb48c9e-ab94-4a25-b0ee-7d0d2c5f96c3",
+            "matter_id": "fdefed36-9d6c-4436-95f1-c80e6cd69ca9",
+            "todo_id": null,
+            "schedule_id": "13bd59e4-1449-410e-bcc5-c2eec2c7a082",
+            "trigger_at": "2030-07-01 08:30:00",
+            "schedule_offset_seconds": -1800,
+            "status": "pending"
+          }
+        ]
+      },
+      "raw_evidence": "/private/tmp/assistant-record-ai-20261103-h/move_own_alert.json"
+    }
+  ]
+}

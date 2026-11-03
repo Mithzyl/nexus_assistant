@@ -21,44 +21,62 @@ async def stop_plans(db, user, matter_id):
         ids.append(plan.plan_id)
     return ids
 
-async def revision_draft(db, runtime, settings, user, run, parsed, text):
+async def revision_draft(db, runtime, settings, user, run, parsed, text, *, origin_key=None, allow_create=False):
+    """Prepare a server-measured day edit for both the legacy planner and public business command."""
     from assistant_api.services import matters
+    from assistant_api.commute.services.plans import get_plan
+    from assistant_api.services.commute_day_commands import day_schedule
     target = await matters._get_matter(db, user, parsed['matter_id'])
-    plans = await active_plans(db, user, target.matter_id)
-    if len(plans) != 1:
-        raise InvalidRequestError('commute_plan_ambiguous', '该事项没有唯一有效通勤计划，请先明确计划。')
-    plan = plans[0]
     request = parsed['commute_update']
+    if request.get('plan_id'):
+        plan = await get_plan(db, user.user_id, request['plan_id'])
+        if plan.matter_id != target.matter_id or not plan.enabled:
+            raise ConflictError('commute_inactive', '该通勤计划已停止。')
+    else:
+        plans = await active_plans(db, user, target.matter_id)
+        if len(plans) != 1:
+            raise InvalidRequestError('commute_plan_ambiguous', '请明确要修改的通勤计划。')
+        plan = plans[0]
     day = date.fromisoformat(request['service_date'])
+    now = matters._as_utc(runtime.now())
     arrival = datetime.fromisoformat(f"{day}T{request['arrival_local_time']}:00").replace(tzinfo=ZoneInfo(plan.timezone))
-    if arrival <= datetime.now(UTC):
-        raise InvalidRequestError('arrival_passed', '目标到达时间已过去。')
-    rows = list(await db.scalars(select(ScheduleEvent).where(
-        ScheduleEvent.user_id == user.user_id, ScheduleEvent.matter_id == target.matter_id,
-        ScheduleEvent.deleted_at.is_(None), ScheduleEvent.status == 'scheduled')))
-    matches = [r for r in rows if matters._as_utc(r.starts_at).astimezone(ZoneInfo(plan.timezone)).date() == day]
-    if len(matches) != 1:
-        raise InvalidRequestError('commute_schedule_ambiguous', '目标日期没有唯一通勤日程，请先明确安排。')
-    schedule = matches[0]
-    draft = MatterDraft(user_id=user.user_id, matter_id=target.matter_id, ai_run_id=run.local_run_id,
+    if arrival <= now:
+        raise ConflictError('arrival_passed', '这个到达时间已过，请指定要修改的日期和时间。')
+    if (plan.effective_from and day < plan.effective_from) or day.isoweekday() not in plan.weekdays_json:
+        raise ConflictError('commute_date_ineligible', '该日期不在通勤计划的生效范围内。')
+    schedule = await day_schedule(db, user, plan, day)
+    if schedule is None and not allow_create:
+        raise InvalidRequestError('commute_schedule_ambiguous', '目标日期没有通勤日程，请先读取当天安排。')
+    basis = schedule or await db.get(ScheduleEvent, plan.first_schedule_id)
+    if not basis or basis.user_id != user.user_id:
+        raise ConflictError('commute_basis_missing', '通勤计划缺少原地点依据。')
+    draft = MatterDraft(user_id=user.user_id, matter_id=target.matter_id,
+        ai_run_id=run.local_run_id if run else None, origin_key=origin_key,
         kind='update', status='preview', version=1, base_matter_version=target.version,
-        base_schedule_id=schedule.schedule_id, base_schedule_updated_at=schedule.updated_at,
+        base_schedule_id=schedule.schedule_id if schedule else None,
+        base_schedule_updated_at=schedule.updated_at if schedule else None,
         payload_json={'kind':'update','matter_id':target.matter_id,'title':target.title,
             'goal':target.goal,'source_text':text,'changes_note':text,'schedule':None,
-            'todos':parsed['todos'],'complete_todo_ids':[], 'matter_action':'none',
-            'commute_revision':{'status':'measuring','plan_id':plan.plan_id,'plan_revision':plan.revision}})
+            'todos':parsed.get('todos',[]),'complete_todo_ids':[], 'matter_action':'none',
+            'commute_revision':{'status':'measuring','plan_id':plan.plan_id,'plan_revision':plan.revision,
+                'service_date':str(day),'arrival_local_time':request['arrival_local_time'],
+                'set_override':request.get('set_override',True),'new_day':schedule is None}})
     draft.payload_json = schedule_routes._jsonable(draft.payload_json)
     db.add(draft); await db.commit()
     route = await commute_estimate.estimate(runtime, origin=(plan.origin_latitude,plan.origin_longitude),
         destination=(plan.destination_latitude,plan.destination_longitude), mode=plan.transport_mode,
         depart_at=arrival-timedelta(hours=1), arrive_by=arrival,
-        origin_city=schedule.location_city, destination_city=schedule.location_city,
-        origin_coordinate_system='gcj02',destination_coordinate_system='gcj02', schedule_id=schedule.schedule_id)
+        origin_city=basis.location_city, destination_city=basis.location_city,
+        origin_coordinate_system='gcj02',destination_coordinate_system='gcj02',
+        schedule_id=schedule.schedule_id if schedule else None)
     if route['status'] != 'available':
-        draft.payload_json={**draft.payload_json,'commute_revision':{**draft.payload_json['commute_revision'],'status':'failed','route':schedule_routes._jsonable(route)}}
-        await db.commit(); return draft
+        draft.payload_json={**draft.payload_json,'commute_revision':{**draft.payload_json['commute_revision'],'status':'failed'}}
+        await db.commit()
+        raise ConflictError('commute_route_unavailable', '这次未取得通勤测算结果，请稍后再试。')
     end=arrival-timedelta(minutes=plan.buffer_minutes);start=end-timedelta(seconds=route['duration_seconds'])
-    proposed={k:v for k,v in matters._serialize_schedule(schedule).items() if k in ['schedule_id','title','location','latitude','longitude','coordinate_system','location_city','location_address','location_source','location_external_id']}
+    proposed={k:v for k,v in matters._serialize_schedule(basis).items() if k in ['title','location','latitude','longitude','coordinate_system','location_city','location_address','location_source','location_external_id']}
+    if schedule: proposed['schedule_id']=schedule.schedule_id
+    else: proposed['title']=plan.name
     proposed.update(starts_at=start.isoformat(),ends_at=end.isoformat())
     revision={**draft.payload_json['commute_revision'],'status':'ready','route':schedule_routes._jsonable(route),
         'schedule':proposed,'target_arrival_at':arrival.isoformat(),'buffer_minutes':plan.buffer_minutes,
@@ -66,7 +84,7 @@ async def revision_draft(db, runtime, settings, user, run, parsed, text):
     payload={**draft.payload_json,'schedule':proposed,'commute_revision':revision}
     payload['action_plan']=matters._build_action_plan(payload)
     draft.payload_json=schedule_routes._jsonable(payload)
-    draft.conflict_json=schedule_routes._jsonable(await matters._conflict_for_payload(db,runtime,user,payload,settings=settings,timezone=plan.timezone,exclude_schedule_id=schedule.schedule_id))
+    draft.conflict_json=schedule_routes._jsonable(await matters._conflict_for_payload(db,runtime,user,payload,settings=settings,timezone=plan.timezone,exclude_schedule_id=schedule.schedule_id if schedule else None))
     await db.commit();return draft
 
 async def validate_revision(db,user,payload):
@@ -84,7 +102,7 @@ async def validate_revision(db,user,payload):
         if a!=b:raise ConflictError('route_quote_mismatch','日程条件与核实路线不一致。')
 
 async def generate_day(db, runtime, user, plan_id, service_date):
-    """Materialize one explicitly targeted day, using the existing unique instance."""
+    """Materialize one targeted day with its effective override, reusing the unique daily instance."""
     from sqlalchemy import update
     from assistant_api.models import Matter, CommuteInstance
     from assistant_api.commute.services.plans import get_plan
@@ -127,7 +145,7 @@ async def generate_day(db, runtime, user, plan_id, service_date):
     claim=await db.execute(update(CommuteInstance).where(CommuteInstance.instance_id==instance.instance_id,CommuteInstance.status=='active').values(status='materializing'))
     if claim.rowcount!=1:raise ConflictError('commute_generation_pending','已有生成任务或未知结果，请先核查原实例。')
     await db.commit()
-    arrival=datetime.fromisoformat(f'{service_date}T{plan.arrival_local_time}:00').replace(tzinfo=zone)
+    arrival=instance.target_arrival_at.replace(tzinfo=UTC) if instance.target_arrival_at.tzinfo is None else instance.target_arrival_at
     route=await commute_estimate.estimate(runtime,origin=(plan.origin_latitude,plan.origin_longitude),destination=(plan.destination_latitude,plan.destination_longitude),mode=plan.transport_mode,depart_at=arrival-timedelta(hours=1),arrive_by=arrival,origin_city=first.location_city,destination_city=first.location_city,origin_coordinate_system='gcj02',destination_coordinate_system='gcj02')
     # Recheck lifecycle after the upstream call before creating any formal record.
     await db.refresh(plan);await db.refresh(matter)
@@ -145,3 +163,46 @@ async def generate_day(db, runtime, user, plan_id, service_date):
     await schedule_routes.save_for_schedule(db,user,schedule_id=row.schedule_id,result=route,commit=False)
     instance.status='active';await db.commit()
     return {'schedule_id':row.schedule_id,'instance_id':instance.instance_id,'service_date':str(service_date),'replayed':False,'route':schedule_routes._jsonable(route)}
+
+
+async def materialize_follow_up_rules(app, *, now):
+    """Publish evening-22:00 and morning refreshes through existing durable follow-up scheduling."""
+    from assistant_api.services.follow_ups import aware, create_rule
+    from assistant_api.services.api_operations import OperationCatalog
+    from assistant_api.models import FollowUp, User, Matter
+    from assistant_api.schemas.follow_ups import FollowUpCreate
+    if not app.state.settings.commute_auto_ai_enabled:
+        return 0
+    catalog=OperationCatalog(app)
+    read=next(op for op in catalog.operations.values() if op.operation_id=='get_commute_day')
+    created=0
+    async with app.state.session_factory() as db:
+        plans=list(await db.scalars(select(CommutePlan).where(CommutePlan.enabled.is_(True))))
+        for plan in plans:
+            zone=ZoneInfo(plan.timezone);local=aware(now).astimezone(zone)
+            matter=await db.get(Matter,plan.matter_id) if plan.matter_id else None
+            if matter is None:
+                matter=Matter(user_id=plan.user_id,title=plan.name,goal='按已保存的通勤计划安排出行')
+                db.add(matter);await db.flush();plan.matter_id=matter.matter_id;await db.commit()
+            if matter.deleted_at or matter.status not in ('active','waiting'):
+                continue
+            for day in (local.date(),local.date()+timedelta(days=1)):
+                if day.isoweekday() not in plan.weekdays_json or (plan.effective_from and day<plan.effective_from):
+                    continue
+                from assistant_api.commute.services.scheduling import get_instance
+                instance=await get_instance(db,plan_id=plan.plan_id,local_service_date=day)
+                clock=instance.arrival_local_time_override if instance and instance.arrival_local_time_override else plan.arrival_local_time
+                arrival=datetime.combine(day,datetime.strptime(clock,'%H:%M').time(),zone)
+                if arrival<=local: continue
+                phases=[('morning',datetime.combine(day,datetime.strptime(plan.check_local_time,'%H:%M').time(),zone))]
+                if local.date()<day:
+                    phases.append(('evening',datetime.combine(day-timedelta(days=1),datetime.strptime('22:00','%H:%M').time(),zone)))
+                for phase,at in phases:
+                    key=f'commute:{plan.plan_id}:{day.isoformat()}:'+('evening:' if phase=='evening' else '')+f'v{plan.revision}'
+                    if await db.scalar(select(FollowUp.follow_up_id).where(FollowUp.user_id==plan.user_id,FollowUp.idempotency_key==key)):
+                        continue
+                    instruction=f'更新{day.isoformat()}的通勤出行安排。先读取该日期get_commute_day，若status=past或inactive则安静结束，不改历史。否则调用refresh_commute_day立即重测并保存同一天安排，返回真实出发时间和结果卡片。只更新所指日期，不修改长期配置。计划ID：{plan.plan_id}。'
+                    payload=FollowUpCreate.model_validate({'idempotency_key':key,'matter_id':matter.matter_id,'title':plan.name+('次日出行安排' if phase=='evening' else '出行更新'),'instruction':instruction,'execution_mode':'execute','references':[{'name':'commute_day','operation_id':read.operation_id,'path_parameters':{'plan_id':plan.plan_id},'body':{'service_date':str(day)}}],'trigger':{'kind':'time','at':at.astimezone(UTC).isoformat()},'stop_when':[{'reference':'commute_day','field':'/revision','operator':'ne','value':plan.revision},{'reference':'commute_day','field':'/status','value':'past'},{'reference':'commute_day','field':'/status','value':'inactive'}]})
+                    await create_rule(app,db,await db.get(User,plan.user_id),payload)
+                    created+=1
+    return created
