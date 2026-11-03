@@ -26,6 +26,7 @@ from assistant_api.core.errors import InvalidRequestError, NotFoundError
 from assistant_api.models import ScheduleEvent, NexusRun
 from assistant_api.services.intake_failures import public_failure
 from assistant_api.services import run_service
+from assistant_api.services import operation_intake
 from assistant_api.services import commute_estimate, commute_places, matters, schedule_routes, commute_bundle
 
 router = APIRouter(prefix="/api/v1", tags=["matters"])
@@ -40,6 +41,7 @@ def _intake_response(
     result: dict,
     response: Response,
 ) -> dict:
+    """Map a durable intake result to the existing public HTTP envelope."""
     outcome = result["outcome"]
     if outcome in ("answer", "needs_clarification"):
         response.status_code = 200
@@ -62,9 +64,9 @@ def _intake_response(
         "intent": result.get("intent", "matter"),
         "outcome": outcome,
         "message": (
-            "这句话更像问题或闲聊，已直接回答，不会创建事项。"
+            "已取得本次处理结果。"
             if outcome == "answer"
-            else "还需要补充信息后才能形成待确认安排。"
+            else "还有一点信息需要你补充。"
             if outcome == "needs_clarification"
             else None
         ),
@@ -101,6 +103,7 @@ async def get_intake_result(
 async def intake_stream(request: Request, payload: schemas.IntakeRequest,
                         client: NexusClient, settings: SettingsDependency,
                         runtime: CommuteRuntimeDependency, user: CurrentUser):
+    """Stream only public answer text while the local API planning flow runs."""
     import asyncio
     import json
     from fastapi.responses import StreamingResponse
@@ -116,11 +119,11 @@ async def intake_stream(request: Request, payload: schemas.IntakeRequest,
             previous = text
             queue.put_nowait(("answer", {"text": text}))
     async def execute():
+        """Persist API planning and send its public result independently of browser disconnects."""
         token = sink.set(observe)
         try:
             async with request.app.state.session_factory() as db:
-                result = await matters.intake(db, client, settings,
-                    request.app.state.session_factory, runtime, user=user,
+                result = await operation_intake.intake(request, db, user,
                     text=payload.text, idempotency_key=payload.idempotency_key,
                     continuation_run_id=payload.continuation_run_id,
                     memory_disclosures=[item.model_dump() for item in payload.memory_disclosures])
@@ -177,13 +180,9 @@ async def intake(
     user: CurrentUser,
     response: Response,
 ) -> dict:
-    result = await matters.intake(
-        db,
-        client,
-        settings,
-        request.app.state.session_factory,
-        runtime,
-        user=user,
+    """Plan API calls from permitted messages and published interface descriptions."""
+    result = await operation_intake.intake(
+        request, db, user,
         text=payload.text,
         idempotency_key=payload.idempotency_key,
         continuation_run_id=payload.continuation_run_id,
@@ -208,13 +207,9 @@ async def intake_for_matter(
     user: CurrentUser,
     response: Response,
 ) -> dict:
-    result = await matters.intake(
-        db,
-        client,
-        settings,
-        request.app.state.session_factory,
-        runtime,
-        user=user,
+    """Use the user-selected matter reference in the same generic API flow."""
+    result = await operation_intake.intake(
+        request, db, user,
         text=payload.text,
         idempotency_key=payload.idempotency_key,
         matter_id=matter_id,
@@ -228,6 +223,7 @@ async def intake_for_matter(
     "/matters/{matter_id}/drafts",
     response_model=schemas.DraftRead,
     status_code=201,
+    openapi_extra={'x-assistant': {'effect': 'preview'}},
 )
 async def create_edit_draft(
     matter_id: str,
@@ -305,7 +301,9 @@ async def apply_option(
     )
 
 
-@router.patch("/matters/drafts/{draft_id}", response_model=schemas.DraftRead)
+@router.patch("/matters/drafts/{draft_id}", response_model=schemas.DraftRead,
+              summary="修改编辑草稿字段并保留原日程或待办标识",
+              openapi_extra={'x-assistant': {'effect': 'preview'}})
 async def patch_draft(
     draft_id: str,
     payload: schemas.DraftPatchRequest,
@@ -314,6 +312,7 @@ async def patch_draft(
     runtime: CommuteRuntimeDependency,
     user: CurrentUser,
 ) -> dict:
+    """Update preview fields while retaining the draft's original business-record target."""
     return await matters.patch_draft(db, runtime, settings, user, draft_id, payload)
 
 
@@ -403,10 +402,12 @@ async def create_matter(
     return await matters.create_matter(db, user, payload)
 
 
-@router.get("/matters/{matter_id}", response_model=schemas.MatterDetailRead)
+@router.get("/matters/{matter_id}", response_model=schemas.MatterDetailRead,
+            summary="查询应用内事项详情及所属日程、待办和提醒")
 async def get_matter(
     matter_id: str, db: DatabaseSession, user: CurrentUser
 ) -> dict:
+    """Read an owned app matter and its schedules, todos and reminders by the historical matter ID."""
     return await matters.get_matter_detail(db, user, matter_id)
 
 

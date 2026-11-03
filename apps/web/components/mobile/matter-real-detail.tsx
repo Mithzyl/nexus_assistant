@@ -7,6 +7,7 @@ import { Check, Circle, Pencil, RefreshCw, Trash2, Undo2 } from "lucide-react";
 import type {
   DraftConfirmResponse,
   IntakePendingContext,
+  MatterIntakeResponse,
   MatterChange,
   MatterDetail,
   MatterReminder,
@@ -45,6 +46,7 @@ import {
 import { dateTimeLabel } from "@/lib/mobile/work-plan";
 import { useAuth, useUI } from "./providers";
 import { MatterDraftSheet } from "./matter-draft-sheet";
+import { ApiOperationCard } from "./api-operation-card";
 import { RouteTextCard } from "./route-text-card";
 import { RoutePlannerSheet } from "./route-planner-sheet";
 import { RouteMapSheet } from "./route-map-sheet";
@@ -142,6 +144,7 @@ function TodoRow({
   );
 }
 
+/** Display real matter data and the results of API operations from progress input. */
 export function MatterRealDetail({ id }: { id: string }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -161,7 +164,7 @@ export function MatterRealDetail({ id }: { id: string }) {
     useState<IntakePendingContext>({});
   const [progressContinuationRunId, setProgressContinuationRunId] =
     useState<string | null>(null);
-  const [progressAnswer, setProgressAnswer] = useState<{ question: string; answer: string } | null>(null);
+  const [progressAnswer, setProgressAnswer] = useState<{ question: string; result: MatterIntakeResponse } | null>(null);
   const [editingDraft, setEditingDraft] = useState<Awaited<ReturnType<typeof intakeMatterProgress>>["draft"] | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveCancelSchedules, setArchiveCancelSchedules] = useState(true);
@@ -322,6 +325,7 @@ export function MatterRealDetail({ id }: { id: string }) {
     });
   };
 
+  /** Submit progress, retain missing-information prompts and refresh actual data after execution. */
   const startProgress = async (
     text: string,
     continuationOverride?: string | null,
@@ -352,12 +356,13 @@ export function MatterRealDetail({ id }: { id: string }) {
         progressOperation.current.key,
         activeContinuation,
       );
-      if (result.intent === "question" && result.answer) {
+      if (result.outcome === "answer" || ((result.outcome === "failed" || result.outcome === "unknown") && result.pending_context?.execution_result)) {
         setProgressOpen(false);
         setProgressContinuationRunId(null);
         setProgressPendingContext({});
         progressOperation.current = null;
-        setProgressAnswer({ question: text, answer: result.answer });
+        setProgressAnswer({ question: text, result });
+        if (result.pending_context?.execution_result) await load();
         return;
       }
       if (result.draft) {
@@ -870,16 +875,16 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ProgressSheet
         open={progressOpen}
         title={matter.title}
-        note="提交后由云端生成待确认草稿；确认前不会写正式进展或日程。"
+        note="直接说想补充或修改什么，助手会处理；信息不清楚时会再问你。"
         stayOpenOnSubmit
         busy={busy === "progress"}
         error={progressError}
-        choices={(progressPendingContext.schedule_candidates ?? []).map((candidate) => ({
+        choices={[...(progressPendingContext.choices ?? []).map((choice, index) => ({ id: `clarify-${index}`, title: choice, detail: "", onSelect: () => void startProgress(choice, progressContinuationRunId) })), ...(progressPendingContext.schedule_candidates ?? []).map((candidate) => ({
           id: candidate.schedule_id,
           title: candidate.title,
           detail: `${dateTimeLabel(candidate.starts_at)}${
             candidate.location ? ` · ${candidate.location}` : ""
-          } · 只用于继续整理，不会直接保存`,
+          }`,
           onSelect: () => {
             const runId = progressContinuationRunId;
             setProgressError(null);
@@ -891,7 +896,7 @@ export function MatterRealDetail({ id }: { id: string }) {
               runId,
             );
           },
-        }))}
+        }))]}
         submitLabel="交给助手整理"
         onClose={() => {
           setProgressOpen(false);
@@ -1017,12 +1022,10 @@ export function MatterRealDetail({ id }: { id: string }) {
             </p>
             <div className="card">
               <p className="body-text" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                {progressAnswer.answer}
+                {progressAnswer.result.answer || progressAnswer.result.clarify}
               </p>
             </div>
-            <p className="micro" style={{ margin: 0 }}>
-              云端在事项整理中直接返回了这份回答；没有再次发起普通问答，也没有创建草稿。
-            </p>
+            <ApiOperationCard context={progressAnswer.result.pending_context ?? {}} />
             <button
               type="button"
               className="btn btn--primary"

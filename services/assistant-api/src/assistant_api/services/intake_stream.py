@@ -6,8 +6,11 @@ from contextvars import ContextVar
 sink = ContextVar('intake_stream_sink', default=None)
 
 def answer_prefix(raw):
+    """Extract only public answer decisions, keeping call arguments out of the stream."""
     if re.search(r'"final_text"\s*:\s*"', raw):
         raw = string_prefix(raw, "final_text")
+    if re.search(r'"decision"\s*:\s*"answer"', raw):
+        return string_prefix(raw, 'answer')
     return question_prefix(raw)
 
 def question_prefix(raw):

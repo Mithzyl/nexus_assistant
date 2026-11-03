@@ -1,11 +1,118 @@
 # assistant-api
 
-Personal Assistant 的后端脚手架：本地用户与业务数据 + NexusPilot 应用客户端。
-**不含**模型适配器、Agent 循环、工具运行时、记忆存储——这些在 NexusPilot。
+Personal Assistant 后端负责用户身份、业务数据、业务接口执行及 NexusPilot 应用客户端。
+模型适配器、Nexus Agent 工作流和记忆存储仍在 NexusPilot；Assistant 的接口调用循环负责检索自身 OpenAPI、校验模型参数并执行业务接口。
 
 设计说明见 [`../../docs/backend-integration/`](../../docs/backend-integration/)。
 通勤提醒模块的架构、接口示例与 App 联调清单见
 [`../../docs/commute/`](../../docs/commute/)。
+
+## 当前问助手接口调用流程
+
+`POST /api/v1/matters/intake`、`/matters/intake/stream` 及
+`/matters/{matter_id}/intake` 使用同一流程：
+
+1. Assistant 从当前输入和本账号相关历史消息取信息，按关键词检索自身 OpenAPI。
+2. 现有 `matter_plan`（input version 8）提交所选接口、通用卡片 Schema 和调用要求给 Nexus。
+3. AI 返回一次 `call`、`search`、`ask_user`（兼容 `clarify`）或 `answer` 决策。
+4. Assistant 用接口 JSON Schema 校验参数，通过本进程 ASGI HTTP 调用已有路由；
+   当前会话身份、对象权限、版本和业务状态仍由原接口检查。
+5. 用户明确的操作要求就是执行授权，不另加“确认执行”按钮。需要草稿的接口连续执行
+   创建/修改/保存（包括原有名为 `confirm` 的保存接口）；缺少目标或参数时才询问用户。
+6. 必要执行状态及引用返回 AI；AI 给出简短友好的回答及声明式卡片。完整业务响应留在
+   Assistant 本地，解析引用、校验卡片后随 `pending_context.cards` 返回 Web。
+
+通用目录/执行器在 `services/api_operations.py`；状态保存和多步往返在
+`services/operation_intake.py`，卡片校验在 `services/response_cards.py`。目录来自运行中
+`app.openapi()`，不扫描源代码，也不在 `tool_service.TOOLS` 中重复注册。
+旧只读工具回调继续兼容已有 Nexus 工作流。
+
+新增业务接口只需发布 `/api/v1/` 下的标准 JSON 路由、唯一 `operationId`、参数类型及
+准确用途说明；重启应用后自动参与检索，无需增加工具注册或专用执行分支。
+仅准备草稿的接口可声明 `openapi_extra={"x-assistant": {"effect": "preview"}}`；
+禁止用于助手的接口声明 `{"x-assistant": {"enabled": false}}`。
+认证、记忆、同步、数据源、日历订阅及递归 AI 入口默认不进入目录。
+不支持让模型提供外部 URL、认证凭据、可执行代码、文件上传或二进制调用。
+
+隐私和结果限制：本流程不批量读取业务表作为模型上下文；历史最多从最近 30 次消息中
+选 5 次相关消息，接口每步最多选 5 个，调用循环最多 8 步。新账号没有历史时，依靠
+当前输入和接口说明；目标不唯一时询问用户，不能因旧日程已过而创建替代记录。
+查询响应正文留在本地，不作为后续 AI 输入；AI 不能概括未提供的业务正文。
+当前检索使用关键词、中文二字词及少量双语词汇，不是向量检索。
+回执提供 `result_shape`（字段路径、集合数量和元素字段名，不含业务值）。模型可在参数中写
+`{"$result":"/schedules","where":{"location":"用户已给出的地点"},"field":"schedule_id"}`，
+Assistant 在上一步成功响应中唯一匹配后取值，再按接口 Schema 校验。时间筛选比较等价的
+带时区 ISO 时刻；多条匹配、缺失字段和按数组位置选择多条记录均拒绝。
+`{"$result":"/payload/schedule","overrides":{"title":"新标题"}}` 可在本地复制原字段并替换
+明确指定的值，完整正文仍不提交给 AI。此解析对所有接口通用，不增加工具注册分支。
+
+执行前保存状态；每一步通过数据库条件更新认领，重复或并发提交同一请求不会重复分发。
+执行超时或连接中断按结果未知处理，不自动重试写入。进程退出后可以读取已保存结果，
+尚未实现对所有中断位置的自动续跑。记录使用已有 `NexusRun.context_json`，无需新增表。
+日志记录本地 Run、operationId、HTTP 状态；不记录令牌和业务正文。
+旧 `needs_confirmation` 历史只读展示为需补充信息，读取不会触发旧操作；
+`/matters/intake/{local_run_id}/confirm-operation` 已删除。
+原有手动编辑页面的保存功能继续使用其业务接口。
+
+### AI 回答与嵌入卡片协议
+
+模型最后返回一个 `answer` JSON。卡片内容支持 `text`、`fields`、`image`、`timeline` 四种
+通用块；最多 6 张卡片、每张 12 块、时间线 30 个节点。字段标签、标题、节点、图片均由
+AI 按本次 Schema 提供；新增日程、旅游等业务组合不用注册专用卡片。
+新增一种现有块无法表达的交互或展示能力，仍需扩展 Schema 和渲染器。
+
+```json
+{
+  "decision": "answer",
+  "answer": "改好了，名称已经换成团建。",
+  "cards": [{
+    "kind": "result",
+    "title": "本次操作已完成",
+    "blocks": [{
+      "type": "fields",
+      "items": [
+        {"label": "名称", "value": {"$result": "/schedule/title"}},
+        {"label": "时间", "value": {"$result": "/schedule/starts_at"}, "format": "datetime"},
+        {"label": "地点", "value": {"$result": "/schedule/location"}}
+      ]
+    }]
+  }]
+}
+```
+
+上述路径须来自实际上一接口的 `result_shape`，不是所有接口固定返回 `schedule`。
+Assistant 本地解析值后返回普通标量，并按真实回执生成 `status=completed/failed/unknown`。
+`result` 卡的字段值和图片地址必须引用真实响应；未保存建议用 `kind=plan`，状态固定为
+`suggestion`，不会显示成已执行。普通资料用 `kind=info`。
+
+行程卡使用 `timeline.items`：每项可带 `title`、`subtitle`、`time`、`category`、
+`description`、`image: {src, alt, caption?}`、`fields`、`link: {label, href}`。
+第二项起的 `connector` 表示从上一站到当前站的交通或衔接。
+真实集合可用 `{"$each":"/places","template":{"title":{"$item":"/name"}}}`
+替代 `items`，Assistant 本地逐条解析，不把集合正文发给模型。
+图片和普通链接只允许 HTTPS 或本站路径；不接收 HTML、JS、CSS 或写入按钮。
+卡片无效时记录 `api_card_invalid`，保留真实执行回执展示，不重复执行业务写入。
+信息不足的模型输出示例为
+`{"decision":"ask_user","question":"你想改上午还是下午那一条？","choices":["上午那条","下午那条"]}`。
+Web 可点选答案继续原请求，亦可自由输入，不把澄清变成确认操作。
+
+### 本次定向验证
+
+在服务目录执行：
+
+```bash
+.venv/bin/python -m pytest -q tests/test_response_cards.py
+.venv/bin/python -m pytest -q tests/test_api_operation_flow.py -k 'invalid_fields or existing_route_permissions or existing_schedule'
+```
+
+临时 SQLite、真实认证/业务路由及固定 Nexus 输出验证明确意图直接执行、重复/并发只写
+一次、参数拒绝、账号权限、版本冲突、保留原日程 ID、澄清以及通用卡片本地引用。
+这是本次修改的定向检查，不代表全部业务场景已回归。
+2026-11-02 另在隔离账号/数据库中通过真实 Nexus 生成了含两个节点与示意图片的行程卡，
+未调用业务接口；证据在 `/private/tmp/assistant-card-protocol-20261102/`。
+之前在 `localhost:3001/ask` 将原“开会”日程改名“团建”的真实验证保留在
+`/private/tmp/assistant-meeting-live-20261102/`，它发生在本轮删除额外确认之前。
+本轮未再次修改该日程。
 
 ## 本地运行
 
@@ -143,7 +250,7 @@ NexusPilot 应用 API 的服务，并断言 9 次上游调用里没有任何请�
 | DELETE | `/api/v1/commute/bark/binding` | 解绑当前账号 |
 | PATCH | `/api/v1/commute/bark` | 开启/关闭 Bark 自动提醒 |
 | POST | `/api/v1/commute/bark/test` | 显式单次测试发送 |
-| GET | `/internal/nexus/tools` | 可注册的业务工具清单（需回调令牌） |
+| GET | `/internal/nexus/tools` | 兼容旧工作流的只读工具清单（需回调令牌） |
 | POST | `/internal/nexus/tools` | NexusPilot 只读工具回调（当前扁平 envelope） |
 
 ## 边界

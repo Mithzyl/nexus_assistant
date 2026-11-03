@@ -835,7 +835,27 @@ export interface IntakeScheduleCandidate {
   location: string | null;
 }
 
+export interface ResponseImage { src: string; alt: string; caption?: string }
+export interface ResponseField { label: string; value: string | number | boolean | null; format?: "text" | "datetime" | "date" | "time" | "number" }
+export interface ResponseTimelineItem {
+  title: string; subtitle?: string; time?: string; description?: string; category?: string;
+  image?: ResponseImage; fields?: ResponseField[]; link?: { label: string; href: string }; connector?: string;
+}
+export type ResponseBlock =
+  | { type: "text"; text: string }
+  | { type: "fields"; items: ResponseField[] }
+  | ({ type: "image" } & ResponseImage)
+  | { type: "timeline"; items: ResponseTimelineItem[] };
+export interface EmbeddedCard {
+  kind: "result" | "plan" | "info"; title: string; subtitle?: string;
+  status: "completed" | "failed" | "unknown" | "suggestion" | "info";
+  blocks: ResponseBlock[];
+}
+
 export interface IntakePendingContext {
+  cards?: EmbeddedCard[];
+  choices?: string[];
+  execution_result?: { status: "succeeded" | "failed" | "unknown"; http_status: number; data: unknown } | null;
   missing_information?: string[];
   schedule_candidates?: IntakeScheduleCandidate[];
   pending?: Record<string, unknown>;

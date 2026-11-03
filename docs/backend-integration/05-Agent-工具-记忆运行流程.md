@@ -6,6 +6,19 @@
 > 生成这些字段，客户端不可见；这部分属于部署配置，不是 App 的 API。以下 profile
 > 章节保留为未来方案。
 
+## 当前 Assistant 业务调用方式（2026-11-02）
+
+问助手的业务调用现在由 Assistant 检索自己的 OpenAPI，现有 `matter_plan` 把所选接口和
+允许使用的消息发给 Nexus。AI 只返回下一步操作及 JSON 参数；Assistant 本地校验后调用
+现有业务路由。用户明确的操作意图即本次授权，信息不全才询问用户，不另设确认按钮。
+必要执行状态和引用交给 AI，AI 返回友好短答及通用嵌入卡片；真实字段由 Assistant
+本地解析、校验后返回，支持多节点行程与图片，无需按业务注册卡片。
+新增符合要求的业务接口无需加入 Python 工具字典。运行要求、发现范围、隐私规则和定向
+验证见 [`assistant-api README`](../../services/assistant-api/README.md#当前问助手接口调用流程)。
+
+下文 Agent Profile、注册工具和记忆章节包含早期 Nexus 侧方案，不能作为当前 Assistant
+业务调用实现说明；`/internal/nexus/tools` 保留给已有只读回调，不承担新增接口的注册。
+
 ## 1. Agent Profile：把"选模型"收回服务端（未实施方案）
 
 现状：`AgentWorkflowCreate`（`features/agent_runtime/schemas/agent_workflows.py:42`）要求 `role_bindings` 逐角色给出 `provider + model`，并且 `workflow_name`、`workflow_version`、`execution_profile` 三者有互斥校验。

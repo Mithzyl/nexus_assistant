@@ -17,8 +17,9 @@ import { isVisibleChat, useAskStore } from "@/components/mobile/ask-store";
 import { Markdown } from "@/components/mobile/markdown";
 import { useAuth, useUI } from "@/components/mobile/providers";
 import { LoadingCard, LoginRequired, ScreenHeader } from "@/components/mobile/ui";
-import { MemoryPicker, MemoryCandidates, type SelectedMemory } from "@/components/mobile/account-memory";
+import { MemoryCandidates, type SelectedMemory } from "@/components/mobile/account-memory";
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
+import { ApiOperationCard } from "@/components/mobile/api-operation-card";
 import type {
   IntakePendingContext,
   IntakeScheduleCandidate,
@@ -258,6 +259,7 @@ function StatusCard({
   );
 }
 
+/** Submit one intake flow and restore answers, clarification and execution receipts. */
 export default function AskPage() {
   const { state, user, renewing, renewMessage } = useAuth();
   const ask = useAskStore();
@@ -390,6 +392,7 @@ export default function AskPage() {
 
   const canSend = draft.trim().length > 0 && state === "signedIn" && !processing;
 
+  /** Submit current input once through the streaming intake and preserve missing-information prompts. */
   const send = async (
     text?: string,
     continuationOverride?: string | null,
@@ -626,7 +629,7 @@ export default function AskPage() {
           <div style={{ marginBottom: 16 }}>
             <LoginRequired
               title="登录后向助手提问"
-              body="登录账号后，问答与待确认草稿会同步到账号；暂存内容仍留在当前设备。"
+              body="登录账号后，问答与处理结果会同步到账号；暂存内容仍留在当前设备。"
             />
           </div>
         ) : null}
@@ -649,7 +652,7 @@ export default function AskPage() {
         ) : null}
       </section>
 
-      {state === "signedIn" ? <section style={{padding: "0 var(--m-gutter)", marginBottom: 16}}><MemoryCandidates refresh={memoryRefresh} /><MemoryPicker selected={selectedMemories} onChange={(items) => { setSelectedMemories(items); intakeKey.current = null; }} /></section> : null}
+      {state === "signedIn" ? <section style={{padding: "0 var(--m-gutter)", marginBottom: 16}}><MemoryCandidates refresh={memoryRefresh} /></section> : null}
 
       {pendingDrafts.length > 0 ? (
         <section style={{ padding: "0 var(--m-gutter)", marginBottom: 16 }}>
@@ -734,6 +737,8 @@ export default function AskPage() {
                   {answer ? <Markdown source={answer} /> : null}
                   {serverRunId && serverItem && item.status !== "pending" && item.status !== "running" ? <MemoryWriteReceipts runId={serverRunId} /> : null}
                   {clarify ? <p className="body-text" style={{ margin: 0 }}>{clarify}</p> : null}
+                  {outcome === "needs_clarification" && !hasContinuation && serverRunId && pendingContext?.choices?.length ? <div className="chip-row mt-8">{pendingContext.choices.map((choice) => <button type="button" className="chip" key={choice} disabled={processing} onClick={() => void send(choice, serverRunId)}>{choice}</button>)}</div> : null}
+                  {serverRunId && pendingContext ? <ApiOperationCard context={pendingContext} /> : null}
                   {pendingContext?.missing_information?.length ? (
                     <div className="chip-row mt-8">
                       {pendingContext.missing_information.map((item) => (
@@ -778,7 +783,7 @@ export default function AskPage() {
                         <span className="choice-card__detail">
                           {hasContinuation
                             ? "已继续处理，这条候选不能再次提交。"
-                            : "只用于继续生成待确认草稿，不会直接保存修改。"}
+                            : "选好目标后，助手会继续处理。"}
                         </span>
                       </span>
                     </button>
@@ -807,7 +812,7 @@ export default function AskPage() {
               直接说，交给助手整理
             </p>
             <p className="body-text muted mt-8">
-              助手会先给出回答或一份待确认草稿；你确认后才会更新正式日程与事项。
+              想问什么、想改什么，直接说就好。需要补充的信息，助手会再问你。
             </p>
             <div className="mt-12" style={{ display: "grid", gap: 8 }}>
               {SUGGESTIONS.map((suggestion) => (

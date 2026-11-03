@@ -1396,6 +1396,7 @@ def _resolved_outcome(run: NexusRun, resolution: dict, draft: MatterDraft | None
 async def get_intake_result(
     db: AsyncSession, user: User, local_run_id: str, *, client=None
 ) -> dict:
+    """Read legacy drafts or the durable API-operation history without executing calls."""
     run = await db.scalar(
         select(NexusRun).where(
             NexusRun.local_run_id == local_run_id,
@@ -1405,6 +1406,10 @@ async def get_intake_result(
     )
     if run is None:
         raise NotFoundError("intake_result_not_found", "统一输入结果不存在。")
+    if (run.context_json or {}).get('api_flow') or 'api_operations' in (run.context_json or {}):
+        from assistant_api.services.operation_intake import response_for
+        return {**response_for(run), 'request_text': (run.context_json or {}).get('text', ''),
+                'created_at': run.created_at, 'completed_at': run.completed_at}
     if client is not None and run.workflow_execution_id and run.status in {"unknown", "pending", "running"}:
         run = await run_service.refresh_run(db, client, user=user, row=run)
     draft = await _visible_intake_draft(db, user, run.local_run_id)
@@ -1480,12 +1485,14 @@ async def get_intake_result(
 async def list_intake_results(
     db: AsyncSession, user: User, *, limit: int = 20, client=None
 ) -> list[dict]:
+    """List user-facing turns, excluding internal model steps of the same operation."""
     runs = (
         await db.scalars(
             select(NexusRun)
             .where(
                 NexusRun.user_id == user.user_id,
                 NexusRun.purpose == matter_plan.PURPOSE,
+                NexusRun.context_json['api_internal'].as_boolean().is_not(True),
             )
             .order_by(NexusRun.created_at.desc())
             .limit(limit)

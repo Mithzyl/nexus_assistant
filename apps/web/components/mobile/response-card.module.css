@@ -1,0 +1,29 @@
+.stack { display: grid; gap: 16px; margin-top: 14px; min-width: 0; }
+.card { border: 1px solid var(--m-line); border-radius: 22px; padding: 20px; min-width: 0; overflow-wrap: anywhere; }
+.header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.header h3 { margin: 0; font-size: 17px; line-height: 1.5; font-weight: 650; }
+.badge { font-size: 11px; color: var(--m-fog); flex-shrink: 0; }
+.blocks { display: grid; gap: 16px; }
+.fields { margin: 0; display: grid; gap: 8px; font-size: 14px; line-height: 1.65; }
+.fields > div { display: grid; grid-template-columns: minmax(60px, auto) 1fr; gap: 12px; }
+.fields dt { color: var(--m-fog); }
+.fields dd { margin: 0; min-width: 0; }
+.text { margin: 0; white-space: pre-wrap; line-height: 1.8; }
+.muted { color: var(--m-fog); margin: 6px 0 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.figure { margin: 0; }
+.figure img { display: block; width: 100%; max-height: 360px; object-fit: cover; border-radius: 14px; }
+.figure figcaption { margin-top: 7px; color: var(--m-fog); font-size: 12px; }
+.timeline { list-style: none; padding: 0; margin: 0; display: grid; gap: 0; }
+.stop { border: 1px solid var(--m-line); border-radius: 18px; padding: 16px; }
+.stopHeading { display: flex; gap: 14px; align-items: flex-start; }
+.stopTitle { flex: 1; min-width: 0; }
+.stopTitle h4 { margin: 5px 0 0; font-size: 16px; line-height: 1.5; }
+.number { color: var(--m-fog); font-size: 13px; margin-right: 8px; }
+.category { color: var(--m-fog); font-size: 12px; }
+.thumbnail { margin: 0; width: 86px; flex-shrink: 0; }
+.thumbnail img { width: 86px; height: 86px; object-fit: cover; border-radius: 12px; display: block; }
+.imageFallback { background: var(--m-fog-soft); color: var(--m-fog); border-radius: 12px; padding: 12px; min-height: 70px; display: grid; place-content: center; font-size: 12px; }
+.time { margin: 12px 0 0; font-weight: 600; font-size: 14px; }
+.connector { margin: 0 0 0 26px; padding: 12px 0 12px 18px; border-left: 1px solid var(--m-line); color: var(--m-fog); font-size: 12px; }
+.link { display: inline-block; margin-top: 10px; color: var(--m-fog); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 420px) { .card { padding: 16px; } .thumbnail, .thumbnail img { width: 70px; } .thumbnail img { height: 76px; } .stop { padding: 13px; } }

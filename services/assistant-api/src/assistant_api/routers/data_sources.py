@@ -73,7 +73,8 @@ async def delete_data_source(
     await service.delete_source(db, user.user_id, source_id)
 
 
-@content_router.get("/content", response_model=ContentListResponse)
+@content_router.get("/content", response_model=ContentListResponse,
+                    summary="查询设备同步内容，不包含应用内事项日程")
 async def list_content(
     user: CurrentUser,
     db: DatabaseSession,
@@ -82,6 +83,7 @@ async def list_content(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0, le=10_000),
 ) -> ContentListResponse:
+    """Search uploaded device content; app-native matter schedules use the matter detail API."""
     return await service.list_content(
         db, user.user_id, kind=kind, query=query, limit=limit, offset=offset
     )
