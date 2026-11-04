@@ -6,7 +6,7 @@
 编写本提示词时 Web 工作目录为 /Users/mith/Desktop/superapp-next-worktrees/web，处于未检出分支的状态，存在大量未提交改动。执行时重新核对实际工作目录，不切换分支，不把所有现有差异都算成本次修改。
 
 本机 Assistant 后端原端口为 8010，前端原端口为 3001。以实际监听状态为准。
-新功能要求后端数据库已执行 0024_matter_supplements，且 API 与统一后台 worker 都加载了本次代码。只读核对实际接口清单和迁移状态；本提示词不授权修改配置、迁移数据库、重启服务、安装依赖或部署。
+新功能要求后端数据库已执行 0024_matter_supplements 和 0025_supplement_relations，且 API 与统一后台 worker 都加载了本次代码。0025 仅新增可空关系字段和查询索引，不猜测旧记录属于纠正还是回答。只读核对实际接口清单和迁移状态；本提示词不授权修改配置、迁移数据库、重启服务、安装依赖或部署。
 后端变更不代表本机正在运行的旧进程已经加载；后端不可用时如实报告，不切换到模拟服务。
 
 二、两个业务流程分别使用什么接口
@@ -48,9 +48,11 @@ POST /api/pa/matters/{matter_id}/supplements
 - text：必填，1 至 4000 个字符，不能全是空白。后端保存原始文字，不用 AI 摘要替换。
 - idempotency_key：必填，8 至 128 个字符。每次新的用户提交生成一个；同一次提交因网络失败重试时保持不变。
 - parent_text_id：可选，原文本编号。用户在某条 AI 建议或旧记录基础上补充、纠正时传入；它必须属于当前账号的同一事项。
+- relation_type：明确的关联动作，可选 correction（纠正）或 answer（回答）。填写时必须同时提供 parent_text_id。回答的目标必须是同一事项内 origin=assistant、purpose=question 的文本；纠正可以指向同一事项内的用户或 AI 文字。
+- 普通独立补充不传 parent_text_id 和 relation_type。旧客户端只传 parent_text_id 时仍可保存，但关系为空，不会被推断成纠正或回答。新版前端必须根据用户实际点击的操作明确传入 relation_type，不根据用户正文猜类型。
 
 成功返回 HTTP 201。重复提交相同请求标识和相同内容，也返回原记录和 HTTP 201，并设置 replayed=true。
-同一请求标识被用于不同内容、不同父文本或不同事项时，返回 HTTP 409，错误代码 idempotency_conflict。
+同一请求标识被用于不同内容、不同父文本、不同关系类型或不同事项时，返回 HTTP 409，错误代码 idempotency_conflict。相同内容从纠正切换为回答也是新的用户提交，需要新的请求标识。
 网络结果不确定时保留输入和原请求标识，不换新标识重复保存。只有用户开始一条新的补充时才生成新标识。
 
 保存响应中的主要字段：
@@ -68,14 +70,22 @@ POST /api/pa/matters/{matter_id}/supplements
 
 texts 每项字段：
 - text_id：独立文本编号。
+- supplement_id：这段文字所属的补充编号。读取原文或下一层关联时使用它，不把 text_id 当作 supplement_id。
 - origin：user 表示用户文字，assistant 表示 AI 生成文字。
-- purpose：original 原始输入；user_revision 用户追加或纠正；summary AI 摘要；suggestion AI 建议；question AI 追问。
+- purpose：original 原始输入；user_revision 用户关联补充（为兼容旧客户端保留这个值，纠正和回答都可能使用它）；summary AI 摘要；suggestion AI 建议；question AI 追问。纠正或回答的具体动作以 relation_type 为准，不能只看 purpose。
 - text：该段文字原文。
 - parent_text_id：所关联的原文本编号，可能为空。
+- relation_type：correction、answer 或 null。null 表示未明确关联类型，或该文字并非用户纠正/回答；它不改变 origin。
 - author_user_id：用户文字的实际作者；AI 文字为空。
 - source_run_id：生成 AI 文字的执行记录编号；用户原文通常为空。
 - accepted_at、accepted_by_user_id：用户采纳时间及账号；未采纳时为空。
 - created_at：该段文字的创建时间。
+- corrections、answers、untyped_relations：该原文直接关联的用户纠正、用户回答及未分类关联记录，按最新在前排列，每类最多返回五条。AI 生成的摘要或问题不会被混入用户回答列表。
+- correction_count、answer_count、untyped_relation_count：各类直接关联记录的实际总数，不受五条预览限制。
+- has_corrections、has_answers：是否存在明确的纠正或回答，由后端按实际记录计算。has_answers=true 只表示收到用户回答，不表示问题已经解决、答案正确或已经外部核实。
+- relations_truncated：预览是否未包含全部关联记录；true 时使用下文分页接口继续读取，不能把五条预览当作完整历史。
+
+上述三个关联数组中的每项保留 text_id、supplement_id、origin、purpose、relation_type、text、parent_text_id、作者、来源执行记录、采纳信息和创建时间，不递归嵌套下一层关联。要查询某个回答自身的后续纠正，使用该回答的 supplement_id 和 text_id 读取关联接口或所属补充详情。
 
 不要仅凭 AI 回复或 HTTP 请求已返回，就显示保存成功。只有取得 saved=true 的保存结果，才确认该次补充已经保存。
 后端同时将用户原文写入既有事项进展记录，kind=supplement。前端若同时读取旧进展和新补充列表，应按用途选择一个显示来源，避免将同一原文展示两遍；不要删除后端记录来消除重复显示。
@@ -91,6 +101,15 @@ GET /api/pa/matters/{matter_id}/supplements?limit=20
 limit 为 1 至 50，默认 20。继续读取更早记录时，传上一页最后一个 supplement_id 作为 before_id。
 例如 GET /api/pa/matters/{matter_id}/supplements?limit=20&before_id={supplement_id}。
 这里仅包含分页条件，不放补充正文或地址。
+
+读取某段原文的全部关联：
+GET /api/pa/matters/{matter_id}/supplements/{supplement_id}/texts/{text_id}/relations
+后端对应相同路径，将 /api/pa 替换为 /api/v1。
+relation_type 查询参数可选 correction、answer 或 related；related 仅表示历史或旧客户端未明确类型的用户关联文字。不传时返回三类用户关联记录，不返回由 AI 生成的关联内容。
+limit 为 1 至 50，默认 20；before_id 为上一页最后一段关联文字的 text_id，不能传补充编号。
+返回 text_id、relation_type、records、has_more、next_before_id。has_more=true 时，保持关系筛选不变，用 next_before_id 请求下一页。
+原文、分页位置和关联记录均必须属于当前账号的同一事项。其他原文的分页编号会返回 404。
+单条补充查询和补充列表中的 texts 都会包含关联预览及数量；查询不会生成模型请求。
 
 ai_status 的含义及处理方式：
 - queued：用户原文已保存，等待后台整理。
@@ -111,7 +130,7 @@ classification 是 AI 辅助分类：
 - unknown：尚未整理或无法判断。
 分类不表示说明已经由外部核实，也不能因此自动完成待办、创建日程或修改用户原文。
 
-六、采纳 AI 内容与用户修订
+六、采纳、纠正与回答分别处理
 
 采纳：
 POST /api/pa/matters/{matter_id}/supplements/{supplement_id}/texts/{text_id}/accept
@@ -121,13 +140,37 @@ JSON 请求体为 {}。
 origin 仍然是 assistant。不要把已采纳的 AI 文字显示成用户亲自输入的文字。
 采纳仅表示认可这段文本，不会执行其中可能提到的日程或待办操作。
 
-修订或纠正：
-不覆盖旧文本。重新调用保存补充接口，传入新的用户 text、新的 idempotency_key，以及被修订文本的 parent_text_id。
-新记录的 origin=user、purpose=user_revision，保留实际作者及原文本关联，并产生本条新补充的后台整理任务。
+纠正：
+不覆盖旧文本。重新调用保存补充接口，传入新的用户 text、新的 idempotency_key、被纠正文本的 parent_text_id，以及 relation_type="correction"。
+请求示例（编号替换为实际值）：
+{
+  "text": "用户实际输入的纠正内容",
+  "idempotency_key": "该次纠正的唯一请求标识",
+  "parent_text_id": "被纠正文本的实际text_id",
+  "relation_type": "correction"
+}
+新记录的 origin=user、purpose=user_revision、relation_type=correction，保留实际作者及原文本关联，并产生本条新补充的后台整理任务。
 已经保存的原文、旧 AI 建议、采纳记录均保留。不得通过本地替换文字制造后端已经更新的假象。
+原摘要已采纳后仍可被纠正；accepted_at 保留历史采纳事实，has_corrections 单独反映后续纠正，二者并存不代表数据错误。
 
 AI 的 question 是已保存的问题，不会在补充流程内建立安排变更的 continuation_run_id。
-用户回答该问题时，作为新补充保存，parent_text_id 指向问题文本。
+用户回答该问题时，作为新补充保存，parent_text_id 指向该问题的 text_id，并明确传 relation_type="answer"。
+请求示例（编号替换为实际值）：
+{
+  "text": "用户实际输入的回答内容",
+  "idempotency_key": "该次回答的唯一请求标识",
+  "parent_text_id": "原AI问题的实际text_id",
+  "relation_type": "answer"
+}
+后端返回 origin=user、purpose=user_revision、relation_type=answer。问题会通过 answers、answer_count、has_answers 反映收到的回答。
+“暂时不知道”也可以是一条已保存回答，不因此宣称问题已解决；回答不会自动采纳 AI 摘要、纠正别的字段或改变日程和待办。
+answer 指向普通摘要、用户文字或其他非 AI 问题时返回 422 invalid_answer_target；类型有值却缺少父文本时也返回 422。
+旧记录和旧客户端遗漏类型的记录只放入 untyped_relations，不自动算入 answers 或 corrections，不由前端自行补写历史类型。
+
+前端点击动作时同时保留：被关联 text_id、它所属 supplement_id、用户选择的 correction 或 answer，以及原文预览。
+保存响应返回的是新补充，原文通常属于另一条补充。保存成功后应更新新记录，并重新读取原 supplement_id 的详情或刷新补充列表，才能取得原问题最新的回答数量、原摘要最新的纠正数量。
+原文正文和其 updated_at 不会因为关联记录新增而被覆盖或强制修改；不能仅根据原文更新时间没变而忽略新的关联数量。
+“采纳”仍走独立采纳接口，不发送 relation_type；纠正或回答也不能用采纳接口代替。
 用户明确想按建议改变安排时，应将用户实际提出或明确确认的要求送入改变安排接口；不要把 AI 建议自动冒充用户请求提交。
 
 七、AI 整理失败后的明确重试
@@ -151,7 +194,9 @@ POST /api/pa/matters/{matter_id}/intake
 继续使用当前 intakeMatterProgress 等真实调用实现，必要时改用能表达实际用途的函数名；不要在前端创建另一套 AI 请求。
 这条接口现在会由后端读取当前账号、当前事项的最近补充内容，向 AI 提供明确的用户、AI、采纳和修订来源，不需要前端重新拼接整份聊天或事项内容。
 不要把 user_id、origin 或 AI 上下文作为可由浏览器指定的身份提交。
-后端最多读取最近八条补充，原文优先，总文本有长度限制；不能宣称 AI 已阅读全部历史资料。
+后端先读取最近八条补充，再有界补入它们实际关联的原文、问题和用户纠正/回答；即使原问题在八条以外，也会按真实编号核对归属后读取。
+候选文字最多六十四段，父级最多向上读取八层，总正文最多一万四千字符、单段最多四千字符；纠正或回答及其原文优先于无关的近期补充。不能宣称 AI 已阅读全部历史资料。
+AI 输入保留 relation_type、parent_text_id、原文的关联数量，以及截断或缺失标记。它不会把未分类历史猜成回答，也不会因为收到回答就认定问题已解决；存在冲突或资料不完整时应询问，不编造原文。
 
 结果处理：
 - processing：仍在处理，按既有 local_run_id 读取处理结果，不创建新请求。

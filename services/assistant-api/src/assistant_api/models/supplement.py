@@ -32,16 +32,20 @@ class MatterSupplement(TimestampMixin, Base):
 
 
 class SupplementText(TimestampMixin, Base):
-    """Keep user originals, AI suggestions and adoption metadata without rewriting authorship."""
+    """Keep immutable authorship and explicit correction/answer links; null links retain legacy ambiguity."""
 
     __tablename__ = "supplement_texts"
-    __table_args__ = (Index("ix_supplement_text_parent", "supplement_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_supplement_text_parent", "supplement_id", "created_at"),
+        Index("ix_supplement_text_relations", "parent_text_id", "relation_type", "created_at"),
+    )
     text_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     supplement_id: Mapped[str] = mapped_column(ForeignKey("matter_supplements.supplement_id", ondelete="CASCADE"))
     origin: Mapped[str] = mapped_column(String(16))
     purpose: Mapped[str] = mapped_column(String(24))
     text: Mapped[str] = mapped_column(Text)
     parent_text_id: Mapped[str | None] = mapped_column(ForeignKey("supplement_texts.text_id", ondelete="SET NULL"))
+    relation_type: Mapped[str | None] = mapped_column(String(24))
     author_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.user_id"))
     source_run_id: Mapped[str | None] = mapped_column(ForeignKey("nexus_runs.local_run_id"))
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

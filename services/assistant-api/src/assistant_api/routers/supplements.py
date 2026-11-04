@@ -1,12 +1,14 @@
 """Owned supplement records; saving does not wait for AI or execute business changes."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Query
 from sqlalchemy import or_, select
 
 from assistant_api.core.deps import CurrentUser, DatabaseSession
 from assistant_api.core.errors import ConflictError
 from assistant_api.models.supplement import MatterSupplement
-from assistant_api.schemas.supplements import EmptyRequest, SupplementCreate, SupplementRead
+from assistant_api.schemas.supplements import EmptyRequest, SupplementCreate, SupplementRead, SupplementRelationsRead
 from assistant_api.services import supplements
 
 router = APIRouter(prefix="/api/v1/matters/{matter_id}/supplements", tags=["supplements"])
@@ -51,6 +53,21 @@ async def get_supplement(matter_id: str, supplement_id: str,
     """Return durable text and status after page closure without dispatching any AI work."""
     row = await supplements.require_supplement(db, user.user_id, matter_id, supplement_id)
     return await supplements.serialize(db, row)
+
+
+@router.get("/{supplement_id}/texts/{text_id}/relations", response_model=SupplementRelationsRead,
+            operation_id="list_supplement_text_relations", openapi_extra=USER_ONLY,
+            summary="分页读取原文字关联的用户纠正和回答，不调用AI")
+async def list_text_relations(matter_id: str, supplement_id: str, text_id: str,
+                              db: DatabaseSession, user: CurrentUser,
+                              relation_type: Literal["correction", "answer", "related"] | None = None,
+                              limit: int = Query(default=20, ge=1, le=50),
+                              before_id: str | None = Query(default=None, min_length=1, max_length=36)):
+    """Read direct relations across supplement records while keeping target and cursor ownership scoped."""
+    return await supplements.relation_records(
+        db, user.user_id, matter_id, supplement_id, text_id,
+        relation_type=relation_type, limit=limit, before_id=before_id,
+    )
 
 
 @router.post("/{supplement_id}/texts/{text_id}/accept", response_model=SupplementRead,

@@ -155,13 +155,28 @@ NexusPilot 应用 API 的服务，并断言 9 次上游调用里没有任何请�
 ## 事项补充与 AI 来源记录
 
 用户保存说明、备注或进展时调用 `POST /api/v1/matters/{matter_id}/supplements`，
-请求体为 `text`、`idempotency_key`，可选 `parent_text_id`。后端在同一事务保存原文、
+请求体为 `text`、`idempotency_key`，可选 `parent_text_id`、`relation_type`。后端在同一事务保存原文、
 `kind=supplement` 的事项进展及后台任务，不等待模型返回，也不修改日程或待办。
 统一后台 worker 使用现有 Nexus 调用服务整理内容，生成文本单独标记为 `origin=assistant`；
 用户原文为 `origin=user`。采纳保留 AI 来源，用户修订另存并关联原文本。
 
+纠正传 `relation_type=correction`，回答传 `relation_type=answer`，二者都必须提供
+`parent_text_id`。回答仅允许关联当前账号、同一事项内的 AI 问题；纠正可以关联该事项内
+的用户或 AI 文字。为兼容既有客户端，关联用户文字的 `purpose` 仍为 `user_revision`，
+具体动作由 `relation_type` 区分；旧客户端未提供类型的记录保持为空，不猜测历史动作。
+
+补充详情和列表在每段 `texts[]` 上返回 `corrections`、`answers`、`untyped_relations`，
+每类最多五条预览，同时提供各类总数、`has_corrections`、`has_answers` 和
+`relations_truncated`。这些字段只统计直接关联的用户文字，保留原文和采纳历史。
+`has_answers` 只代表收到回答，不代表问题已解决。完整记录可通过
+`GET /api/v1/matters/{matter_id}/supplements/{supplement_id}/texts/{text_id}/relations`
+分页读取，`relation_type` 可为 `correction`、`answer`、`related` 或省略；
+`before_id` 使用关联文字的 `text_id`，不是补充编号。查询不会调用 AI。
+
 需要运行增量迁移 `0024_matter_supplements`：现有 `scripts/migrate_sqlite.py upgrade`
 会创建 `matter_supplements` 和 `supplement_texts`，不修改既有记录的作者。
+后续 `0025_supplement_relations` 仅添加可空的 `supplement_texts.relation_type`
+和关系查询索引，保留历史正文、作者、采纳信息及原请求内容。不要用猜测回填历史类型。
 部署前按既有要求备份数据库并显式指定正确数据库；本次代码验证不迁移本机业务数据库。
 API 和统一 worker 需要加载相同版本；不需要新增定时器，也不启用通勤自动 AI 开关。
 后台整理源于用户明确保存，按每条补充调用一次；失败不自动重复调用。
@@ -175,9 +190,15 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
 
 日程及待办变更仍使用 `POST /api/v1/matters/{matter_id}/intake`，调用既有接口规划与执行流程。
 新规划上下文保存实际账号、用户原始输入、带作者的历史消息及当前事项最近八条补充，
-补充总文本最多 14000 字符、单段最多 4000 字符，用户原文优先，截断有明确标记。
+并有界补入所关联的原文字、问题、用户纠正和回答（最多 64 段，父级最多八层）。
+补充总文本最多 14000 字符、单段最多 4000 字符，关联用户文字及原文优先，截断有明确标记。
+保留每段的关系类型、原文编号、关联数量和资料缺失标记，已采纳摘要后续被纠正时仍须读取纠正。
 未采纳建议不作为用户事实或操作授权；采纳也不单独授权修改安排。
 后台跟进触发标记为系统来源，不冒充用户刚发出的消息。旧进展作者不猜测回填。
+
+关系补齐的定向验证只运行 `tests/test_supplement_relations.py`：使用临时 SQLite、
+合成账号和受控 Nexus 返回，验证旧数据迁移、纠正/回答区分、关联分页、权限和 AI 输入。
+它不调用真实模型，不修改本机业务数据库，不运行其他回归检查。
 
 一次定向验证入口为 `scripts/verify_matter_supplements.py --env-file <现有配置绝对路径>
 --output-dir <新建的隔离目录>`；需设置 `PYTHONPATH=src` 并使用现有虚拟环境。

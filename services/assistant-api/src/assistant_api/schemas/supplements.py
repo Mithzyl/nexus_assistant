@@ -2,18 +2,26 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from assistant_api.commute.schemas import UtcDateTime
 
 
 class SupplementCreate(BaseModel):
-    """Accept only user text and optional source linkage; the server assigns authorship."""
+    """Accept exact user text and explicit correction/answer intent without client-supplied authorship."""
 
     model_config = ConfigDict(extra="forbid")
     text: str = Field(min_length=1, max_length=4000)
     idempotency_key: str = Field(min_length=8, max_length=128)
     parent_text_id: str | None = Field(default=None, min_length=1, max_length=36)
+    relation_type: Literal["correction", "answer"] | None = None
+
+    @model_validator(mode="after")
+    def require_relation_target(self):
+        """Require a parent for typed actions; untyped parent links remain compatible with older clients."""
+        if self.relation_type is not None and self.parent_text_id is None:
+            raise ValueError("纠正或回答必须提供所关联的原文本编号。")
+        return self
 
     @field_validator("text")
     @classmethod
@@ -30,19 +38,45 @@ class EmptyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SupplementTextRead(BaseModel):
-    """Expose original origin separately from any later user acceptance."""
+class SupplementRelatedTextRead(BaseModel):
+    """Describe one linked text without recursively expanding the whole discussion."""
 
     text_id: str
+    supplement_id: str
     origin: Literal["user", "assistant"]
     purpose: Literal["original", "user_revision", "summary", "suggestion", "question"]
     text: str
     parent_text_id: str | None
+    relation_type: Literal["correction", "answer"] | None = None
     author_user_id: str | None
     source_run_id: str | None
     accepted_at: UtcDateTime | None
     accepted_by_user_id: str | None
     created_at: UtcDateTime
+
+
+class SupplementTextRead(SupplementRelatedTextRead):
+    """Return direct user corrections and answers; their presence does not imply factual resolution."""
+
+    corrections: list[SupplementRelatedTextRead] = Field(default_factory=list)
+    answers: list[SupplementRelatedTextRead] = Field(default_factory=list)
+    untyped_relations: list[SupplementRelatedTextRead] = Field(default_factory=list)
+    correction_count: int = 0
+    answer_count: int = 0
+    untyped_relation_count: int = 0
+    has_corrections: bool = False
+    has_answers: bool = False
+    relations_truncated: bool = False
+
+
+class SupplementRelationsRead(BaseModel):
+    """Page related user texts independently of the original supplement's creation date."""
+
+    text_id: str
+    relation_type: Literal["correction", "answer", "related"] | None
+    records: list[SupplementRelatedTextRead]
+    has_more: bool
+    next_before_id: str | None
 
 
 class SupplementRead(BaseModel):

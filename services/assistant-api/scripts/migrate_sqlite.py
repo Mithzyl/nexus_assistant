@@ -21,6 +21,7 @@ from assistant_api.models import Base
 
 VERSION = "0001_sqlite_baseline"
 COLUMN_MIGRATIONS = (
+    ("0025_supplement_relations", "supplement_texts", "relation_type", "VARCHAR(24)"),
     ("0023_commute_day_override", "commute_instances", "arrival_local_time_override", "VARCHAR(5)"),
     ("0022_explicit_reminder_dependency", "reminders", "schedule_offset_seconds", "INTEGER"),
     ("0013_commute_bundle", "commute_plans", "effective_from", "DATE"),
@@ -75,6 +76,12 @@ COLUMN_MIGRATIONS = (
 # are created explicitly and idempotently. The chat association table itself is
 # new and comes from create_all.
 INDEX_MIGRATIONS = (
+    (
+        "0025_supplement_relations",
+        "ix_supplement_text_relations",
+        "CREATE INDEX IF NOT EXISTS ix_supplement_text_relations "
+        "ON supplement_texts (parent_text_id, relation_type, created_at)",
+    ),
     (
         "0006_ai_task_purpose",
         "ix_nexus_runs_purpose_business",
@@ -163,7 +170,7 @@ async def _apply_indexes(conn) -> None:
 
 
 async def init(database_url: str) -> None:
-    """Initialize current metadata, including attributed supplements and their persistent queue."""
+    """Initialize metadata and explicit supplement relations without inventing historical action types."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
@@ -181,7 +188,7 @@ async def init(database_url: str) -> None:
 
 
 async def upgrade(database_url: str) -> None:
-    """Add missing columns and tables, including supplement storage, without rewriting existing rows."""
+    """Add missing storage and nullable relation types, preserving old text, origins and request payloads."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:

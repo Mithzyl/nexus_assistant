@@ -10131,7 +10131,7 @@
       },
       "SupplementCreate": {
         "additionalProperties": false,
-        "description": "Accept only user text and optional source linkage; the server assigns authorship.",
+        "description": "Accept exact user text and explicit correction/answer intent without client-supplied authorship.",
         "properties": {
           "idempotency_key": {
             "maxLength": 128,
@@ -10151,6 +10151,21 @@
               }
             ],
             "title": "Parent Text Id"
+          },
+          "relation_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "correction",
+                  "answer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation Type"
           },
           "text": {
             "maxLength": 4000,
@@ -10266,8 +10281,8 @@
         "title": "SupplementRead",
         "type": "object"
       },
-      "SupplementTextRead": {
-        "description": "Expose original origin separately from any later user acceptance.",
+      "SupplementRelatedTextRead": {
+        "description": "Describe one linked text without recursively expanding the whole discussion.",
         "properties": {
           "accepted_at": {
             "anyOf": [
@@ -10336,6 +10351,21 @@
             "title": "Purpose",
             "type": "string"
           },
+          "relation_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "correction",
+                  "answer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation Type"
+          },
           "source_run_id": {
             "anyOf": [
               {
@@ -10346,6 +10376,10 @@
               }
             ],
             "title": "Source Run Id"
+          },
+          "supplement_id": {
+            "title": "Supplement Id",
+            "type": "string"
           },
           "text": {
             "title": "Text",
@@ -10358,6 +10392,239 @@
         },
         "required": [
           "text_id",
+          "supplement_id",
+          "origin",
+          "purpose",
+          "text",
+          "parent_text_id",
+          "author_user_id",
+          "source_run_id",
+          "accepted_at",
+          "accepted_by_user_id",
+          "created_at"
+        ],
+        "title": "SupplementRelatedTextRead",
+        "type": "object"
+      },
+      "SupplementRelationsRead": {
+        "description": "Page related user texts independently of the original supplement's creation date.",
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "next_before_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before Id"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/SupplementRelatedTextRead"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "relation_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "correction",
+                  "answer",
+                  "related"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation Type"
+          },
+          "text_id": {
+            "title": "Text Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text_id",
+          "relation_type",
+          "records",
+          "has_more",
+          "next_before_id"
+        ],
+        "title": "SupplementRelationsRead",
+        "type": "object"
+      },
+      "SupplementTextRead": {
+        "description": "Return direct user corrections and answers; their presence does not imply factual resolution.",
+        "properties": {
+          "accepted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted At"
+          },
+          "accepted_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted By User Id"
+          },
+          "answer_count": {
+            "default": 0,
+            "title": "Answer Count",
+            "type": "integer"
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/SupplementRelatedTextRead"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "author_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author User Id"
+          },
+          "correction_count": {
+            "default": 0,
+            "title": "Correction Count",
+            "type": "integer"
+          },
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/SupplementRelatedTextRead"
+            },
+            "title": "Corrections",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "has_answers": {
+            "default": false,
+            "title": "Has Answers",
+            "type": "boolean"
+          },
+          "has_corrections": {
+            "default": false,
+            "title": "Has Corrections",
+            "type": "boolean"
+          },
+          "origin": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "parent_text_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Text Id"
+          },
+          "purpose": {
+            "enum": [
+              "original",
+              "user_revision",
+              "summary",
+              "suggestion",
+              "question"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "relation_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "correction",
+                  "answer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation Type"
+          },
+          "relations_truncated": {
+            "default": false,
+            "title": "Relations Truncated",
+            "type": "boolean"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          },
+          "supplement_id": {
+            "title": "Supplement Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "text_id": {
+            "title": "Text Id",
+            "type": "string"
+          },
+          "untyped_relation_count": {
+            "default": 0,
+            "title": "Untyped Relation Count",
+            "type": "integer"
+          },
+          "untyped_relations": {
+            "items": {
+              "$ref": "#/components/schemas/SupplementRelatedTextRead"
+            },
+            "title": "Untyped Relations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "text_id",
+          "supplement_id",
           "origin",
           "purpose",
           "text",
@@ -23948,6 +24215,201 @@
           }
         },
         "summary": "记录用户采纳AI补充，不改变原作者或执行安排",
+        "tags": [
+          "supplements"
+        ],
+        "x-assistant": {
+          "enabled": false
+        }
+      }
+    },
+    "/api/v1/matters/{matter_id}/supplements/{supplement_id}/texts/{text_id}/relations": {
+      "get": {
+        "description": "Read direct relations across supplement records while keeping target and cursor ownership scoped.",
+        "operationId": "list_supplement_text_relations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "supplement_id",
+            "required": true,
+            "schema": {
+              "title": "Supplement Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "text_id",
+            "required": true,
+            "schema": {
+              "title": "Text Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "relation_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "correction",
+                    "answer",
+                    "related"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Relation Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplementRelationsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "分页读取原文字关联的用户纠正和回答，不调用AI",
         "tags": [
           "supplements"
         ],
