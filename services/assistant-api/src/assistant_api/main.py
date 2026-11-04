@@ -83,6 +83,7 @@ def create_app(
 ) -> FastAPI:
     """Build one isolated application instance.
 
+    Supplement routes save user content separately from the business-operation planner.
     Tests pass explicit settings, an `httpx.MockTransport` and/or a fixed-clock
     commute runtime, which is why no module-level engine or client exists.
     """
@@ -158,6 +159,9 @@ def create_app(
     app.include_router(records.router)
     app.include_router(matters.router)
     app.include_router(sync_ios.router)
+
+    from assistant_api.routers import supplements
+    app.include_router(supplements.router)
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):

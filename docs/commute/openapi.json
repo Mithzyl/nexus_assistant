@@ -3640,6 +3640,13 @@
         "title": "DraftSelectMatterRequest",
         "type": "object"
       },
+      "EmptyRequest": {
+        "additionalProperties": false,
+        "description": "Reject author, acceptance identity and other client-supplied metadata.",
+        "properties": {},
+        "title": "EmptyRequest",
+        "type": "object"
+      },
       "ErrorDetail": {
         "properties": {
           "code": {
@@ -9784,6 +9791,248 @@
           "idempotency_key"
         ],
         "title": "StructuredDraftRequest",
+        "type": "object"
+      },
+      "SupplementCreate": {
+        "additionalProperties": false,
+        "description": "Accept only user text and optional source linkage; the server assigns authorship.",
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "parent_text_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Text Id"
+          },
+          "text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "idempotency_key"
+        ],
+        "title": "SupplementCreate",
+        "type": "object"
+      },
+      "SupplementRead": {
+        "description": "Report successful saving independently of asynchronous AI analysis.",
+        "properties": {
+          "ai_status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "no_supplement",
+              "failed",
+              "unknown"
+            ],
+            "title": "Ai Status",
+            "type": "string"
+          },
+          "analysis_attempt": {
+            "title": "Analysis Attempt",
+            "type": "integer"
+          },
+          "classification": {
+            "enum": [
+              "unknown",
+              "explanation",
+              "progress",
+              "mixed"
+            ],
+            "title": "Classification",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "local_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Run Id"
+          },
+          "matter_id": {
+            "title": "Matter Id",
+            "type": "string"
+          },
+          "replayed": {
+            "default": false,
+            "title": "Replayed",
+            "type": "boolean"
+          },
+          "saved": {
+            "default": true,
+            "title": "Saved",
+            "type": "boolean"
+          },
+          "supplement_id": {
+            "title": "Supplement Id",
+            "type": "string"
+          },
+          "texts": {
+            "items": {
+              "$ref": "#/components/schemas/SupplementTextRead"
+            },
+            "title": "Texts",
+            "type": "array"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "supplement_id",
+          "matter_id",
+          "ai_status",
+          "classification",
+          "analysis_attempt",
+          "local_run_id",
+          "error_code",
+          "texts",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SupplementRead",
+        "type": "object"
+      },
+      "SupplementTextRead": {
+        "description": "Expose original origin separately from any later user acceptance.",
+        "properties": {
+          "accepted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted At"
+          },
+          "accepted_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted By User Id"
+          },
+          "author_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author User Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "parent_text_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Text Id"
+          },
+          "purpose": {
+            "enum": [
+              "original",
+              "user_revision",
+              "summary",
+              "suggestion",
+              "question"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "text_id": {
+            "title": "Text Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text_id",
+          "origin",
+          "purpose",
+          "text",
+          "parent_text_id",
+          "author_user_id",
+          "source_run_id",
+          "accepted_at",
+          "accepted_by_user_id",
+          "created_at"
+        ],
+        "title": "SupplementTextRead",
         "type": "object"
       },
       "SyncItem": {
@@ -22641,6 +22890,733 @@
         ],
         "x-assistant": {
           "effect": "write"
+        }
+      }
+    },
+    "/api/v1/matters/{matter_id}/supplements": {
+      "get": {
+        "description": "Page newest-first by an owned cursor; reads never start or retry a model job.",
+        "operationId": "list_matter_supplements",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupplementRead"
+                  },
+                  "title": "Response List Matter Supplements",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "读取用户及AI来源分开的补充记录",
+        "tags": [
+          "supplements"
+        ],
+        "x-assistant": {
+          "enabled": false
+        }
+      },
+      "post": {
+        "description": "Persist original text and the AI queue entry before returning; never wait for model output.",
+        "operationId": "save_matter_supplement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplementCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplementRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "保存用户补充原文并登记异步AI整理",
+        "tags": [
+          "supplements"
+        ],
+        "x-assistant": {
+          "enabled": false
+        }
+      }
+    },
+    "/api/v1/matters/{matter_id}/supplements/{supplement_id}": {
+      "get": {
+        "description": "Return durable text and status after page closure without dispatching any AI work.",
+        "operationId": "get_matter_supplement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "supplement_id",
+            "required": true,
+            "schema": {
+              "title": "Supplement Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplementRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "查询已保存补充及AI整理状态",
+        "tags": [
+          "supplements"
+        ],
+        "x-assistant": {
+          "enabled": false
+        }
+      }
+    },
+    "/api/v1/matters/{matter_id}/supplements/{supplement_id}/retry": {
+      "post": {
+        "description": "Queue one explicit retry only after a definite failure; unknown remote outcomes cannot retry.",
+        "operationId": "retry_supplement_analysis",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "supplement_id",
+            "required": true,
+            "schema": {
+              "title": "Supplement Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplementRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "用户明确重试已失败的AI整理，不重复保存原文",
+        "tags": [
+          "supplements"
+        ],
+        "x-assistant": {
+          "enabled": false
+        }
+      }
+    },
+    "/api/v1/matters/{matter_id}/supplements/{supplement_id}/texts/{text_id}/accept": {
+      "post": {
+        "description": "Assign acceptance to the logged-in user; an accepted suggestion remains AI-authored.",
+        "operationId": "accept_supplement_text",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matter_id",
+            "required": true,
+            "schema": {
+              "title": "Matter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "supplement_id",
+            "required": true,
+            "schema": {
+              "title": "Supplement Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "text_id",
+            "required": true,
+            "schema": {
+              "title": "Text Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplementRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "记录用户采纳AI补充，不改变原作者或执行安排",
+        "tags": [
+          "supplements"
+        ],
+        "x-assistant": {
+          "enabled": false
         }
       }
     },

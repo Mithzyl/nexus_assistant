@@ -1,0 +1,178 @@
+请在 Nexus Assistant 的实际 Web 工作目录中接入“保存补充内容”和“通过助手改变安排”两条流程。先核对仓库、分支、适用项目说明和已有修改，只实现本提示词要求的功能。不得覆盖其他人的代码，不修改前端视觉风格，不替用户执行真实业务验证或付费模型验证。
+
+一、先确认后端是否已具备运行条件
+
+本次后端代码位于 /Users/mith/Desktop/superapp-next-worktrees/backend，分支 backend/dev，服务目录 services/assistant-api。
+编写本提示词时 Web 工作目录为 /Users/mith/Desktop/superapp-next-worktrees/web，处于未检出分支的状态，存在大量未提交改动。执行时重新核对实际工作目录，不切换分支，不把所有现有差异都算成本次修改。
+
+本机 Assistant 后端原端口为 8010，前端原端口为 3001。以实际监听状态为准。
+新功能要求后端数据库已执行 0024_matter_supplements，且 API 与统一后台 worker 都加载了本次代码。只读核对实际接口清单和迁移状态；本提示词不授权修改配置、迁移数据库、重启服务、安装依赖或部署。
+后端变更不代表本机正在运行的旧进程已经加载；后端不可用时如实报告，不切换到模拟服务。
+
+二、两个业务流程分别使用什么接口
+
+1. 补充内容
+用户已经在某个事项内输入说明、备注或进展，点击保存后，直接使用新增的补充保存接口。
+该接口先保存用户原文，再登记后台 AI 整理任务，返回时不等待 AI 完成。
+不再将这类输入送入 POST /api/v1/matters/{matter_id}/intake，然后把“明白了”当成保存成功。
+
+2. 改变安排
+用户明确要求新建、修改、取消日程，或新建、修改、完成待办时，继续使用既有 POST /api/v1/matters/{matter_id}/intake。
+由 AI 根据接口说明规划操作，后端校验当前用户、目标、参数和版本，再实际执行接口。
+明确的用户操作要求就是本次授权；参数齐全时继续保存，不因接口内部存在名为 confirm 的步骤而重复要求用户确认。
+缺少目标或必要参数时展示后端返回的问题，不猜日期、时间、地点或完成状态。
+
+补充的说明或进展分类不决定是否执行日程、待办操作。
+保存用户原文不依赖 AI 成功；采纳 AI 建议也不等于授权执行建议中的行动。
+
+三、认证、转发和请求参数
+
+所有接口沿用当前 Assistant 用户登录会话，由现有同源代理转发到后端。浏览器不得取得或拼接 Nexus 应用密钥。
+浏览器请求 /api/pa/matters/...，现有代理转发为 /api/v1/matters/...。
+根路径仍是 matters，不需要为了新功能放开代理到任意地址。
+输入正文、请求标识、父文本编号只放 JSON 请求体。不得把补充原文放进地址参数、日志或错误提示中的完整请求预览。
+请求不接受 origin、author_user_id、source_run_id、accepted_by_user_id 等来源字段；这些值由后端确定。
+
+四、保存一条补充内容
+
+POST /api/pa/matters/{matter_id}/supplements
+后端对应 POST /api/v1/matters/{matter_id}/supplements
+
+请求示例：
+{
+  "text": "销售品指套餐，例如三千兆升级包带一个5G升级包组合出账。",
+  "idempotency_key": "为这次用户提交生成的唯一请求标识"
+}
+
+字段：
+- text：必填，1 至 4000 个字符，不能全是空白。后端保存原始文字，不用 AI 摘要替换。
+- idempotency_key：必填，8 至 128 个字符。每次新的用户提交生成一个；同一次提交因网络失败重试时保持不变。
+- parent_text_id：可选，原文本编号。用户在某条 AI 建议或旧记录基础上补充、纠正时传入；它必须属于当前账号的同一事项。
+
+成功返回 HTTP 201。重复提交相同请求标识和相同内容，也返回原记录和 HTTP 201，并设置 replayed=true。
+同一请求标识被用于不同内容、不同父文本或不同事项时，返回 HTTP 409，错误代码 idempotency_conflict。
+网络结果不确定时保留输入和原请求标识，不换新标识重复保存。只有用户开始一条新的补充时才生成新标识。
+
+保存响应中的主要字段：
+- supplement_id：本次补充记录编号，用于后续查询。
+- matter_id：所属事项。
+- saved：为 true 表示用户原文已经保存，与 AI 整理是否成功无关。
+- replayed：是否返回了已有的同一次提交。
+- ai_status：后台整理状态，见下一节。
+- classification：unknown、explanation、progress 或 mixed。
+- analysis_attempt：首次整理为 0，每次明确重试后加 1。
+- local_run_id：本次 AI 执行记录编号；刚保存时可能为空。
+- error_code：整理失败或结果未知时的错误代码；不向用户直接展示内部错误原文。
+- texts：具有明确来源的文本列表。
+- created_at、updated_at：带时区的时间。
+
+texts 每项字段：
+- text_id：独立文本编号。
+- origin：user 表示用户文字，assistant 表示 AI 生成文字。
+- purpose：original 原始输入；user_revision 用户追加或纠正；summary AI 摘要；suggestion AI 建议；question AI 追问。
+- text：该段文字原文。
+- parent_text_id：所关联的原文本编号，可能为空。
+- author_user_id：用户文字的实际作者；AI 文字为空。
+- source_run_id：生成 AI 文字的执行记录编号；用户原文通常为空。
+- accepted_at、accepted_by_user_id：用户采纳时间及账号；未采纳时为空。
+- created_at：该段文字的创建时间。
+
+不要仅凭 AI 回复或 HTTP 请求已返回，就显示保存成功。只有取得 saved=true 的保存结果，才确认该次补充已经保存。
+后端同时将用户原文写入既有事项进展记录，kind=supplement。前端若同时读取旧进展和新补充列表，应按用途选择一个显示来源，避免将同一原文展示两遍；不要删除后端记录来消除重复显示。
+保存会增加事项版本。后续手工修改事项时重新读取实际 version，不沿用补充前的旧版本。
+
+五、查询整理结果及历史记录
+
+GET /api/pa/matters/{matter_id}/supplements/{supplement_id}
+返回单条补充及其 texts；仅查询，不触发 AI，也不自动重试。
+
+GET /api/pa/matters/{matter_id}/supplements?limit=20
+返回当前账号该事项的补充记录，按最新提交在前排列。
+limit 为 1 至 50，默认 20。继续读取更早记录时，传上一页最后一个 supplement_id 作为 before_id。
+例如 GET /api/pa/matters/{matter_id}/supplements?limit=20&before_id={supplement_id}。
+这里仅包含分页条件，不放补充正文或地址。
+
+ai_status 的含义及处理方式：
+- queued：用户原文已保存，等待后台整理。
+- running：用户原文已保存，AI 正在处理。
+- succeeded：用户原文和 AI 补充均已保存。
+- no_supplement：AI 处理完成，认为没有值得额外补充的内容。不是保存失败，也不要伪造一段 AI 回复。
+- failed：用户原文已保存，AI 整理明确失败。
+- unknown：用户原文已保存，但 AI 执行结果不确定。不得当作未调用或自动再次调用。
+
+queued 和 running 时可以适度查询单条结果，例如每三秒查询一次；页面离开或连续查询三分钟后停止自动查询，保留已保存状态和手动查看能力。
+重新进入事项时先读取已有补充记录；不得重新 POST 原文来恢复历史，不得在展开、刷新或重新挂载时启动 AI。
+failed、unknown、no_supplement 均停止自动查询，不把它们无限循环成重试请求。
+
+classification 是 AI 辅助分类：
+- explanation：解释背景、术语或规则。
+- progress：已发生行动、处理结果或当前进展。
+- mixed：同时包含说明和进展。
+- unknown：尚未整理或无法判断。
+分类不表示说明已经由外部核实，也不能因此自动完成待办、创建日程或修改用户原文。
+
+六、采纳 AI 内容与用户修订
+
+采纳：
+POST /api/pa/matters/{matter_id}/supplements/{supplement_id}/texts/{text_id}/accept
+JSON 请求体为 {}。
+只有当前事项内的 AI 文字可以采纳，操作可以重复提交。
+返回更新后的整条补充记录；accepted_at、accepted_by_user_id 由后端填写。
+origin 仍然是 assistant。不要把已采纳的 AI 文字显示成用户亲自输入的文字。
+采纳仅表示认可这段文本，不会执行其中可能提到的日程或待办操作。
+
+修订或纠正：
+不覆盖旧文本。重新调用保存补充接口，传入新的用户 text、新的 idempotency_key，以及被修订文本的 parent_text_id。
+新记录的 origin=user、purpose=user_revision，保留实际作者及原文本关联，并产生本条新补充的后台整理任务。
+已经保存的原文、旧 AI 建议、采纳记录均保留。不得通过本地替换文字制造后端已经更新的假象。
+
+AI 的 question 是已保存的问题，不会在补充流程内建立安排变更的 continuation_run_id。
+用户回答该问题时，作为新补充保存，parent_text_id 指向问题文本。
+用户明确想按建议改变安排时，应将用户实际提出或明确确认的要求送入改变安排接口；不要把 AI 建议自动冒充用户请求提交。
+
+七、AI 整理失败后的明确重试
+
+POST /api/pa/matters/{matter_id}/supplements/{supplement_id}/retry
+JSON 请求体为 {}。
+只在用户明确要求重试时调用，不自动调用。
+仅 failed 可以重新排队，最多三次重试。queued、running 返回当前记录，不重复登记任务。
+unknown、已经成功或达到重试上限时返回 HTTP 409，错误代码 analysis_retry_unavailable。
+重试只整理原补充，不再添加用户原文或进展记录。既有执行记录保留，新尝试的 local_run_id 在开始处理后更新。
+
+八、改变日程和待办的既有 AI 接口
+
+POST /api/pa/matters/{matter_id}/intake
+请求示例：
+{
+  "text": "把当前事项2030年7月1日下午三点的套餐核对会改名为套餐规则核对会，时间地点不变。",
+  "idempotency_key": "该次安排变更的唯一请求标识"
+}
+
+继续使用当前 intakeMatterProgress 等真实调用实现，必要时改用能表达实际用途的函数名；不要在前端创建另一套 AI 请求。
+这条接口现在会由后端读取当前账号、当前事项的最近补充内容，向 AI 提供明确的用户、AI、采纳和修订来源，不需要前端重新拼接整份聊天或事项内容。
+不要把 user_id、origin 或 AI 上下文作为可由浏览器指定的身份提交。
+后端最多读取最近八条补充，原文优先，总文本有长度限制；不能宣称 AI 已阅读全部历史资料。
+
+结果处理：
+- processing：仍在处理，按既有 local_run_id 读取处理结果，不创建新请求。
+- needs_clarification：显示后端 clarify 及已有选择项；用户回答时使用原 local_run_id 作为 continuation_run_id，新的回答有自己的请求标识。
+- answer：answer 是 AI 生成的回复。实际安排变更结果应从 pending_context.execution_result 以及 pending_context.cards 取得；不能只凭一句“改好了”判断保存。
+- failed、unknown、cancelled：保留用户输入和原请求标识，按实际结果说明失败、不确定或取消；有执行结果时仍需展示真实已经发生的部分，不能把整次流程说成完全没有修改。
+- 若收到既有兼容草稿结果，继续原有草稿处理，不把普通文字回答冒充草稿，也不宣称本次新增接口要求所有输入都确认草稿。
+
+成功执行后重新读取事项详情，保留后端返回的原日程或待办编号，不在浏览器另建相同记录。
+用户只要求改日程时不改变待办；只要求修改待办时不创造日程。缺少日程时间时追问，不用当前时间或默认时长补齐。
+
+九、错误处理和必要检查
+
+401：登录已失效，沿用现有登录处理。
+404：事项、补充或父文本不存在或无权访问，不显示其他账号内容。
+409 idempotency_conflict：同一请求标识对应不同输入，不能盲目重试或自动生成新标识。
+409 matter_changed：事项同时被修改，保留输入，重新读取当前事项后再处理。
+409 matter_not_active：事项当前不可补充，不通过换接口绕过。
+422：输入字段、长度或额外来源字段不符合要求，显示可理解的输入问题。
+网络中断：保留原文及请求标识；先恢复已保存状态，再决定是否使用同一请求标识重试。
+
+只做这次接入所需的类型检查和定向功能检查，不做全量测试、回归或哈希，不调用真实付费模型，不自动注册账号或修改现有真实日程、待办。
+新增或实质修改的具名函数和组件须写明用途；同步相关类型和已有接口说明。
+交付时列出实际修改文件、使用的接口、用户原文与 AI 文字如何区分、实际验证结果和未完成事项。保留全部已有修改，未经用户另行授权不提交、不推送。

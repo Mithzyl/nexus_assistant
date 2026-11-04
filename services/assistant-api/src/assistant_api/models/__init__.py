@@ -87,3 +87,6 @@ __all__ = [
 ]
 
 from assistant_api.models.follow_up import FollowUp, FollowUpExecution, BusinessChangeEvent
+from assistant_api.models.supplement import MatterSupplement, SupplementText
+
+__all__ += ["MatterSupplement", "SupplementText"]

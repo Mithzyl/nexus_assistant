@@ -163,6 +163,7 @@ async def _apply_indexes(conn) -> None:
 
 
 async def init(database_url: str) -> None:
+    """Initialize current metadata, including attributed supplements and their persistent queue."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
@@ -170,6 +171,7 @@ async def init(database_url: str) -> None:
             await _ensure_table(conn)
             await _record(conn, VERSION, "metadata")
             await _record(conn, "0021_follow_ups", "metadata:follow_ups,follow_up_executions,business_change_events")
+            await _record(conn, "0024_matter_supplements", "metadata:matter_supplements,supplement_texts")
             for version, table, column, sqltype in COLUMN_MIGRATIONS:
                 await _record(conn, version, "metadata")
             await _apply_indexes(conn)
@@ -179,7 +181,7 @@ async def init(database_url: str) -> None:
 
 
 async def upgrade(database_url: str) -> None:
-    """Add missing tables and columns while preserving all existing business rows."""
+    """Add missing columns and tables, including supplement storage, without rewriting existing rows."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
@@ -200,6 +202,7 @@ async def upgrade(database_url: str) -> None:
                     print(f"{version}: added {table}.{column}")
             await _apply_indexes(conn)
             await _record(conn, "0021_follow_ups", "created missing follow-up tables")
+            await _record(conn, "0024_matter_supplements", "created missing supplement tables")
             await _record(conn, VERSION, "upgrade")
     finally:
         await engine.dispose()

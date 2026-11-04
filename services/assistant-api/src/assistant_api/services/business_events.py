@@ -9,8 +9,8 @@ _installed = False
 
 
 def record_changes(session, flush_context, instances):
-    """Append small change events for owned business records before their commit."""
-    ignored = {'follow_ups','follow_up_executions','business_change_events','nexus_runs','user_asks','user_sessions','service_heartbeats','commute_leases','tool_call_receipts'}
+    """Append business changes, excluding supplement queue bookkeeping already represented by saved progress."""
+    ignored = {'follow_ups','follow_up_executions','business_change_events','nexus_runs','user_asks','user_sessions','service_heartbeats','commute_leases','tool_call_receipts','matter_supplements'}
     for row in list(session.new)+list(session.dirty)+list(session.deleted):
         state=inspect(row)
         if state.mapper.local_table.name in ignored or 'user_id' not in state.mapper.columns:
@@ -26,11 +26,11 @@ def record_changes(session, flush_context, instances):
 
 
 def record_bulk_changes(orm_state):
-    """Capture affected owned rows before ORM bulk updates or deletes in the same transaction."""
+    """Capture owned business updates without turning analysis leases into business-change triggers."""
     if not (orm_state.is_update or orm_state.is_delete):
         return
     table = orm_state.statement.table
-    if 'user_id' not in table.c or table.name in {'follow_ups','follow_up_executions','business_change_events','nexus_runs','user_asks','user_sessions'}:
+    if 'user_id' not in table.c or table.name in {'follow_ups','follow_up_executions','business_change_events','nexus_runs','user_asks','user_sessions','matter_supplements'}:
         return
     from sqlalchemy import select
     primary = list(table.primary_key.columns)

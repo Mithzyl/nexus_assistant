@@ -55,8 +55,9 @@ async def save_result(db, row: NexusRun, flow: dict, outcome: str, **fields) -> 
     return response_for(row)
 
 
-async def message_history(db, user, text: str, continuation_run_id: str | None) -> list[dict]:
-    """Retrieve related user-visible messages only; never scan business tables for model input."""
+async def message_history(db, user, text: str, continuation_run_id: str | None,
+                          matter_id: str | None = None) -> list[dict]:
+    """Retrieve owned historical messages with explicit authors, preserving selected-matter scope."""
     rows = list(await db.scalars(select(NexusRun).where(
         NexusRun.user_id == user.user_id, NexusRun.purpose == matter_plan.PURPOSE,
     ).order_by(NexusRun.created_at.desc()).limit(30)))
@@ -71,6 +72,11 @@ async def message_history(db, user, text: str, continuation_run_id: str | None) 
         context = row.context_json or {}
         if context.get('api_internal'):
             continue
+        historical_matter = (context.get('api_flow') or {}).get('matter_id')
+        if matter_id and historical_matter and historical_matter != matter_id:
+            if row.local_run_id == continuation_run_id:
+                raise ConflictError('continuation_matter_mismatch', '原消息属于其他事项，不能用于当前安排。')
+            continue
         message = context.get('text', '')
         if row.local_run_id != continuation_run_id and not (terms & search_terms(message)):
             continue
@@ -78,6 +84,9 @@ async def message_history(db, user, text: str, continuation_run_id: str | None) 
         # This is a historical message reference, not a fresh claim about current
         # database state. Old execution references help preserve object identity.
         selected.append({'message': message[:1200], 'answer': (saved.get('answer') or saved.get('clarify') or '')[:1600],
+                         'messages': [{'origin': 'user', 'text': message[:1200]},
+                                      {'origin': 'assistant', 'text': (saved.get('answer') or saved.get('clarify') or '')[:1600]}],
+                         'source_run_id': row.local_run_id,
                          'references': (context.get('api_flow') or {}).get('receipts', [])[-2:],
                          'matter_id': saved.get('matter_id'), 'draft_id': saved.get('draft_id')})
         if len(selected) >= 5:
@@ -114,7 +123,7 @@ async def ask_model(db, request, user, context: dict, key: str, stored_flow: dic
 
 
 def model_context(flow: dict, catalog: OperationCatalog) -> dict:
-    """Retrieve relevant interfaces and declared next steps using permitted messages and local receipts."""
+    """Retrieve relevant operations while retaining the verified actor and explicitly attributed supplement texts."""
     # Newly returned reference names (for example draft_id) identify the next
     # interface family without a hand-maintained per-operation workflow table.
     reference_names = set()
@@ -137,6 +146,9 @@ def model_context(flow: dict, catalog: OperationCatalog) -> dict:
     if flow.get('presentation_only'):
         decision_schema['properties']['decision']['enum'] = ['answer']
     return {'text': flow['text'], 'now': flow['now'], 'timezone': flow['timezone'], 'trigger_source': flow.get('trigger_source', 'chat'),
+            'actor': flow.get('actor'),
+            'current_message': {'origin': 'system' if flow.get('trigger_source') == 'follow_up' else 'user', 'text': flow['text']},
+            'supplement_context': flow.get('supplement_context', []),
             'follow_up_id': flow.get('follow_up_id'), 'follow_up_execution_id': flow.get('follow_up_execution_id'),
             'history': flow['history'], 'api_operations': [op.model_description(include_components=False) for op in selected],
             'components': {'schemas': shared_schemas}, 'decision_schema': decision_schema, 'presentation_only': flow.get('presentation_only', False),
@@ -151,13 +163,15 @@ def model_context(flow: dict, catalog: OperationCatalog) -> dict:
 async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
                  continuation_run_id: str | None = None, matter_id: str | None = None,
                  memory_disclosures: list | None = None) -> dict:
-    """Start the API-description flow, or return a saved operation without redispatch."""
+    """Persist the verified actor, user request and attributed supplements before planning business calls."""
     if not isinstance(request, ExecutionContext):
         request = ExecutionContext.from_request(request, user)
     if memory_disclosures:
         raise AssistantError('api_context_scope', '本次接口调用只使用当前输入与相关历史消息，请取消额外记忆选择。', 422)
     key = 'matter-intake:' + idempotency_key
     existing = await db.scalar(select(NexusRun).where(NexusRun.user_id == user.user_id, NexusRun.idempotency_key == key))
+    if existing and matter_id and (existing.context_json or {}).get('api_flow', {}).get('matter_id') != matter_id:
+        raise ConflictError('idempotency_conflict', '该请求标识已用于其他事项。')
     if existing is not None:
         if (existing.context_json or {}).get('text') != text:
             raise ConflictError('idempotency_conflict', '同一请求标识已用于其他输入。')
@@ -180,7 +194,9 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
             return response_for(existing) if decision is None else await advance(db, request, user, existing, flow, catalog, decision)
         from assistant_api.services import matters
         return await matters.get_intake_result(db, user, existing.local_run_id, client=request.app.state.nexus_client)
-    history = await message_history(db, user, text, continuation_run_id)
+    history = await message_history(db, user, text, continuation_run_id, matter_id)
+    from assistant_api.services import supplements
+    supplement_context = await supplements.context_records(db, user.user_id, matter_id) if matter_id else []
     if matter_id:
         # A route selected by the user is an explicit local reference, not bulk
         # content from the matter or its schedules.
@@ -188,6 +204,8 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
     from assistant_api.services.matters import user_timezone
     timezone = await user_timezone(db, user, request.app.state.settings.matter_default_timezone)
     flow = {'text': text, 'query': text, 'now': datetime.now(UTC).isoformat(), 'timezone': timezone,
+            'actor': {'origin': 'system' if request.source == 'follow_up' else 'user', 'user_id': user.user_id},
+            'supplement_context': supplement_context,
             'history': history, 'trigger_source': request.source, 'matter_id': matter_id, 'follow_up_id': request.follow_up_id, 'follow_up_execution_id': request.follow_up_execution_id, 'receipts': [], 'step': 0, 'state': 'planning', 'request_key': idempotency_key}
     catalog = OperationCatalog(request.app)
     context = model_context(flow, catalog)

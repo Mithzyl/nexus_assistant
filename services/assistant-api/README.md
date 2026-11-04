@@ -152,6 +152,42 @@ NexusPilot 应用 API 的服务，并断言 9 次上游调用里没有任何请�
 | GET | `/internal/nexus/tools` | 可注册的业务工具清单（需回调令牌） |
 | POST | `/internal/nexus/tools` | NexusPilot 只读工具回调（当前扁平 envelope） |
 
+## 事项补充与 AI 来源记录
+
+用户保存说明、备注或进展时调用 `POST /api/v1/matters/{matter_id}/supplements`，
+请求体为 `text`、`idempotency_key`，可选 `parent_text_id`。后端在同一事务保存原文、
+`kind=supplement` 的事项进展及后台任务，不等待模型返回，也不修改日程或待办。
+统一后台 worker 使用现有 Nexus 调用服务整理内容，生成文本单独标记为 `origin=assistant`；
+用户原文为 `origin=user`。采纳保留 AI 来源，用户修订另存并关联原文本。
+
+需要运行增量迁移 `0024_matter_supplements`：现有 `scripts/migrate_sqlite.py upgrade`
+会创建 `matter_supplements` 和 `supplement_texts`，不修改既有记录的作者。
+部署前按既有要求备份数据库并显式指定正确数据库；本次代码验证不迁移本机业务数据库。
+API 和统一 worker 需要加载相同版本；不需要新增定时器，也不启用通勤自动 AI 开关。
+后台整理源于用户明确保存，按每条补充调用一次；失败不自动重复调用。
+未知结果不允许重试，避免重复付费；工作中断由持久化状态记录为未知，原文仍保留。
+
+读取单条或列表使用 `GET /api/v1/matters/{matter_id}/supplements[/{supplement_id}]`，
+查询不会发起 AI；采纳使用 `POST .../{supplement_id}/texts/{text_id}/accept`，请求体 `{}`；
+用户明确重试失败整理使用 `POST .../{supplement_id}/retry`，请求体 `{}`，最多三次。
+只有失败可重试；排队或处理中的重复请求返回当前状态，成功和未知结果不可重试。
+所有接口均核对当前账号及事项归属，来源与采纳账号由后端填写，不接受客户端或模型指定。
+
+日程及待办变更仍使用 `POST /api/v1/matters/{matter_id}/intake`，调用既有接口规划与执行流程。
+新规划上下文保存实际账号、用户原始输入、带作者的历史消息及当前事项最近八条补充，
+补充总文本最多 14000 字符、单段最多 4000 字符，用户原文优先，截断有明确标记。
+未采纳建议不作为用户事实或操作授权；采纳也不单独授权修改安排。
+后台跟进触发标记为系统来源，不冒充用户刚发出的消息。旧进展作者不猜测回填。
+
+一次定向验证入口为 `scripts/verify_matter_supplements.py --env-file <现有配置绝对路径>
+--output-dir <新建的隔离目录>`；需设置 `PYTHONPATH=src` 并使用现有虚拟环境。
+该命令会在新目录中创建独立数据库、使用合成账号，通过真实 Nexus/Worker 验证一次补充整理
+及一次包含原日程和待办修改的会话，会产生真实模型费用，不能当作普通本地检查随意运行。
+只在明确授权后执行；不运行前端、地图、天气、通知或回归检查，不改原有环境和数据。
+
+完整字段、保存与查询步骤、来源处理及前端实施提示词见
+[事项补充与安排变更前端对接提示词](../../docs/backend-integration/29-事项补充与安排变更前端对接提示词.txt)。
+
 ## 边界
 
 - 用户不需要、也不应该拥有 NexusPilot 账号。当前 NexusPilot 在应用认证时解析/创建
