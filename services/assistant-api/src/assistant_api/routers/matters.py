@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Header, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -22,6 +22,7 @@ from assistant_api.core.deps import (
     SettingsDependency,
 )
 from assistant_api.schemas import matters as schemas
+from assistant_api.routers.places import require_body_parameters
 from assistant_api.core.errors import InvalidRequestError, NotFoundError
 from assistant_api.models import ScheduleEvent, NexusRun
 from assistant_api.services import operation_intake, run_service
@@ -688,7 +689,7 @@ async def acknowledge_reminder(
     return await matters.acknowledge_reminder(db, user, reminder_id)
 
 
-@router.post("/commute/places/search", response_model=schemas.PlaceSearchResponse,
+@router.post("/commute/places/search", dependencies=[Depends(require_body_parameters)], response_model=schemas.PlaceSearchResponse,
     summary='查询草稿地点候选及坐标',
     description='需要属于当前用户的draft_id；查询名称或地址，结果含真实selection_token，只能绑定到该草稿。多个候选时用用户已知条件唯一选择或询问。不会修改正式日程。',
     openapi_extra={'x-assistant': {'effect': 'read', 'next': [{'method': 'POST', 'path': '/api/v1/commute/places/confirm', 'purpose': '为普通日程草稿应用唯一确定的地点。'}]}}
@@ -715,7 +716,7 @@ async def commute_place_search(
     )
 
 
-@router.post("/commute/places/map-pick", response_model=schemas.MapPickResponse,
+@router.post("/commute/places/map-pick", dependencies=[Depends(require_body_parameters)], response_model=schemas.MapPickResponse,
     summary='按用户选择坐标取得地点候选',
     description='需要draft_id及用户已选坐标，不能猜坐标；只返回候选及selection_token，不修改正式日程。',
     openapi_extra={'x-assistant': {'effect': 'read', 'next': [{'method': 'POST', 'path': '/api/v1/commute/places/confirm', 'purpose': '应用已选地点。'}]}}
@@ -741,9 +742,9 @@ async def commute_place_map_pick(
     )
 
 
-@router.post("/commute/places/confirm", response_model=schemas.DraftRead,
+@router.post("/commute/places/confirm", dependencies=[Depends(require_body_parameters)], response_model=schemas.DraftRead,
     summary='将地点候选写入草稿',
-    description='需要当前草稿version与绑定该账号草稿的selection_token；只更新草稿地点，随后confirm保存正式日程。',
+    description='需要真实draft_id与绑定该账号草稿的selection_token，均放JSON body；不接收expected_version。只更新草稿地点，随后confirm保存正式日程。',
     openapi_extra={'x-assistant': {'effect': 'preview', 'next': [{'method': 'POST', 'path': '/api/v1/matters/drafts/{draft_id}/confirm', 'purpose': '保存草稿。'}]}}
 )
 async def commute_place_confirm(

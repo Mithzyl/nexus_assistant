@@ -15,6 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from assistant_api.commute.schemas import UtcDateTime, CommutePlanRead
 from assistant_api.commute.timeutil import ensure_aware
 
+from assistant_api.schemas.places import (
+    CoordinateSystem, PlaceSearchType, PlaceLookupRequest, PlaceLookupCandidate,
+    PlaceLookupResponse, PlacePointRequest, PlacePointLocation, PlacePointResponse,
+)
+
 MatterState = Literal["active", "waiting", "archived", "deleted"]
 MatterGroup = Literal["active", "waiting", "archived", "all"]
 ScheduleSource = Literal["web_native", "ios_eventkit", "ios_reminders"]
@@ -22,8 +27,6 @@ SyncStatus = Literal["local_only", "pending_ios", "ios_synced"]
 DraftStatus = Literal["preview", "confirmed", "cancelled"]
 TodoStatus = Literal["open", "done"]
 ReminderStatus = Literal["scheduled", "due", "acknowledged", "cancelled"]
-CoordinateSystem = Literal["gcj02", "wgs84", "unknown"]
-PlaceSearchType = Literal["place", "address"]
 
 
 class Coordinate(BaseModel):
@@ -690,36 +693,22 @@ class CommuteDayRead(BaseModel):
     route: EstimateResponse | None = None
 
 
-class PlaceSearchRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class PlaceSearchRequest(PlaceLookupRequest):
+    """Add a real schedule draft to the shared place query fields."""
 
-    query: str = Field(min_length=1, max_length=255)
-    city: str | None = Field(default=None, max_length=64)
-    search_type: PlaceSearchType = "place"
-    limit: int = Field(default=5, ge=1, le=10)
     draft_id: str = Field(min_length=8, max_length=36)
 
 
-class PlaceCandidateRead(BaseModel):
-    provider: str
-    provider_place_id: str
-    name: str
-    address: str | None = None
-    city: str | None = None
-    latitude: float
-    longitude: float
-    coordinate_system: CoordinateSystem
-    source: str
+class PlaceCandidateRead(PlaceLookupCandidate):
+    """Bind a provider candidate to an authorized account and schedule draft."""
+
     selection_token: str
 
 
-class PlaceSearchResponse(BaseModel):
-    query: str
-    city: str | None = None
-    search_type: PlaceSearchType
-    ambiguous: bool
+class PlaceSearchResponse(PlaceLookupResponse):
+    """Preserve draft-search responses, including signed selection tokens."""
+
     candidates: list[PlaceCandidateRead] = Field(default_factory=list)
-    reason_code: str | None = None
 
 
 class PlaceSelectionRequest(BaseModel):
@@ -729,32 +718,22 @@ class PlaceSelectionRequest(BaseModel):
     selection_token: str = Field(min_length=32, max_length=4096)
 
 
-class MapPickRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class MapPickRequest(PlacePointRequest):
+    """Bind shared point input to an existing schedule draft."""
 
     draft_id: str = Field(min_length=8, max_length=36)
-    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
-    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
-    coordinate_system: Literal["gcj02"] = "gcj02"
 
 
-class MapPickLocationRead(BaseModel):
-    provider: str
-    provider_place_id: str | None = None
-    name: str
+class MapPickLocationRead(PlacePointLocation):
+    """Keep the draft map-point response's required address and selection token."""
+
     address: str
-    city: str | None = None
-    latitude: float
-    longitude: float
-    coordinate_system: CoordinateSystem
-    source: str
     selection_token: str
 
 
-class MapPickResponse(BaseModel):
-    status: Literal["available", "unavailable"]
-    reason_code: str | None = None
-    address_notice: str | None = None
+class MapPickResponse(PlacePointResponse):
+    """Return a draft-bound map selection while preserving the existing response shape."""
+
     location: MapPickLocationRead | None = None
 
 

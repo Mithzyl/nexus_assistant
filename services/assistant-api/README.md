@@ -188,6 +188,39 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
 完整字段、保存与查询步骤、来源处理及前端实施提示词见
 [事项补充与安排变更前端对接提示词](../../docs/backend-integration/29-事项补充与安排变更前端对接提示词.txt)。
 
+## 共享地点查询（通勤与日程）
+
+地点查询通过现有 `PlaceProvider` / `AmapProvider` 提供；
+`services/place_queries.py` 只负责查询，不读取或创建事项、日程、草稿。
+`services/commute_places.py` 在相同查询结果上添加原有账号及草稿绑定的候选令牌。
+
+需登录，以下两个新增接口均只读，发布给 AI 的 `x-assistant.effect` 为 `read`：
+
+| 接口 | JSON 请求体 | 返回 |
+| --- | --- | --- |
+| `POST /api/v1/places/search` | `query` 必填（1–255字符）；可选 `city`（最多64字符）、`search_type`（`place`或`address`，默认`place`）、`limit`（1–10，默认5） | `query/city/search_type/ambiguous/candidates/reason_code`；候选包含真实名称、地址、城市、经纬度、坐标系及来源，不包含草稿 `selection_token` |
+| `POST /api/v1/places/map-pick` | `latitude`（−90至90）、`longitude`（−180至180）必填；`coordinate_system` 只能是 `gcj02`（默认值） | `status/reason_code/address_notice/location`；当前位置附近地址，不保证是精确 POI，不包含草稿令牌 |
+
+这两个接口不需要 `draft_id`。查询条件全部放在 JSON，请求 URL 不得含查询参数；
+携带查询参数返回 `422 unexpected_query_parameters`。结果为空和供应商不可用通过
+`reason_code` 区分，不能把供应商失败解释为“没有地点”。
+
+原 `POST /api/v1/commute/places/search`、`map-pick`、`confirm` 路径保留：
+前两者复用共享查询，仍校验当前用户的真实草稿，并签发原候选令牌。
+`confirm` 的实际参数为 `draft_id` 和 `selection_token`，不接收 `expected_version`；
+只更新草稿。不能把通用查询结果当作草稿令牌提交，也不能为搜索编造草稿 ID。
+这些地点接口同样拒绝 URL 查询参数。
+
+供应商限制：以上保证浏览器→Web代理→Assistant 的地点查询使用固定URL及JSON体。
+现有高德适配器仍按其 v3 官方接口使用 GET，Open-Meteo 预报也使用 GET/query；
+不宣称供应商链路已经满足“全部URL无参数”。官方说明见
+[高德地点搜索](https://developer.amap.com/api/webservice/guide/api/search/)和
+[Open-Meteo接口定义](https://github.com/open-meteo/open-meteo/blob/main/openapi/forecast.yml)。
+本次未更换供应商或修改其调用协议。
+
+本次验证使用内存 SQLite 和 mock 地点供应商，仅执行新增
+`tests/test_place_lookup.py` 中的定向检查，不作为真实供应商、浏览器地图或生产业务验收。
+
 ## 边界
 
 - 用户不需要、也不应该拥有 NexusPilot 账号。当前 NexusPilot 在应用认证时解析/创建

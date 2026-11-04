@@ -84,6 +84,7 @@ def create_app(
     """Build one isolated application instance.
 
     Supplement routes save user content separately from the business-operation planner.
+    Shared place lookups are published separately from draft mutations.
     Tests pass explicit settings, an `httpx.MockTransport` and/or a fixed-clock
     commute runtime, which is why no module-level engine or client exists.
     """
@@ -157,6 +158,8 @@ def create_app(
     app.include_router(follow_ups.router)
     from assistant_api.routers import records
     app.include_router(records.router)
+    from assistant_api.routers import places
+    app.include_router(places.router)
     app.include_router(matters.router)
     app.include_router(sync_ios.router)
 

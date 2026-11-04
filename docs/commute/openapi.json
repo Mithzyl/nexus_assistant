@@ -5399,6 +5399,7 @@
         "type": "object"
       },
       "MapPickLocationRead": {
+        "description": "Keep the draft map-point response's required address and selection token.",
         "properties": {
           "address": {
             "title": "Address",
@@ -5475,6 +5476,7 @@
       },
       "MapPickRequest": {
         "additionalProperties": false,
+        "description": "Bind shared point input to an existing schedule draft.",
         "properties": {
           "coordinate_system": {
             "const": "gcj02",
@@ -5502,14 +5504,15 @@
           }
         },
         "required": [
-          "draft_id",
           "latitude",
-          "longitude"
+          "longitude",
+          "draft_id"
         ],
         "title": "MapPickRequest",
         "type": "object"
       },
       "MapPickResponse": {
+        "description": "Return a draft-bound map selection while preserving the existing response shape.",
         "properties": {
           "address_notice": {
             "anyOf": [
@@ -6600,6 +6603,7 @@
         "type": "object"
       },
       "PlaceCandidateRead": {
+        "description": "Bind a provider candidate to an authorized account and schedule draft.",
         "properties": {
           "address": {
             "anyOf": [
@@ -6674,8 +6678,339 @@
         "title": "PlaceCandidateRead",
         "type": "object"
       },
+      "PlaceLookupCandidate": {
+        "description": "Retain the provider identifier for a search candidate.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "coordinate_system": {
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_place_id": {
+            "title": "Provider Place Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "provider_place_id",
+          "name",
+          "latitude",
+          "longitude",
+          "coordinate_system",
+          "source"
+        ],
+        "title": "PlaceLookupCandidate",
+        "type": "object"
+      },
+      "PlaceLookupRequest": {
+        "additionalProperties": false,
+        "description": "Search a name or address without creating a draft or saving a location.",
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "limit": {
+            "default": 5,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "search_type": {
+            "default": "place",
+            "enum": [
+              "place",
+              "address"
+            ],
+            "title": "Search Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "PlaceLookupRequest",
+        "type": "object"
+      },
+      "PlaceLookupResponse": {
+        "description": "Distinguish actual candidates, no matches and unavailable place providers.",
+        "properties": {
+          "ambiguous": {
+            "title": "Ambiguous",
+            "type": "boolean"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/PlaceLookupCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "search_type": {
+            "enum": [
+              "place",
+              "address"
+            ],
+            "title": "Search Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "search_type",
+          "ambiguous"
+        ],
+        "title": "PlaceLookupResponse",
+        "type": "object"
+      },
+      "PlacePointLocation": {
+        "description": "Describe an actual provider location without a draft selection token.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "coordinate_system": {
+            "enum": [
+              "gcj02",
+              "wgs84",
+              "unknown"
+            ],
+            "title": "Coordinate System",
+            "type": "string"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_place_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Place Id"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "name",
+          "latitude",
+          "longitude",
+          "coordinate_system",
+          "source"
+        ],
+        "title": "PlacePointLocation",
+        "type": "object"
+      },
+      "PlacePointRequest": {
+        "additionalProperties": false,
+        "description": "Reverse lookup an explicitly chosen GCJ-02 point; coordinates stay in JSON.",
+        "properties": {
+          "coordinate_system": {
+            "const": "gcj02",
+            "default": "gcj02",
+            "title": "Coordinate System",
+            "type": "string"
+          },
+          "latitude": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Longitude",
+            "type": "number"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ],
+        "title": "PlacePointRequest",
+        "type": "object"
+      },
+      "PlacePointResponse": {
+        "description": "Return a real nearby address or an explicit reason it could not be obtained.",
+        "properties": {
+          "address_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Notice"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlacePointLocation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "PlacePointResponse",
+        "type": "object"
+      },
       "PlaceSearchRequest": {
         "additionalProperties": false,
+        "description": "Add a real schedule draft to the shared place query fields.",
         "properties": {
           "city": {
             "anyOf": [
@@ -6726,6 +7061,7 @@
         "type": "object"
       },
       "PlaceSearchResponse": {
+        "description": "Preserve draft-search responses, including signed selection tokens.",
         "properties": {
           "ambiguous": {
             "title": "Ambiguous",
@@ -16617,7 +16953,7 @@
     },
     "/api/v1/commute/places/confirm": {
       "post": {
-        "description": "需要当前草稿version与绑定该账号草稿的selection_token；只更新草稿地点，随后confirm保存正式日程。",
+        "description": "需要真实draft_id与绑定该账号草稿的selection_token，均放JSON body；不接收expected_version。只更新草稿地点，随后confirm保存正式日程。",
         "operationId": "commute_place_confirm_api_v1_commute_places_confirm_post",
         "requestBody": {
           "content": {
@@ -24419,6 +24755,267 @@
         "tags": [
           "memory"
         ]
+      }
+    },
+    "/api/v1/places/map-pick": {
+      "post": {
+        "description": "需登录。latitude、longitude、coordinate_system 仅放 JSON body，URL 不接受查询参数。只支持用户已选的 GCJ-02 坐标，不需要 draft_id，不得猜坐标。返回坐标附近的地址而非保证精确的 POI；用户确认后再提交相应业务保存接口。",
+        "operationId": "lookup_map_point",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlacePointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlacePointResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "反查用户选定地图坐标的地址，不保存业务记录",
+        "tags": [
+          "places"
+        ],
+        "x-assistant": {
+          "effect": "read",
+          "keywords": [
+            "地图选点",
+            "通勤地点",
+            "坐标反查"
+          ]
+        }
+      }
+    },
+    "/api/v1/places/search": {
+      "post": {
+        "description": "需登录。query、city、search_type、limit 仅放 JSON body，URL 不接受查询参数。不需要 draft_id；多个候选由用户选择，不能把第一条当作已确认地点。候选不包含草稿 selection_token；日程草稿绑定继续使用原草稿地点接口。",
+        "operationId": "search_place_candidates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceLookupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "请求无效"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "无权访问"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "资源不存在"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "冲突"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "字段校验失败"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "缺少 If-Match"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "服务器错误"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "供应商暂不可用"
+          }
+        },
+        "summary": "查询地点或地址候选，不创建草稿或业务记录",
+        "tags": [
+          "places"
+        ],
+        "x-assistant": {
+          "effect": "read",
+          "keywords": [
+            "通勤起点",
+            "通勤终点",
+            "地点搜索",
+            "地址查询"
+          ]
+        }
       }
     },
     "/api/v1/push-devices/{installation_id}": {
