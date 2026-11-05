@@ -1,7 +1,8 @@
 # assistant-api
 
 Personal Assistant 后端负责身份、业务记录、OpenAPI 接口目录、AI 调用参数执行和通用跟进。
-NexusPilot 提供模型与 Agent 工作流，Assistant 使用现有 matter_plan 组织接口调用和卡片要求。
+NexusPilot 提供模型与 Agent 工作流。Assistant 使用 `matter_plan` 提供业务协议和卡片要求，
+通过 `caller_processed` 在同一个 Agent 内处理完整模型正文和实际执行结果。
 
 通用跟进的接口、运行、定向验收和前端任务提示词见
 [通用跟进实现与前端联调](../../docs/backend-integration/26-通用跟进实现与前端联调.md)。
@@ -13,12 +14,30 @@ NexusPilot 提供模型与 Agent 工作流，Assistant 使用现有 matter_plan 
 通勤提醒模块的架构、接口示例与 App 联调清单见
 [`../../docs/commute/`](../../docs/commute/)。
 
-## 本地运行
+## 单 Agent 正文处理接入
+
+当前工作区已接入正式 App 协议：创建工作流时传 `application_response_mode=caller_processed`、
+`application_protocol_instructions` 和 `final_output_schema`。Nexus 将完整正文交给已批准的
+`POST /internal/nexus/agent-responses`，Assistant 校验并执行业务，通过 HTTP 返回结果。
+Nexus 追加原正文和结果，继续原 Agent；Assistant 不在每步业务后创建新的 `api-step` 运行。
+旧 `/internal/nexus/tools` 只读回调继续兼容，不用它冒充正文处理入口。
+
+Nexus 私有 App 配置需要绑定此路径和独立服务端凭据，不能由模型指定执行地址或身份。
+Assistant 新增迁移 `0026_agent_response_receipts`，保存原文、关联身份、实际参数及处理回执。
+数据库必须先备份再按授权升级；本次没有迁移真实数据库或重启既有进程。
+
+实现、12 项定向检查、单次真实模型验证及未验收事项统一见
+[接口复核与 AI 业务调用说明](../../docs/backend-integration/27-接口复核与AI业务调用说明.md#单-agent-正文处理接入2026-11-05)。
+隔离验证通过不代表现有服务已经加载代码；原来的 stub 开发启动方式不支持证明此接入可用。
+
+## 首次空环境准备
+
+以下安装和配置复制只适用于新建环境。已有配置、账号或数据时保留原文件，先核对迁移状态；不得直接用示例覆盖实际配置。
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-cp .env.example .env          # 修改两个令牌
+cp .env.example .env          # 仅在 .env 不存在的新环境执行，再填写实际配置
 .venv/bin/python -m uvicorn assistant_api.main:app --port 8010
 ```
 
@@ -33,14 +52,24 @@ cp .env.example .env          # 修改两个令牌
 `ASSISTANT_ALLOW_SCHEMA_CREATE=true` 只用于本地临时库；正常开发/运行使用迁移器。
 接口文档：`http://127.0.0.1:8010/docs`。
 
-本轮（2026-10-25）在独立工作树上完成了隔离运行验证；运行环境、原库状态、共同联调
+历史记录（2026-10-25）在独立工作树上完成了隔离运行验证；运行环境、原库状态、共同联调
 恢复方案与客户端交付见
 [`../../docs/backend-integration/16-后端运行与客户端交付-20261025.md`](../../docs/backend-integration/16-后端运行与客户端交付-20261025.md)。
 `GET /api/v1/commute/runtime` 现在返回 `server_time`，与进程心跳、任务进度分开。
 
-## 本机开发环境（可重复启动）
+## 已有真实环境的启动入口
 
-供两个客户端长期连接的本机环境，**不是**共同 8010，也**不是**旧数据恢复：
+真实 Nexus 连接、数据库和供应商配置使用本机已有 env 文件。需要启动时显式选择文件：
+
+```bash
+.venv/bin/python scripts/run_backend.py --env-file /absolute/path/to/existing.env
+```
+
+该入口启动 API 和统一 scheduler/worker，保留文件中的自动化开关，不负责迁移。使用前核对实际端口、已有进程及数据库，避免重复启动。支持 caller_processed 的 Nexus 必须批准应用正文处理连接；隔离验证不证明当前运行服务已经加载新模式。
+
+## 独立 stub 开发环境（兼容入口）
+
+以下 `dev_env.py` 默认使用 stub 和模拟供应商，适用于独立合成数据调试，不是连接真实 Nexus 的默认启动方式：
 
 ```bash
 .venv/bin/python scripts/dev_env.py init      # 首次：建库/增量升级 + data/dev.env
@@ -151,6 +180,7 @@ NexusPilot 应用 API 的服务，并断言 9 次上游调用里没有任何请�
 | POST | `/api/v1/commute/bark/test` | 显式单次测试发送 |
 | GET | `/internal/nexus/tools` | 可注册的业务工具清单（需回调令牌） |
 | POST | `/internal/nexus/tools` | NexusPilot 只读工具回调（当前扁平 envelope） |
+| POST | `/internal/nexus/agent-responses` | 已绑定 App 的完整模型正文处理与执行回执 |
 
 ## 事项补充与 AI 来源记录
 

@@ -1,0 +1,56 @@
+{
+  "date": "2026-11-05",
+  "scope": "正式 App 路由 + 真实模型 + 隔离 Assistant 业务路由；非部署验收",
+  "nexus_commits": [
+    "fce2c8f",
+    "754ddbe"
+  ],
+  "assistant_version": "backend/dev 工作区未提交正文接入，基于5ce0b38",
+  "live": {
+    "provider": "opencode",
+    "model": "deepseek-v4.1-flash",
+    "run_id": "b585d36d-7ee3-4fcd-951a-b16336155f25",
+    "workflow_id": "e57364dd-e0cc-4672-bbd1-7a5bad95efa1",
+    "workflow_status": "completed",
+    "usage": {
+      "input_tokens": 15273,
+      "output_tokens": 733,
+      "cached_tokens": 7040,
+      "estimated_cost": "0",
+      "model_call_count": 2,
+      "tool_call_count": 0
+    },
+    "checks": {
+      "one_run_and_workflow": true,
+      "one_synthetic_write": true,
+      "original_message_prefix_preserved": true,
+      "full_call_and_result_preserved": true,
+      "model_finished_with_actual_id": true,
+      "real_assistant_callback_and_business_route": true,
+      "replayed_callback_did_not_execute_twice": true,
+      "complete_platform_result_in_second_model_input": true
+    }
+  },
+  "targeted_checks": {
+    "nexus_context_repeat_unknown": 5,
+    "nexus_standard_compatibility": 4,
+    "assistant_repeat_unknown_final": 3,
+    "live_scenarios": 1,
+    "live_model_calls": 2
+  },
+  "scope_notes": {
+    "entry": "正式 /api/v1/app/runs 和 agent-workflows；Nexus SQLite与对象存储隔离；真实模型",
+    "platform": "回环HTTP中继不解析业务，原样转发至隔离Assistant正式agent-responses路由，调用现有待办服务",
+    "business_adapter": "save_context_probe_todo为临时平台路由名称，未加入Nexus业务目录",
+    "deployment": "未迁移或重启已有服务，未验证运行中独立Worker加载本次代码",
+    "time_warning": "测试包装路由省略原接口TodoOperationRead响应模型，返回UTC时间缺少Z；模型终答产生时区疑虑。原响应模型离线转换为10:10Z，与18:10+08同一时刻。未再次调用模型，时间显示与通知不计为本次通过项。",
+    "temporary_server": "已关闭；保留隔离SQLite及报告",
+    "initial_compatibility_attempt": "首次兼容检查沿用Worker模式而返回pending；改为测试进程inline后原4项检查通过，未修改持久配置"
+  },
+  "temporary_evidence": [
+    "/private/tmp/caller-live-20261105/result/report.json",
+    "/private/tmp/caller-live-20261105/live.xml",
+    "/private/tmp/nexus-caller-check-20261105-compat.xml"
+  ],
+  "note": "临时原始消息不包含在本提交；此文件保留实际统计和适用范围。文档更新没有重跑模型、测试、回归或哈希。"
+}
