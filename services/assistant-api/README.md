@@ -57,15 +57,23 @@ cp .env.example .env          # 仅在 .env 不存在的新环境执行，再填
 [`../../docs/backend-integration/16-后端运行与客户端交付-20261025.md`](../../docs/backend-integration/16-后端运行与客户端交付-20261025.md)。
 `GET /api/v1/commute/runtime` 现在返回 `server_time`，与进程心跳、任务进度分开。
 
-## 已有真实环境的启动入口
+## 已有真实环境的统一管理入口
 
-真实 Nexus 连接、数据库和供应商配置使用本机已有 env 文件。需要启动时显式选择文件：
+本机使用 Docker Desktop 和固定 Compose 项目 `superapp-assistant`，由一个 `superapp-assistant-backend` 容器运行统一脚本，管理 API、scheduler 和 worker。原 `.env`、数据库及独立记忆密钥继续位于 Mac，按原绝对路径挂载；不进入镜像，不迁移或重建数据。
 
 ```bash
-.venv/bin/python scripts/run_backend.py --env-file /absolute/path/to/existing.env
+.venv/bin/python scripts/manage_backend.py start
+.venv/bin/python scripts/manage_backend.py stop
+.venv/bin/python scripts/manage_backend.py restart
+.venv/bin/python scripts/manage_backend.py status
+.venv/bin/python scripts/manage_backend.py logs
 ```
 
-该入口启动 API 和统一 scheduler/worker，保留文件中的自动化开关，不负责迁移。使用前核对实际端口、已有进程及数据库，避免重复启动。支持 caller_processed 的 Nexus 必须批准应用正文处理连接；隔离验证不证明当前运行服务已经加载新模式。
+默认读取本目录 `.env`，可用 `--env-file /absolute/path/to/existing.env` 显式选择。Docker Desktop 必须运行；宿主只开放 `127.0.0.1:8010`。容器内通过 `host.docker.internal` 连接宿主 Nexus，原配置文件中的 Nexus 地址保持不变。
+
+日常 `restart` 使用 Compose restart，复用原容器；`stop` 保留容器和所有宿主数据。`start` 复用未变化的服务，需要替换时由 Compose 删除旧服务容器，并仅清理本项目孤立容器。依赖变更时先 `build` 再 `start`，不使用 `down --volumes` 或全局 prune。`docker-constraints.txt` 记录切换时本机依赖版本；源代码以只读目录挂载，普通代码修改后统一 restart 即可加载。
+
+内部 `scripts/run_backend.py` 仍可用于原生进程管理，默认仅监听回环地址；不要与 Docker 并行启动。该脚本不负责迁移或开启自动 AI，任一子进程退出会停止其余子进程，Docker 的 `unless-stopped` 策略再启动整组。支持 caller_processed 的 Nexus 必须批准应用正文处理连接。
 
 ## 独立 stub 开发环境（兼容入口）
 
@@ -322,8 +330,8 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
 自动更新继续使用现有统一background scheduler/worker及commute_auto_ai_enabled配置，前晚当地22:00和当天检查时间各建立一次持久跟进。本次10条缺陷定向用例使用`pytest -q tests/test_three_operation_repairs.py`；真实Nexus脚本`evaluate_intent_commute.py`必须显式选择--cases，后台22点用例必须独占新临时库。不要用默认业务库执行这些验收。
 
 
-### 当前共同8010运行入口（2026-11-03）
+### 当前8010运行入口
 
-当前LaunchAgent `local.superapp.assistant-backend`已运行本backend worktree的`scripts/run_backend.py --env-file /Users/mith/Desktop/project/superapp-next/services/assistant-api/.env`，复用原库及凭据；子进程为API与统一background scheduler/worker。原库已完成0021/0022/0023增量升级，原业务行保持。自动AI、自动天气配置仍为false。不要再从主目录旧run_backend.py并行启动另一套服务。
+使用上方 `scripts/manage_backend.py` 统一管理 API、scheduler 和 worker，保留原配置、数据库及凭据。早先另一台机器的 LaunchAgent 名称和 `/Users/mith/Desktop/project/...` 路径不作为本机启动依据；自动AI、自动天气配置保持关闭。
 
 实时定义：`http://127.0.0.1:8010/openapi.json`。前端在Web worktree的3001运行，经`/api/pa`代理访问8010。详细备份、迁移和启动记录见[当前验收文档末尾](../../docs/backend-integration/28-日程与待办独立操作及AI验收.md)。

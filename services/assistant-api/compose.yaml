@@ -1,0 +1,62 @@
+name: superapp-assistant
+
+services:
+  backend:
+    image: superapp-assistant-backend:local
+    build:
+      context: .
+    container_name: superapp-assistant-backend
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 120s
+    user: "${ASSISTANT_UID:?}:${ASSISTANT_GID:?}"
+    read_only: true
+    working_dir: ${ASSISTANT_SERVICE_ROOT:?}
+    command:
+      - python
+      - scripts/run_backend.py
+      - --env-file
+      - ${ASSISTANT_ENV_FILE:?}
+      - --bind-host
+      - 0.0.0.0
+      - --nexus-loopback-host
+      - host.docker.internal
+    ports:
+      - "127.0.0.1:8010:8010"
+    volumes:
+      - type: bind
+        source: ${ASSISTANT_SERVICE_ROOT:?}
+        target: ${ASSISTANT_SERVICE_ROOT:?}
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ASSISTANT_SERVICE_ROOT:?}/data
+        target: ${ASSISTANT_SERVICE_ROOT:?}/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ASSISTANT_ENV_FILE:?}
+        target: ${ASSISTANT_ENV_FILE:?}
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ASSISTANT_MEMORY_KEY_FILE:?}
+        target: ${ASSISTANT_MEMORY_KEY_FILE:?}
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=3).close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

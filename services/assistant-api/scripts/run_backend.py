@@ -15,14 +15,18 @@ import socket
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit, urlunsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    """Load the selected existing environment and supervise API, scheduler and worker together."""
+    """Supervise all three processes, optionally translating host loopback for a Docker network."""
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--env-file',type=Path,required=True)
+    parser.add_argument('--bind-host',choices=['127.0.0.1','0.0.0.0'],default='127.0.0.1')
+    parser.add_argument('--nexus-loopback-host',default=None,
+        help='Route a host-loopback Nexus URL through this container-accessible host; do not edit the env file.')
     args=parser.parse_args()
     config=args.env_file.resolve(strict=True)
     from dotenv import dotenv_values
@@ -31,16 +35,23 @@ def main():
     for key in relative:
         values[key]=str((config.parent / values[key]).resolve())
     os.environ.update(values)
+    if args.nexus_loopback_host:
+        nexus=urlsplit(os.environ.get('ASSISTANT_NEXUS_BASE_URL','http://127.0.0.1:8000'))
+        if nexus.hostname in {'127.0.0.1','localhost','::1'}:
+            if nexus.username or nexus.password:
+                raise ValueError('Nexus URL with embedded credentials cannot be translated; original config preserved')
+            host=args.nexus_loopback_host+(f':{nexus.port}' if nexus.port else '')
+            os.environ['ASSISTANT_NEXUS_BASE_URL']=urlunsplit((nexus.scheme,host,nexus.path,nexus.query,nexus.fragment))
     os.chdir(ROOT)
     sys.path.insert(0,str(ROOT/'src'))
     from assistant_api.core.config import get_settings
     from assistant_api.commute.runtime import validate_commute_configuration
     validate_commute_configuration(get_settings())
     with socket.socket() as probe:
-        probe.bind(('127.0.0.1',8010))
+        probe.bind((args.bind_host,8010))
     env=dict(os.environ,PYTHONPATH=str(ROOT/'src'))
     commands={
-        'api':['uvicorn','assistant_api.main:app','--host','127.0.0.1','--port','8010'],
+        'api':['uvicorn','assistant_api.main:app','--host',args.bind_host,'--port','8010'],
         'scheduler':['assistant_api.background','scheduler'],
         'worker':['assistant_api.background','worker'],
     }

@@ -1,0 +1,9 @@
+*
+!Dockerfile
+!pyproject.toml
+!docker-constraints.txt
+!src/
+!src/**
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/

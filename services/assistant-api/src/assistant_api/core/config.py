@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     )
     nexus_workflow_start_timeout_seconds: float = Field(default=20.0, gt=0, le=60)
 
+    # A separate stable 32-byte base64 key; never derive it from a Nexus token.
+    memory_encryption_key_path: Path | None = None
+
     # Credential NexusPilot uses when it calls this service's business tools.
     # Only the digest is stored on our side; the plaintext lives in NexusPilot.
     tool_callback_token: SecretStr = Field(
