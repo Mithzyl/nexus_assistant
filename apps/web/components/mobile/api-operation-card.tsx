@@ -85,9 +85,12 @@ function legacyFields(value: unknown, depth = 0): ResponseField[] {
   }).slice(0, 14);
 }
 
-/** Display declarative cards, falling back to old receipts without any confirmation button. */
+/** Honor explicit card lists, including no cards; only older responses fall back to their retained receipt. */
 export function ApiOperationCard({ context }: { context: IntakePendingContext }) {
-  if (context.cards?.length) return <section className={styles.stack} aria-label="助手卡片">{context.cards.map((card, i) => <EmbeddedResponseCard key={i} card={card} />)}</section>;
+  if (Array.isArray(context.cards)) {
+    if (context.cards.length === 0) return null;
+    return <section className={styles.stack} aria-label="助手卡片">{context.cards.map((card, i) => <EmbeddedResponseCard key={i} card={card} />)}</section>;
+  }
   const receipt = context.execution_result;
   if (!receipt) return null;
   const data = receipt.data;

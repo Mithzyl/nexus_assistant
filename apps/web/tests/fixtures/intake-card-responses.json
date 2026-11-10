@@ -1,0 +1,126 @@
+{
+  "description": "2026-11-10隔离浏览器真实验收的公开响应；仅合成账号和业务数据，无配置或凭据。",
+  "with_cards": {
+    "source": "chat",
+    "matter_id": null,
+    "follow_up_id": null,
+    "follow_up_execution_id": null,
+    "local_run_id": "1b2a0da8-f0c4-47b6-9842-cec7b74bcddc",
+    "parent_run_id": null,
+    "status": "succeeded",
+    "workflow_execution_id": "d3078a57-e992-4377-a9ea-6014a8df8464",
+    "intent": "question",
+    "outcome": "answer",
+    "answer": "待办已经建好：按你整理报销资料的习惯，截止时间设在明早 9:30（会议开始前 30 分钟），提醒在 9:20（截止前 10 分钟）。会议日程未做任何修改。",
+    "clarify": null,
+    "pending_context": {
+      "execution_result": {
+        "operation_id": "create_todo",
+        "status": "succeeded",
+        "http_status": 201,
+        "data": {
+          "matter": {
+            "matter_id": "6464fef8-964f-41a5-97db-2c68ace2c317",
+            "title": "会前整理报销资料",
+            "goal": "",
+            "status": "active",
+            "version": 1,
+            "last_progress_at": "2026-11-10T02:19:44.934618Z",
+            "latest_progress": "创建待办：会前整理报销资料",
+            "open_todos": 1,
+            "created_at": "2026-11-10T02:19:44.935555Z",
+            "updated_at": "2026-11-10T02:19:44.935555Z"
+          },
+          "todo": {
+            "todo_id": "4b13c500-33dd-46f2-9912-44437a597f1f",
+            "title": "会前整理报销资料",
+            "status": "open",
+            "position": 0,
+            "due_at": "2026-11-11T01:30:00Z",
+            "reminder_at": "2026-11-11T01:20:00Z"
+          },
+          "reminders": [
+            {
+              "reminder_id": "0db00ce4-3563-41c3-a7b9-4ee8ff6e7855",
+              "matter_id": "6464fef8-964f-41a5-97db-2c68ace2c317",
+              "todo_id": "4b13c500-33dd-46f2-9912-44437a597f1f",
+              "title": "提醒：会前整理报销资料",
+              "trigger_at": "2026-11-11T01:20:00Z",
+              "status": "scheduled",
+              "sync_status": "local_only",
+              "source": "web_native"
+            }
+          ],
+          "change_id": "6ccd7ff1-0648-4b94-a653-cfd531623ae9",
+          "replayed": false,
+          "applied": true
+        }
+      },
+      "cards": [
+        {
+          "kind": "result",
+          "title": "会前整理报销资料",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "待办",
+                  "value": "会前整理报销资料",
+                  "format": "text"
+                },
+                {
+                  "label": "截止时间",
+                  "value": "2026-11-11T01:30:00Z",
+                  "format": "datetime"
+                },
+                {
+                  "label": "提醒时间",
+                  "value": "2026-11-11T01:20:00Z",
+                  "format": "datetime"
+                },
+                {
+                  "label": "状态",
+                  "value": "未完成",
+                  "format": "text"
+                }
+              ]
+            }
+          ],
+          "status": "completed"
+        }
+      ]
+    }
+  },
+  "text_only": {
+    "source": "chat",
+    "matter_id": null,
+    "follow_up_id": null,
+    "follow_up_execution_id": null,
+    "local_run_id": "a69cb661-4aef-40e0-909f-ca4d255857d7",
+    "parent_run_id": null,
+    "status": "succeeded",
+    "workflow_execution_id": "79f46144-c710-4001-b03d-29c1c65398dd",
+    "intent": "question",
+    "outcome": "answer",
+    "answer": "好了，“会前整理报销资料”这条待办已标记为完成。",
+    "clarify": null,
+    "pending_context": {
+      "execution_result": {
+        "operation_id": "complete_todo_api_v1_matters__matter_id__todos__todo_id__complete_post",
+        "status": "succeeded",
+        "http_status": 200,
+        "data": {
+          "todo_id": "4b13c500-33dd-46f2-9912-44437a597f1f",
+          "title": "会前整理报销资料",
+          "status": "done",
+          "position": 0,
+          "due_at": "2026-11-11T01:30:00Z",
+          "reminder_at": "2026-11-11T01:20:00Z",
+          "completed_at": "2026-11-10T02:22:03.194396Z"
+        }
+      },
+      "cards": []
+    }
+  }
+}

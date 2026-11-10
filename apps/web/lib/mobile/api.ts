@@ -853,6 +853,7 @@ export interface EmbeddedCard {
 }
 
 export interface IntakePendingContext {
+  /** An explicit empty array suppresses cards; older responses without a list may display their execution receipt. */
   cards?: EmbeddedCard[];
   choices?: string[];
   execution_result?: { status: "succeeded" | "failed" | "unknown"; http_status: number; data: unknown } | null;
