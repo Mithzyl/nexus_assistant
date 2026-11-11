@@ -886,7 +886,7 @@ class RecordCreationTarget(BaseModel):
         return self
 
 
-class TodoCreateRequest(RecordCreationTarget, NewTodoPayload):
+class TodoCreateRequest(RecordCreationTarget, MemoryTodoInput):
     """Create a todo without requiring any schedule; explicit relative reminders name a real schedule."""
     model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
         TodoPayload.model_config["json_schema_extra"], _CREATE_TARGET_SCHEMA,
@@ -906,7 +906,24 @@ class ScheduleCreateRequest(RecordCreationTarget, NewSchedulePayload):
     """Create a schedule from model-selected, nonoverlapping explicit inputs or verified memories."""
     model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
         SchedulePayload.model_config["json_schema_extra"], _CREATE_TARGET_SCHEMA,
+        {'anyOf':[{'required':['starts_at'],'properties':{'starts_at':{'type':'string'}}},
+                  {'required':['preference_date'],'properties':{'preference_date':{'type':'string'},'use_preferences':{'const':True}}}]},
+        *memory_source_constraints({'location','starts_at','reminder_offset_seconds'}),
     ]})
+    starts_at: datetime | None = None
+    preference_date: date | None = Field(default=None, description="本次明确的具体日期。AI选择时间习惯时提供，不从习惯本身猜日期。")
+    use_preferences: bool = Field(default=True, description="允许使用本次memory_defaults选择；无需预先开启用途或绑定角色。false本次禁用。")
+    memory_defaults: dict[str, MemorySelection] = Field(default_factory=dict, max_length=3,
+        description='AI按当前请求从已检索记忆选择location/starts_at/reminder_offset_seconds，分别提交编号、版本、原文、拟采用值和理由。采用记忆时省略对应普通字段（包括null），两处同时提交将拒绝而非自动选择来源。提醒记忆不能同时传reminder_at；地点记忆不能同时传地点、地址或坐标字段。不确定用ask_user卡片选择。')
+
+    @model_validator(mode='after')
+    def require_time_or_preference_date(self):
+        """Bound selected fields and require a specific date when a memory supplies the start time."""
+        if set(self.memory_defaults)-{'location','starts_at','reminder_offset_seconds'}:
+            raise ValueError('日程不支持指定的记忆应用字段。')
+        if self.starts_at is None and (not self.use_preferences or self.preference_date is None or 'starts_at' not in self.memory_defaults):
+            raise ValueError('必须提供 starts_at，或同时提供本次具体 preference_date 和 memory_defaults.starts_at。')
+        return self
 
 
 class TodoPatchRequest(MemoryInputOptions):
@@ -960,6 +977,7 @@ class ScheduleOperationRead(BaseModel):
     replayed: bool = False
     applied: bool = True
     conflict: ConflictRead | None = None
+    preference_application: dict | None = None
 
 
 class TodoListRead(BaseModel):

@@ -85,6 +85,8 @@ def create_app(
 
     Supplement routes save user content separately from the business-operation planner.
     Shared place lookups are published separately from draft mutations.
+    Owned memory uses this Assistant database and a separate private encryption key;
+    Nexus is composed only as the model/Agent integration, not its memory store.
     Tests pass explicit settings, an `httpx.MockTransport` and/or a fixed-clock
     commute runtime, which is why no module-level engine or client exists.
     """
@@ -98,6 +100,9 @@ def create_app(
         engine, factory = create_engine_and_factory(resolved.database_url)
         app.state.engine = engine
         app.state.session_factory = factory
+        from assistant_api.services.memory_repository import MemoryStore
+        app.state.memory_store = MemoryStore(factory, resolved.memory_encryption_key_path)
+        factory.configure(info={'memory_store':app.state.memory_store})
         if resolved.allow_schema_create:
             async with engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)

@@ -27,7 +27,7 @@ async def owned_record(db, user, kind, record_id, *, include_deleted=False):
 
 
 async def read_record(db, user, kind, record_id, *, include_deleted=False):
-    """Return an actual record, parent version and its own reminders for immediate reuse or display."""
+    """Read actual records and the original creation-default receipt, without reapplying today's preferences."""
     row = await owned_record(db, user, kind, record_id, include_deleted=include_deleted)
     relation = Reminder.todo_id == record_id if kind == 'todo' else (Reminder.schedule_id == record_id) & Reminder.todo_id.is_(None)
     reminders = list(await db.scalars(select(Reminder).where(
@@ -37,6 +37,15 @@ async def read_record(db, user, kind, record_id, *, include_deleted=False):
               'reminders': [matters._serialize_reminder(item) for item in reminders]}
     if matter:
         result['matter'] = (await matters._serialize_matters(db, [matter]))[0]
+    if kind=='schedule':
+        draft=await db.scalar(select(MatterDraft).where(MatterDraft.user_id==user.user_id,
+            MatterDraft.status=='confirmed',MatterDraft.result_json['schedule_id'].as_string()==record_id,
+            MatterDraft.payload_json['analysis']['preference_application'].is_not(None)
+        ).order_by(MatterDraft.created_at).limit(1))
+        if draft:
+            receipt=(draft.payload_json or {}).get('analysis',{}).get('preference_application')
+            if receipt:
+                result['preference_application']=receipt
     return result
 
 

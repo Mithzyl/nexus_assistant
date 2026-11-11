@@ -1,7 +1,7 @@
 """Import every model so metadata is complete before create_all or migrations run."""
 
 from assistant_api.models.base import Base
-from assistant_api.models.memory import BusinessMemoryApplication
+from assistant_api.models.memory import MemoryEntry, MemoryScope, MemoryVersion, MemoryOperation, BusinessMemoryApplication
 from assistant_api.models.bark import BarkReminderSetting
 from assistant_api.models.bridge import NexusRun, ToolCallReceipt, UserAsk
 from assistant_api.models.business import BusinessRecord, Note, ScheduleEvent, TaskItem
@@ -63,6 +63,10 @@ __all__ = [
     "CommuteWeatherSnapshot",
     "ServiceHeartbeat",
     "MATTER_STATUSES",
+    "MemoryEntry",
+    "MemoryScope",
+    "MemoryVersion",
+    "MemoryOperation",
     "Matter",
     "MatterChange",
     "MatterDraft",

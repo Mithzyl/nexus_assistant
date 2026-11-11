@@ -18,6 +18,7 @@ dependencies = [
   "h2>=4.1",
   "icalendar>=6,<7",
   "PyJWT[crypto]>=2.8",
+  "cryptography>=42",
   "uvicorn>=0.30",
 ]
 
