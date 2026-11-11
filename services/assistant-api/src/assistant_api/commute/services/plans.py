@@ -93,9 +93,19 @@ async def get_plan(db: AsyncSession, user_id: str, plan_id: str) -> CommutePlan:
     return plan
 
 
-async def create_plan(db: AsyncSession, user_id: str, payload: CommutePlanInput) -> CommutePlan:
+async def create_plan(db: AsyncSession, user_id: str, payload: CommutePlanInput, *, memory_application=None) -> CommutePlan:
+    """Save a recurring configuration and its selected memory provenance in one transaction."""
+    from assistant_api.models import User
+    from assistant_api.services import memory_applications
+    user = await db.get(User, user_id)
+    if memory_application:
+        await memory_applications.verify_receipt(db, user, memory_application['receipt'])
     plan = CommutePlan(user_id=user_id, revision=1, **_values(payload))
     db.add(plan)
+    await db.flush()
+    if memory_application:
+        await memory_applications.persist(db, user, memory_application, command_key=f'plan:{plan.plan_id}:1',
+            target_id=plan.plan_id, target_revision=1, actual=payload.model_dump(mode='json'))
     await db.commit()
     await db.refresh(plan)
     return plan
@@ -108,7 +118,19 @@ async def update_plan(
     plan_id: str,
     payload: CommutePlanInput,
     if_match: str | None,
+    memory_application=None,
 ) -> CommutePlan:
+    """Change only the owned current revision and atomically retain any explicit memory reapplication."""
+    from assistant_api.models import User
+    from assistant_api.services import memory_applications
+    user = await db.get(User, user_id)
+    if memory_application:
+        await memory_applications.verify_receipt(db, user, memory_application['receipt'])
+    if memory_application:
+        from assistant_api.commute.serializers import plan_read
+        previous = plan_read(await get_plan(db, user_id, plan_id)).model_dump(mode='json')
+        memory_application = {**memory_application, 'previous_values': {
+            field: previous.get(field) for field in memory_application['receipt']['fields']}}
     expected = parse_if_match(if_match)
     now = datetime.now(UTC)
     values = _values(payload)
@@ -144,6 +166,9 @@ async def update_plan(
     )
     assert plan is not None
     await _cancel_stale_work(db, plan, now=now)
+    if memory_application:
+        await memory_applications.persist(db, user, memory_application, command_key=f'plan:{plan.plan_id}:{plan.revision}',
+            target_id=plan.plan_id, target_revision=plan.revision, actual=payload.model_dump(mode='json'))
     await db.commit()
     await db.refresh(plan)
     return plan

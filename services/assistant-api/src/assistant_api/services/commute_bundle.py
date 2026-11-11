@@ -8,9 +8,11 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Annotated, Literal
+from assistant_api.schemas.preferences import MemoryInputOptions, memory_source_constraints, FIELDS
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from assistant_api.models import MatterDraft, CommutePlan
+from assistant_api.commute.providers.base import TransportMode
 from assistant_api.models.base import new_id
 from assistant_api.core.errors import ConflictError, InvalidRequestError
 from assistant_api.services import commute_places, commute_estimate, schedule_routes
@@ -25,18 +27,23 @@ class CommuteIntent(BaseModel):
     weekdays: list[Annotated[int, Field(ge=1, le=7)]] | None = Field(default=None, min_length=1, max_length=7)
 
 
-class CreateDraftRequest(CommuteIntent):
+class CreateDraftRequest(CommuteIntent, MemoryInputOptions):
     """Prepare the existing commute quote workflow from explicit user places and arrival time."""
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='forbid', json_schema_extra={'allOf': memory_source_constraints(FIELDS['commute_draft'])})
     idempotency_key: str = Field(min_length=8, max_length=128)
     title: str = Field(default='日常通勤安排', min_length=1, max_length=255)
+    origin_query: str | None = Field(default=None, min_length=1, max_length=255)
+    destination_query: str | None = Field(default=None, min_length=1, max_length=255)
+    city: str | None = Field(default=None, min_length=1, max_length=64)
+    arrival_local_time: str | None = None
 
 
-async def create_input_draft(db, runtime, settings, user, payload: CreateDraftRequest):
-    """Expose existing commute draft creation without running another intent model."""
+async def create_input_draft(db, runtime, settings, user, payload: CreateDraftRequest, *, execution_run_id=None):
+    """Prepare the existing commute flow with checked memory choices, without another model request."""
     from assistant_api.services import matters
     user_id = user.user_id
-    original = payload.model_dump(mode='json')
+    from assistant_api.services import memory_applications
+    original = memory_applications.request_identity(payload)
     existing = await db.scalar(select(MatterDraft).where(
         MatterDraft.user_id == user_id, MatterDraft.origin_key == payload.idempotency_key))
     if existing is not None:
@@ -44,11 +51,19 @@ async def create_input_draft(db, runtime, settings, user, payload: CreateDraftRe
             raise ConflictError('idempotency_key_reused', '该请求标识已用于另一项操作。')
         return matters._serialize_draft(existing)
     timezone = await matters.user_timezone(db, user, settings.matter_default_timezone)
-    parsed = {'commute': payload.model_dump(exclude={'idempotency_key', 'title'}), 'title': payload.title}
+    values, receipt = await memory_applications.resolve_input(db, user, 'commute_draft', payload,
+        execution_run_id=execution_run_id, excluded={'idempotency_key', 'title'})
+    from pydantic import ValidationError
+    try:
+        intent = CommuteIntent.model_validate(values)
+    except ValidationError as exc:
+        raise InvalidRequestError('commute_draft_fields_invalid', '通勤草稿缺少有效字段，请补齐或明确选择记忆；尚未保存正式安排。') from exc
+    parsed = {'commute': intent.model_dump(), 'title': payload.title}
+    applications = [{'kind': 'commute_bundle', 'index': 0, 'scope': 'creation', 'receipt': receipt}] if receipt else []
     try:
         draft = await create_draft(db, runtime, settings, user, None, parsed, payload.title,
                                    origin_key=payload.idempotency_key, creation_request=original,
-                                   timezone_override=timezone)
+                                   timezone_override=timezone, memory_applications=applications)
     except IntegrityError:
         await db.rollback()
         winner = await db.scalar(select(MatterDraft).where(
@@ -60,7 +75,7 @@ async def create_input_draft(db, runtime, settings, user, payload: CreateDraftRe
         return matters._serialize_draft(winner)
     return matters._serialize_draft(draft)
 
-class QuoteRequest(BaseModel):
+class QuoteValues(BaseModel):
     model_config = ConfigDict(extra='forbid')
     expected_version: int = Field(ge=1)
     origin_token: str
@@ -71,8 +86,17 @@ class QuoteRequest(BaseModel):
     mode: Literal['driving','transit'] = 'driving'
     test_only: bool = False
 
-async def create_draft(db,runtime,settings,user,run,parsed,text,*,origin_key=None,creation_request=None,timezone_override=None):
-    """Prepare one persisted commute draft and server-issued place candidates; formal save stays separate."""
+class QuoteRequest(QuoteValues, MemoryInputOptions):
+    """Choose quote parameters explicitly or from this task's retrieved memories."""
+    model_config = ConfigDict(extra='forbid', json_schema_extra={'allOf': memory_source_constraints(FIELDS['commute_quote'])})
+    mode: TransportMode | None = None
+    effective_from: date | None = None
+    weekdays: list[Annotated[int, Field(ge=1, le=7)]] | None = None
+    buffer_minutes: int | None = Field(default=None, ge=0, le=120)
+
+
+async def create_draft(db,runtime,settings,user,run,parsed,text,*,origin_key=None,creation_request=None,timezone_override=None,memory_applications=None):
+    """Persist a commute preview and private source envelope before obtaining server-issued place candidates."""
     intent=CommuteIntent.model_validate(parsed['commute'])
     timezone=timezone_override or ((run.context_json or {}).get('timezone') if run else None) or settings.matter_default_timezone
     draft=MatterDraft(user_id=user.user_id,ai_run_id=run.local_run_id if run else None,kind='create',status='preview',version=1,payload_json={},origin_key=origin_key)
@@ -80,6 +104,9 @@ async def create_draft(db,runtime,settings,user,run,parsed,text,*,origin_key=Non
     # Persist identity before any upstream request; recovery finds the same draft.
     state={'intent':intent.model_dump(mode='json'),'timezone':timezone,'status':'locating'}
     draft.payload_json={'kind':'create','title':parsed.get('title') or '日常通勤安排','goal':text,'source_text':text,'schedule':None,'todos':[], 'complete_todo_ids':[], 'matter_action':'none','commute':state,'analysis': {'creation_request': creation_request} if creation_request else {}}
+    if memory_applications:
+        from assistant_api.services import memory_applications as source_records
+        draft.payload_json['analysis']['memory_application_envelope'] = source_records.pack(db, user, memory_applications)
     await db.commit()
     for side,kind in [('origin','place'),('destination','address')]:
         state[side+'_search']=await commute_places.search_places(runtime,secret=settings.tool_callback_token.get_secret_value(),user_id=user.user_id,draft_id=draft.draft_id,query=getattr(intent,side+'_query'),city=intent.city,search_type=kind,limit=5)
@@ -97,12 +124,30 @@ def selected_place(token,settings,user,draft):
     place["selection_token"] = token
     return place
 
-async def quote(db,runtime,settings,user,draft_id,request):
+async def quote(db,runtime,settings,user,draft_id,request,*,execution_run_id=None):
+    """Resolve explicit quote choices, retain consistent sources, and reuse same-input route measurements."""
     from assistant_api.services import matters
     draft=await matters._get_draft(db,user,draft_id)
     if draft.status!='preview' or draft.version!=request.expected_version:raise ConflictError('preview_stale','请刷新草稿后再试。')
     state=dict((draft.payload_json or {}).get('commute') or {})
     if not state:raise InvalidRequestError('not_commute_draft','不是通勤组合草稿。')
+    from assistant_api.services import memory_applications
+    values, receipt = await memory_applications.resolve_input(db, user, 'commute_quote', request,
+        execution_run_id=execution_run_id, excluded={'expected_version', 'origin_token', 'destination_token', 'test_only'})
+    from pydantic import ValidationError
+    try:
+        request = QuoteValues.model_validate({**request.model_dump(exclude=memory_applications.OPTIONS), **values,
+                                              'mode': values.get('mode', 'driving')})
+    except ValidationError as exc:
+        raise InvalidRequestError('commute_quote_fields_invalid', '测算缺少有效周期或方式，请补齐或明确选择记忆。') from exc
+    applications = memory_applications.unpack(db, user, draft.payload_json)
+    applications = memory_applications.merge_bundle(applications, values, receipt)
+    analysis = dict(draft.payload_json.get('analysis', {}))
+    if applications:
+        analysis['memory_application_envelope'] = memory_applications.pack(db, user, applications)
+    else:
+        analysis.pop('memory_application_envelope', None)
+    draft.payload_json = {**draft.payload_json, 'analysis': analysis}
     zone=ZoneInfo(state['timezone'])
     if request.effective_from<datetime.now(zone).date():raise InvalidRequestError('past_first_date','首次日期不能早于今天。')
     if any(x<1 or x>7 for x in request.weekdays) or request.effective_from.isoweekday() not in request.weekdays:

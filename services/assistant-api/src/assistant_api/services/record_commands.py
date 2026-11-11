@@ -40,10 +40,10 @@ async def read_record(db, user, kind, record_id, *, include_deleted=False):
     return result
 
 
-async def _saved_result(db, runtime, settings, user, kind, draft, key, record_id=None):
-    """Apply the existing atomic transaction and return saved resources without another AI GET."""
+async def _saved_result(db, runtime, settings, user, kind, draft, key, record_id=None, *, client=None):
+    """Apply the atomic transaction with current-source verification and return real saved resources."""
     result = await matters.confirm_draft(db, runtime, settings, user, draft['draft_id'],
-                                         schemas.ConfirmRequest(expected_version=draft['version']), key)
+                                         schemas.ConfirmRequest(expected_version=draft['version']), key,client=client)
     if not result.get('applied', True):
         return {name: result[name] for name in ('matter', 'schedule', 'reminders', 'change_id', 'replayed', 'applied', 'conflict') if name in result}
     if record_id is None:
@@ -52,33 +52,50 @@ async def _saved_result(db, runtime, settings, user, kind, draft, key, record_id
     return {**value, 'change_id': result['change_id'], 'replayed': result['replayed'], 'applied': True}
 
 
-async def create_record(db, runtime, settings, user, kind, request):
-    """Prepare exactly the requested resource and save it, reusing the parent creation transaction."""
+async def create_record(db, runtime, settings, user, kind, request, *, client=None, execution_run_id=None):
+    """Create one record with checked model-selected fields and replay-stable, encrypted provenance."""
+    from assistant_api.services import memory_applications
+    original = memory_applications.request_identity(request, exclude_unset=True)
+    existing = await db.scalar(select(MatterDraft).where(MatterDraft.user_id == user.user_id,
+        MatterDraft.origin_key == request.idempotency_key))
+    if existing is not None and 'preference_request' in (existing.payload_json or {}).get('analysis', {}):
+        if existing.payload_json['analysis']['preference_request'] != original:
+            raise ConflictError('idempotency_key_reused', '该请求标识已用于另一项操作。')
+        return await _saved_result(db, runtime, settings, user, kind, matters._serialize_draft(existing),
+                                   request.idempotency_key, client=client)
     parent = {'matter_id': request.matter_id, 'expected_matter_version': request.expected_matter_version}
-    fields = request.model_dump(exclude={'idempotency_key', 'matter_id', 'expected_matter_version'})
-    payload = schemas.StructuredDraftRequest(
-        idempotency_key=request.idempotency_key, **parent,
+    fields, receipt = await memory_applications.resolve_input(db, user, kind, request,
+        execution_run_id=execution_run_id, excluded={'idempotency_key', 'matter_id', 'expected_matter_version'})
+    parsed = (schemas.TodoPayload if kind == 'todo' else schemas.SchedulePayload).model_validate(fields)
+    payload = schemas.StructuredDraftRequest(idempotency_key=request.idempotency_key, **parent,
         title=request.title if request.matter_id is None else None,
-        **({'todos': [fields]} if kind == 'todo' else {'schedule': fields}))
-    draft = await matters.create_structured_draft(db, runtime, settings, user, payload)
-    return await _saved_result(db, runtime, settings, user, kind, draft, request.idempotency_key)
+        **({'todos': [parsed.model_dump()]} if kind == 'todo' else {'schedule': parsed.model_dump()}))
+    applications = [{'kind': kind, 'index': 0, 'receipt': receipt, 'scope': 'creation'}] if receipt else []
+    # Existing schedule callers keep their original creation receipt; no new UI field is introduced.
+    legacy_receipt = {**receipt, 'scope': 'creation'} if receipt and kind == 'schedule' else None
+    draft = await matters.create_structured_draft(db, runtime, settings, user, payload,
+        preference_application=legacy_receipt, preference_request=original, memory_applications=applications)
+    return await _saved_result(db, runtime, settings, user, kind, draft, request.idempotency_key, client=client)
 
 
-async def edit_record(db, runtime, settings, user, kind, record_id, request, *, cancel=False):
-    """Patch the same owned record using actual snapshots, retaining field-level independence and replay identity."""
-    original = {'kind': kind, 'record_id': record_id, 'cancel': cancel, 'request': request.model_dump(mode='json')}
+async def edit_record(db, runtime, settings, user, kind, record_id, request, *, cancel=False, client=None, execution_run_id=None):
+    """Patch the same record, preserving unrelated fields and recording only explicit memory reapplication."""
+    from assistant_api.services import memory_applications
+    original = {'kind': kind, 'record_id': record_id, 'cancel': cancel, 'request': memory_applications.request_identity(request)}
     existing = await db.scalar(select(MatterDraft).where(
         MatterDraft.user_id == user.user_id, MatterDraft.origin_key == request.idempotency_key))
     if existing is not None and (existing.payload_json or {}).get('analysis', {}).get('direct_request'):
         if existing.payload_json['analysis']['direct_request'] != original:
             raise ConflictError('idempotency_key_reused', '该请求标识已用于另一项操作。')
-        return await _saved_result(db, runtime, settings, user, kind, matters._serialize_draft(existing), request.idempotency_key, record_id)
+        return await _saved_result(db, runtime, settings, user, kind, matters._serialize_draft(existing), request.idempotency_key, record_id, client=client)
     row = await owned_record(db, user, kind, record_id)
     if not row.matter_id:
         raise InvalidRequestError('record_not_editable', '设备导入的记录不能在应用内改写。')
     matter = await matters._get_matter(db, user, row.matter_id)
     if matter.version != request.expected_matter_version:
         raise ConflictError('matter_changed', '该事项已被修改，请重新读取。')
+    changes, receipt = await memory_applications.resolve_input(db, user, kind, request, execution_run_id=execution_run_id,
+        excluded={'idempotency_key', 'expected_matter_version'}) if not cancel else ({}, None)
     draft = await matters.create_edit_draft(db, runtime, settings, user, row.matter_id,
         schemas.MatterEditRequest(idempotency_key=request.idempotency_key,
                                   **({'todo_id': record_id} if kind == 'todo' else {'schedule_id': record_id})))
@@ -99,7 +116,6 @@ async def edit_record(db, runtime, settings, user, kind, record_id, request, *, 
         await db.commit()
         draft = matters._serialize_draft(stored)
     else:
-        changes = request.model_dump(exclude_unset=True, exclude={'idempotency_key', 'expected_matter_version'})
         if any(changes.get(field, 'omitted') is None for field in ('title', 'starts_at', 'status', 'coordinate_system')):
             raise InvalidRequestError('record_field_null', '必填字段不能设置为空。')
         if kind == 'todo':
@@ -118,7 +134,15 @@ async def edit_record(db, runtime, settings, user, kind, record_id, request, *, 
             patch = schemas.DraftPatchRequest(expected_version=stored.version,
                                               schedule=schemas.SchedulePayload.model_validate(merged))
         draft = await matters.patch_draft(db, runtime, settings, user, stored.draft_id, patch)
-    return await _saved_result(db, runtime, settings, user, kind, draft, request.idempotency_key, record_id)
+    if receipt:
+        before = body.get('schedule') if kind == 'schedule' else body['todos'][0]
+        previous_values = {field: before.get(field) for field in receipt['fields']}
+        stored.payload_json = {**stored.payload_json, 'analysis': {**stored.payload_json.get('analysis', {}),
+            'memory_application_envelope': memory_applications.pack(db, user,
+                [{'kind': kind, 'index': 0, 'receipt': receipt, 'scope': 'reapplication',
+                  'previous_values': previous_values}])}}
+        await db.commit()
+    return await _saved_result(db, runtime, settings, user, kind, draft, request.idempotency_key, record_id, client=client)
 
 
 async def list_records(db, user, kind, *, matter_id=None, query=None, limit=30):

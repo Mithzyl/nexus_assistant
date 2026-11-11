@@ -23,3 +23,35 @@ Assistant 从实际 OpenAPI 选择本次允许的业务说明，区分用户原�
 ## 验证范围
 
 正式 App 路由的隔离联合场景已验证同一 Run/Workflow 的两轮真实模型调用和一次业务写入，重复回调不增加待办。普通对话兼容和未知状态使用固定输出定向验证。证据与未部署事项见[27](27-接口复核与AI业务调用说明.md)；独立 Worker 恢复、真实存储与客户端验收未在本次重跑。
+
+### 本次新增来源记录：实现、隐私与启用条件
+
+提交范围：按用户要求，仅提交本次业务记忆来源记录及相关文档；自有记忆数据库/加密仓库、共享记忆参数定义、Agent 接入等既有依赖仍保持未提交。该提交不能单独检出运行；本节真实验收针对当前完整工作区，未验证仅检出此提交的环境。
+
+由 AI 按本次输入选择哪些记忆、业务字段和值；后端不判断语义适用性，只核对当前用户、本任务确实检索的条目、当前版本/状态、真实原文、字段类型/明确限制及重复来源。同字段普通值（含 null）与 memory_defaults 不能同时提交。修改接口只重新应用本次明确给出的选择，未传字段继续保留；长期 PUT 仍按原完整配置及 If-Match 执行。
+
+来源是内部记录，不是新增页面内容：不增加前端来源入口或用户设置，不默认将记忆全文塞入回答。只有用户询问来源、需要澄清歧义或解释重要安排时，AI 才简短回答，确有必要可用卡片；只要文字仍不生成卡片。新的待办/长期计划来源不添加到普通页面响应；原日程 creation 回执兼容保留。后端不会根据文本词语猜测“是否有必要展示”。
+
+| 接口 | 本次来源选择 |
+| --- | --- |
+| POST /todos、PATCH /todos/{todo_id} | due_at、reminder_at 的 memory_defaults；PATCH 保存 reapplication 历史，原 todo_id 不变 |
+| POST /schedules、PATCH /schedules/{schedule_id} | location、starts_at、reminder_offset_seconds；修改只处理本次提交字段，原 ID/其他字段保留 |
+| POST /matters/drafts、PATCH /matters/drafts/{draft_id} | schedule 和每条 todos 各自选择；确认时重新核对，实际保存后才按生成的真实 ID 记账；未保存/冲突不产生已采用来源 |
+| POST /commute-plans、PUT /commute-plans/{plan_id} | origin/destination、transport_mode、星期、到达/检查时刻、余量、时区、生效日、天气余量/阈值和通知字段；仍校验完整周期配置 |
+| POST /matters/commute-drafts、POST /matters/drafts/{draft_id}/commute-quote | 查询词/城市/到达时间/周期条件，以及测算 mode/首日/星期/余量；保留经后端签发的选点和真实测算流程，来源跨阶段保留到实际计划 |
+
+以上均位于 /api/v1 下。每个选择仍用 entry_id/version/source_quote/value/reason；新增可选 references，最多 4 个真实业务对象，每个含 kind=schedule/todo/commute_plan、record_id、version。日程/待办引用所属 matter.version，通勤计划引用 revision；与外层记忆 version 是不同对象。后端读取并保存真实业务快照，不接收模型编造的快照。AI 提出计算结果，后端不解释原文或接管计算规划；记录“曾参考会议”不建立会议改期后自动重算依赖。
+
+新增 business_memory_applications 表，正文复用现有独立记忆密钥加密；保存目标 ID/版本、creation/reapplication、记忆编号/版本/原文、AI 拟采用值/理由、经核对的业务引用及快照、实际采用值，明确重新应用时保留此前字段值。原来源和记忆版本不覆盖。草稿中的加密来源信封不发给页面；正式来源与原业务变更同事务提交，失败回滚，重复确认不重复记账。缺密钥明确失败，不创建替代密钥。
+
+新增增量迁移标记 0029_business_memory_applications，由 scripts/migrate_sqlite.py 的 init/upgrade 创建缺失表；不回填猜测旧来源、不删除旧记录。隔离库定向检查完成后，2026-11-11 已按授权备份本机常用库至 `services/assistant-api/data/backups/before-0029-20261111-152748/local-development.db`，执行既有 upgrade 完成 0029，并经 `scripts/run_backend.py --env-file .env` 统一重启 API、scheduler 和 worker。健康端点 200、两个后台进程心跳已更新；3 个账号、5 个事项、4 条待办、1 条日程、3 条提醒、3 条记忆及其 3 条版本记录数量保持不变，配置和原记忆密钥未改动。自动 AI 关闭，Agent 记录仍为 16 条；本次未调用模型、未做额外测试、回归或哈希。服务器未在本次操作范围，不要求修改 Nexus。
+
+定向验证：在 services/assistant-api 执行 `.venv/bin/python -m pytest tests/test_memory_application_records.py -q --tb=short --disable-warnings --maxfail=1`，7 项通过。覆盖真实隔离 SQL 的待办引用与重复/重应用、组合来源再次校验与确认/编辑、周期计划、通勤组合跨阶段、其他账号/未检索来源拒绝、固定 Agent 回调读后执行及增量迁移保留。此为固定 Agent 意图与离线地点/路线样本，不是真实模型/浏览器验收；未修改 Nexus、未调用模型/外部地图、未跑其他测试/回归/哈希。此前 11 月 10 日真实浏览器结果保持其原范围，不当作新接口已被真实 AI 验收。
+
+### 2026-11-11 待办来源真实浏览器验收
+
+Chrome 通过当前 Web 源码副本，对独立 Assistant/Nexus 数据库完成两轮真实任务，使用 opencode/glm-5.3-flash；每轮一个 Agent，共 6+1 次模型调用，无重试。首轮初始检索取得真实记忆“资料整理待办在相关会议前 30 分钟截止”，AI 按需获取定义、读取明天 10:00 的项目讨论会及事项版本，再以 memory_defaults.due_at 和会议 references 创建 09:30 截止的待办。加密来源行保留记忆版本 1、原文、AI 选择理由、会议版本/真实快照和实际采用值。普通保存响应不新增来源字段；终答 cards=[]，页面只显示结果，未展示记忆原文、内部编号或来源入口。
+
+第二轮用户明确追问依据并允许卡片，AI 使用本次检索记忆与允许的执行历史解释会议时间减去 30 分钟，返回文字和一张信息卡片；页面字段、中文、时间均正常，无控制台错误或警告。未再调用写接口，最终只有 1 条待办和预置的 1 条日程。这不表示新增了来源读取工具，也不证明任意历史版本的来源都可由 AI 查询；组合草稿、周期计划和重新应用沿用前述隔离定向检查范围，本次未扩大验证。
+
+[精简验收记录、实际字段与截图](evidence/memory-sources-browser-20261111.json)。原配置、记忆密钥和业务数据未改；自动 AI 关闭。临时存储使用本地 S3 协议样本，未验证真实对象存储部署。不运行额外测试、回归或哈希。

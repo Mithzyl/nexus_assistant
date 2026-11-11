@@ -332,6 +332,10 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
 
 ### 当前8010运行入口
 
-使用上方 `scripts/manage_backend.py` 统一管理 API、scheduler 和 worker，保留原配置、数据库及凭据。早先另一台机器的 LaunchAgent 名称和 `/Users/mith/Desktop/project/...` 路径不作为本机启动依据；自动AI、自动天气配置保持关闭。
+2026-11-11 本机实际通过 `scripts/run_backend.py --env-file <实际 .env 路径>` 统一管理 API、scheduler 和 worker，保持 backend worktree、原配置、数据库及记忆密钥；0028/0029 已迁移，自动 AI、自动天气仍关闭。`scripts/manage_backend.py` 是已有 Docker 管理代码，不代表本机正在使用 Docker。其他机器的 LaunchAgent 名称与目录不作为本机启动依据。
 
 实时定义：`http://127.0.0.1:8010/openapi.json`。前端在Web worktree的3001运行，经`/api/pa`代理访问8010。详细备份、迁移和启动记录见[当前验收文档末尾](../../docs/backend-integration/28-日程与待办独立操作及AI验收.md)。
+
+2026-11-10：已补待办、普通/通勤组合草稿、长期通勤计划及明确重新应用的记忆来源记录，说明见 [05 来源记录](../../docs/backend-integration/05-Agent-工具-记忆运行流程.md#本次新增来源记录实现隐私与启用条件)。AI 选择来源，后端只校验/保存；不增加前端入口或默认展示记忆正文。新增 `0029_business_memory_applications` 创建加密的内部来源表，复用原记忆密钥，不改已有账号或业务行。代码曾在隔离库定向验证。2026-11-11 已备份本机 `data/local-development.db` 至 `data/backups/before-0029-20261111-152748/local-development.db`，执行既有 `scripts/migrate_sqlite.py upgrade --database <实际数据库地址>` 完成 0029，再通过 `scripts/run_backend.py --env-file .env` 整组重启 API、scheduler 和 worker。API 在 `127.0.0.1:8010` 返回健康状态 200，两个后台进程均产生新心跳；原账号、业务和记忆记录数量保持不变，原配置及记忆密钥未改动，自动 AI 仍关闭。此次仅核对迁移与运行状态，未调用模型或增加测试；服务器未在本次操作范围。
+
+2026-11-11：待办记忆来源完成一次 Chrome 真实 AI 验收（隔离数据、两个连续输入、6+1 次模型调用、无重试）。首轮按会议时间和记忆保存 09:30 截止待办、cards=[]；用户追问后才展示记忆与计算解释卡片。真实来源记录与页面结果一致，未重复写入；未扩大重测组合草稿、周期计划或重新应用。范围与限制见 [当前流程的验收记录](../../docs/backend-integration/05-Agent-工具-记忆运行流程.md#2026-11-11-待办来源真实浏览器验收)。

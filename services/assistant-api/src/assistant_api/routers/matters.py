@@ -261,32 +261,34 @@ async def list_changes(
 @router.post(
     "/matters/commute-drafts", response_model=schemas.DraftRead, status_code=201,
     operation_id="create_commute_draft", summary="创建完整通勤安排的组合草稿并查询真实起终点候选",
-    description="新建通勤安排的入口：提供用户起终点名称、城市及到达时间，复用现有组合草稿。返回payload.commute.origin_search与destination_search候选；用用户已知条件唯一选择真实selection_token。缺少日期、星期或余量时询问，不能猜。继续commute-quote测算并选择交通方式，然后confirm一次事务保存事项、首日日程、周期计划、提醒及路线。这里只准备草稿，不新建正式日程。",
+    description="新建通勤安排的入口：提供用户起终点名称、城市及到达时间，复用现有组合草稿。返回payload.commute.origin_search与destination_search候选；用用户已知条件唯一选择真实selection_token。缺少日期、星期或余量时询问，不能猜。继续commute-quote测算并选择交通方式，然后confirm一次事务保存事项、首日日程、周期计划、提醒及路线。这里只准备草稿，不新建正式日程。memory_defaults可选择起终点查询词、城市、到达时间、星期、余量和生效日；省略同字段普通值；来源内部保存，不默认展示原文。",
     openapi_extra={"x-assistant": {"effect": "preview", "next": [
         {"method": "POST", "path": "/api/v1/matters/drafts/{draft_id}/commute-quote", "purpose": "选择真实地点候选及明确周期字段后测算；普通地点confirm接口不用于组合草稿。"},
     ]}},
 )
 async def create_commute_draft(payload: commute_bundle.CreateDraftRequest,
                                db: DatabaseSession, settings: SettingsDependency,
-                               runtime: CommuteRuntimeDependency, user: CurrentUser) -> dict:
-    """Prepare an existing commute bundle with typed input and no additional AI intake call."""
-    return await commute_bundle.create_input_draft(db, runtime, settings, user, payload)
+                               runtime: CommuteRuntimeDependency, user: CurrentUser, request: Request) -> dict:
+    """Prepare the commute bundle and private selected-memory sources without an extra model call."""
+    return await commute_bundle.create_input_draft(db, runtime, settings, user, payload,
+        execution_run_id=request.scope.get('assistant_execution_run_id'))
 
 
 @router.post(
     "/matters/drafts", response_model=schemas.DraftRead, status_code=201,
     operation_id="create_structured_draft",
     summary="新增待办、日程或事项的结构化草稿，向已有事项追加新记录",
-    description="从零新建时提供title及todos或schedule，不需要先创建空事项；向已有事项追加时先读取matter_id及version，传expected_matter_version。这里只准备草稿，正式记录由后续confirm接口原子保存。新记录不能带原todo_id或schedule_id；修改原记录请走已有对象的编辑草稿入口。没有截止或提醒时间时省略，不猜时间。重复请求使用相同idempotency_key和参数。",
+    description="从零新建时提供title及todos或schedule，不需要先创建空事项；向已有事项追加时先读取matter_id及version，传expected_matter_version。这里只准备草稿，正式记录由后续confirm接口原子保存。新记录不能带原todo_id或schedule_id；修改原记录请走已有对象的编辑草稿入口。没有截止或提醒时间时省略，不猜时间。重复请求使用相同idempotency_key和参数。schedule与各todos支持各自memory_defaults；采用记忆时省略同字段普通参数，来源由后端校验并在确认时再次检查、内部保存，不自动展示记忆原文。",
     openapi_extra={"x-assistant": {"effect": "preview", "keywords": ["新增待办", "创建待办", "添加日程", "新建日程", "追加待办", "新建事项"], "next": [
         {"method": "POST", "path": "/api/v1/matters/drafts/{draft_id}/confirm", "purpose": "参数明确时用返回的draft_id、version直接保存，无需用户再次确认。"},
     ]}},
 )
 async def create_structured_draft(payload: schemas.StructuredDraftRequest,
                                   db: DatabaseSession, settings: SettingsDependency,
-                                  runtime: CommuteRuntimeDependency, user: CurrentUser) -> dict:
-    """Adapt explicit typed creation parameters to the existing draft/save services."""
-    return await matters.create_structured_draft(db, runtime, settings, user, payload)
+                                  runtime: CommuteRuntimeDependency, user: CurrentUser, request: Request) -> dict:
+    """Prepare combined records with model-selected memory sources; confirmation revalidates before formal save."""
+    return await matters.create_structured_draft(db, runtime, settings, user, payload,
+        execution_run_id=request.scope.get('assistant_execution_run_id'))
 
 
 @router.get("/matters/drafts", response_model=list[schemas.DraftRead],
@@ -364,18 +366,20 @@ async def apply_option(
 
 
 @router.patch("/matters/drafts/{draft_id}", response_model=schemas.DraftRead,
-    summary='修改草稿字段，保留原日程或待办标识', description='需要草稿当前version。未提供字段保持原值；schedule是完整对象，修改时从原payload/schedule复制并覆盖指定字段；todos是本次拟变更列表，带todo_id更新原待办，不带ID新建。不能用空ID替换已确定的修改目标。schedule=null仅移除草稿中的日程提议，不删除原日程；cancel_schedule_ids只可选当前停止跟进预览列出的候选。修改后使用返回的新version继续confirm保存。',
+    summary='修改草稿字段，保留原日程或待办标识', description='需要草稿当前version。未提供字段保持原值；schedule是完整对象，修改时从原payload/schedule复制并覆盖指定字段；todos是本次拟变更列表，带todo_id更新原待办，不带ID新建。不能用空ID替换已确定的修改目标。schedule=null仅移除草稿中的日程提议，不删除原日程；cancel_schedule_ids只可选当前停止跟进预览列出的候选。修改后使用返回的新version继续confirm保存。schedule和每条todos可用memory_defaults明确重新应用记忆；来源校验后内部保存，不新增展示入口或默认复述原文。',
     openapi_extra={'x-assistant': {'effect': 'preview', 'next': [{'method': 'POST', 'path': '/api/v1/matters/drafts/{draft_id}/confirm', 'purpose': '使用最新version保存。'}]}})
 async def patch_draft(
     draft_id: str,
+    request: Request,
     payload: schemas.DraftPatchRequest,
     db: DatabaseSession,
     settings: SettingsDependency,
     runtime: CommuteRuntimeDependency,
     user: CurrentUser,
 ) -> dict:
-    '需要草稿当前version。未提供字段保持原值；schedule是完整对象，修改时从原payload/schedule复制并覆盖指定字段；todos是本次拟变更列表，带todo_id更新原待办，不带ID新建。不能用空ID替换已确定的修改目标。schedule=null仅移除草稿中的日程提议，不删除原日程；cancel_schedule_ids只可选当前停止跟进预览列出的候选。修改后使用返回的新version继续confirm保存。'
-    return await matters.patch_draft(db, runtime, settings, user, draft_id, payload)
+    """Patch the existing draft and validate only this Agent's explicitly selected memory sources."""
+    return await matters.patch_draft(db, runtime, settings, user, draft_id, payload,
+        execution_run_id=request.scope.get('assistant_execution_run_id'))
 
 
 @router.post(
@@ -398,7 +402,7 @@ async def confirm_draft(
 ) -> dict:
     '使用实际draft_id、当前version和Idempotency-Key，一次事务保存。用户输入明确即执行此保存步骤，不再请求用户确认。preview不是保存成功；applied=false时读取返回conflict再选择方案，不宣称成功。sync_to_ios仅用户要求同步时启用；create_schedule=false只是不保存本次日程提议。返回matter、schedule、reminders及change_id；需要待办完整结果再GET事项详情。'
     result = await matters.confirm_draft(
-        db, runtime, settings, user, draft_id, payload, idempotency_key
+        db, runtime, settings, user, draft_id, payload, idempotency_key,client=client
     )
     if result["draft"]["payload"].get("commute"):
         from assistant_api.services import commute_memory
@@ -415,13 +419,13 @@ async def confirm_draft(
 
 @router.post("/matters/drafts/{draft_id}/commute-quote", response_model=schemas.DraftRead,
     summary='测算通勤组合草稿并选择交通方式',
-    description='仅适用于payload含commute的组合草稿；origin_token及destination_token来自本草稿真实地点候选，token绑定账号和草稿。需要当前version、首日、星期、余量及交通方式；测算后返回新version，仍需confirm原子保存。不要用普通日程草稿调用。',
+    description='仅适用于payload含commute的组合草稿；origin_token及destination_token来自本草稿真实地点候选，token绑定账号和草稿。需要当前version、首日、星期、余量及交通方式；测算后返回新version，仍需confirm原子保存。不要用普通日程草稿调用。首日/星期/余量/mode可由本次memory_defaults选择，省略同字段普通参数；来源在确认时复核并内部保存，不默认展示记忆内容。',
     openapi_extra={'x-assistant': {'effect': 'preview', 'next': [{'method': 'POST', 'path': '/api/v1/matters/drafts/{draft_id}/confirm', 'purpose': '保存测算后的完整通勤草稿。'}]}}
 )
-async def quote_commute(draft_id: str, payload: commute_bundle.QuoteRequest, db: DatabaseSession, runtime: CommuteRuntimeDependency, settings: SettingsDependency, user: CurrentUser):
-    '仅适用于payload含commute的组合草稿；origin_token及destination_token来自本草稿真实地点候选，token绑定账号和草稿。需要当前version、首日、星期、余量及交通方式；测算后返回新version，仍需confirm原子保存。不要用普通日程草稿调用。'
-    return await commute_bundle.quote(db, runtime, settings, user, draft_id, payload)
-
+async def quote_commute(draft_id: str, request: Request, payload: commute_bundle.QuoteRequest, db: DatabaseSession, runtime: CommuteRuntimeDependency, settings: SettingsDependency, user: CurrentUser):
+    """Measure real quote inputs and retain only the current task's checked memory choices."""
+    return await commute_bundle.quote(db, runtime, settings, user, draft_id, payload,
+        execution_run_id=request.scope.get('assistant_execution_run_id'))
 
 @router.get("/matters/drafts/{draft_id}/memory-candidate")
 async def memory_candidate(draft_id: str, db: DatabaseSession, client: NexusClient, user: CurrentUser):

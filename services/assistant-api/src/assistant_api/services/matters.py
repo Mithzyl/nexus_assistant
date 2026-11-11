@@ -618,7 +618,14 @@ async def _serialize_matters(
 def _serialize_draft(
     draft: MatterDraft, *, candidates: list[dict] | None = None
 ) -> dict:
-    payload = draft.payload_json or {}
+    """Publish the existing draft shape without internal encrypted attribution envelopes."""
+    payload = deepcopy(draft.payload_json or {})
+    if 'analysis' in payload:
+        payload['analysis'].pop('memory_application_envelope', None)
+        from assistant_api.services.memory_applications import public_request
+        for key in ('creation_request', 'preference_request', 'direct_request'):
+            if key in payload['analysis']:
+                payload['analysis'][key] = public_request(payload['analysis'][key])
     return {
         "draft_id": draft.draft_id,
         "kind": draft.kind,
@@ -2542,8 +2549,9 @@ async def patch_draft(
     user: User,
     draft_id: str,
     payload: schemas.DraftPatchRequest,
+    *, execution_run_id=None,
 ) -> dict:
-    """Patch provided preview fields with user-timezone parsing, retaining original record identifiers."""
+    """Patch provided fields and explicit memory reapplication, retaining identities and private provenance."""
     draft = await _get_draft(db, user, draft_id)
     if draft.status != "preview":
         raise ConflictError("draft_not_editable", "该预览已确认或已取消。")
@@ -2556,7 +2564,9 @@ async def patch_draft(
         else draft.payload_json or {}
     )
     merged = deepcopy(source)
-    changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+    from assistant_api.services import memory_applications
+    changes, source_applications = await memory_applications.prepare_patch(db, user, draft, payload, source,
+        execution_run_id=execution_run_id)
 
     for key in ("title", "goal", "changes_note", "next_step"):
         if key in changes:
@@ -2696,6 +2706,11 @@ async def patch_draft(
         timezone=timezone,
         exclude_schedule_id=(schedule or {}).get("schedule_id"),
     )
+    merged.setdefault('analysis', {})
+    if source_applications:
+        merged['analysis']['memory_application_envelope'] = memory_applications.pack(db, user, source_applications)
+    else:
+        merged['analysis'].pop('memory_application_envelope', None)
     draft.payload_json = _jsonable(merged)
     draft.payload_json["action_plan"] = _jsonable(_build_action_plan(merged))
     draft.version += 1
@@ -2841,7 +2856,13 @@ async def confirm_draft(
     draft_id: str,
     body: schemas.ConfirmRequest,
     idempotency_key: str,
+    *, client=None,
 ) -> dict:
+    """Recheck private memory sources and confirm changes with their attribution in one transaction.
+
+    A previously committed preview remains available. The not_applied marker
+    describes this confirmation alone, never earlier successful Agent steps.
+    """
     draft = await _get_draft(db, user, draft_id)
     if draft.status == "confirmed":
         if draft.confirm_key == idempotency_key:
@@ -2880,6 +2901,16 @@ async def confirm_draft(
     await commute_day_commands.require_measured_day_edit(db, user, payload)
     if payload.get("commute") and not body.create_schedule:
         raise InvalidRequestError("commute_schedule_required", "组合通勤必须同时保存首日日程。")
+    from assistant_api.services import memory_applications as source_records
+    source_applications = [part for part in source_records.unpack(db, user, payload)
+                           if part['kind'] != 'schedule' or body.create_schedule]
+    await source_records.verify(db, user, source_applications, payload)
+    preference_receipt=(payload.get('analysis') or {}).get('preference_application')
+    if preference_receipt is not None:
+        if client is None:
+            raise ConflictError('preferences_verification_required','当前保存入口缺少默认项来源核对，尚未保存。')
+        from assistant_api.services import preferences
+        await preferences.assert_current(db,client,user,preference_receipt,schedule=payload.get('schedule'))
 
     claim = await db.execute(
         update(MatterDraft)
@@ -3249,6 +3280,7 @@ async def confirm_draft(
                 )
             )
 
+        memory_target_todos = []
         position = len(existing_todos)
         for item in payload.get("todos") or []:
             existing_todo = existing_todos.get(item.get("todo_id"))
@@ -3265,6 +3297,7 @@ async def confirm_draft(
                 position += 1
                 created_todo_ids.append(todo.todo_id)
                 existing_todos[todo.todo_id] = todo
+            memory_target_todos.append(todo)
             affected_todos[todo.todo_id] = todo
             pending = await db.scalar(select(Reminder).where(
                 Reminder.user_id == user.user_id, Reminder.todo_id == todo.todo_id,
@@ -3354,6 +3387,11 @@ async def confirm_draft(
                 source_run_id=(payload.get("analysis") or {}).get("ai_run_id"),
             )
         )
+        preference_application=(payload.get('analysis') or {}).get('preference_application')
+        if preference_application is not None:
+            preference_application={**preference_application,'application_status':'applied' if body.create_schedule else 'not_applied'}
+            draft.payload_json=_jsonable({**payload,'analysis':{
+                **payload.get('analysis',{}),'preference_application':preference_application}})
         change = MatterChange(
             matter_id=matter.matter_id,
             user_id=user.user_id,
@@ -3378,11 +3416,28 @@ async def confirm_draft(
                     "reminder_ids": created_reminder_ids,
                     "cancelled_schedule_ids": list(schedule_cancellations),
                     "completed_todo_ids": payload.get("complete_todo_ids") or [],
+                    **({'preference_application':preference_application} if preference_application is not None else {}),
                 }
             ),
         )
         db.add(change)
         await db.flush()
+        for source_application in source_applications:
+            kind = source_application['kind']
+            if kind == 'commute_bundle':
+                from assistant_api.models import CommutePlan
+                plan = await db.get(CommutePlan, commute_plan_id)
+                await source_records.persist(db, user, {**source_application, 'kind': 'commute_plan'},
+                    command_key=draft.draft_id, target_id=commute_plan_id, target_revision=plan.revision,
+                    actual=source_records.bundle_values(payload))
+                continue
+            if kind == 'schedule' and not body.create_schedule:
+                continue
+            target = schedule_row if kind == 'schedule' else memory_target_todos[source_application['index']]
+            actual = (dict(proposed or {}) if kind == 'schedule' else _serialize_todo(target))
+            await source_records.persist(db, user, source_application, command_key=draft.draft_id,
+                target_id=target.schedule_id if kind == 'schedule' else target.todo_id,
+                target_revision=matter.version, actual=actual)
         draft.confirm_key = idempotency_key
         draft.result_json = {
             "commute_plan_id": commute_plan_id,
@@ -4216,7 +4271,7 @@ async def list_changes(
 
 async def _save_prepared_draft(db, user, body, *, matter, conflict, origin_key,
                                base_schedule=None, base_todo=None) -> dict:
-    """Persist a preview using shared ownership/version snapshots and idempotent creation."""
+    """Persist a preview and reconcile races without losing omission or per-request default choices."""
     draft = MatterDraft(
         user_id=user.user_id, kind=body["kind"],
         matter_id=matter.matter_id if matter else None, status="preview", version=1,
@@ -4241,7 +4296,9 @@ async def _save_prepared_draft(db, user, body, *, matter, conflict, origin_key,
             raise
         if ((winner.kind, winner.matter_id, winner.base_schedule_id, winner.base_todo_id) != identity
                 or (winner.payload_json or {}).get("analysis", {}).get("creation_request")
-                != body.get("analysis", {}).get("creation_request")):
+                != body.get("analysis", {}).get("creation_request")
+                or (winner.payload_json or {}).get('analysis',{}).get('preference_request')
+                != body.get('analysis',{}).get('preference_request')):
             raise ConflictError("idempotency_key_reused", "该请求标识已用于另一项操作。")
         return _serialize_draft(winner)
     await db.refresh(draft)
@@ -4249,25 +4306,39 @@ async def _save_prepared_draft(db, user, body, *, matter, conflict, origin_key,
 
 
 async def create_structured_draft(db, runtime, settings, user,
-                                  request: schemas.StructuredDraftRequest) -> dict:
-    """Prepare new matter/todo/schedule records, leaving all formal writes to confirm_draft."""
-    original = request.model_dump(mode="json")
+                                  request: schemas.StructuredDraftRequest, *, preference_application=None,
+                                  preference_request=None, memory_applications=None, execution_run_id=None) -> dict:
+    """Prepare combined records with encrypted checked sources, preserving old replay payloads."""
+    from assistant_api.services import memory_applications as source_records
+    original = source_records.request_identity(request)
     existing = await db.scalar(select(MatterDraft).where(
         MatterDraft.user_id == user.user_id, MatterDraft.origin_key == request.idempotency_key))
     if existing is not None:
         if (existing.payload_json or {}).get("analysis", {}).get("creation_request") != original:
             raise ConflictError("idempotency_key_reused", "该请求标识已用于另一项操作。")
+        if preference_request is not None and (existing.payload_json or {}).get('analysis',{}).get('preference_request')!=preference_request:
+            raise ConflictError('idempotency_key_reused','该请求标识的默认项选择或明确字段已改变。')
         return _serialize_draft(existing)
+    if memory_applications is None:
+        resolved, memory_applications = await source_records.prepare_combination(db, user, request, execution_run_id=execution_run_id)
+    else:
+        resolved = request.model_dump()
     matter = await _get_matter(db, user, request.matter_id) if request.matter_id else None
     if matter is not None:
         if matter.status not in ("active", "waiting"):
             raise ConflictError("matter_not_active", "该事项当前不可接续。")
         if matter.version != request.expected_matter_version:
             raise ConflictError("matter_changed", "该事项已被修改，请重新读取。")
-    body = request.model_dump(exclude={"idempotency_key", "matter_id", "expected_matter_version"})
+    body = {key: value for key, value in resolved.items() if key not in {"idempotency_key", "matter_id", "expected_matter_version"}}
     body.update(kind="update" if matter else "create", matter_id=request.matter_id,
                 requires_choice=False, source_text="结构化业务请求",
                 analysis={"creation_request": original})
+    if memory_applications:
+        body['analysis']['memory_application_envelope'] = source_records.pack(db, user, memory_applications)
+    if preference_application is not None:
+        body['analysis']['preference_application']=preference_application
+    if preference_request is not None:
+        body['analysis']['preference_request']=preference_request
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
     if body.get("schedule"):
         schedule = body["schedule"]

@@ -19,6 +19,7 @@ from assistant_api.schemas.places import (
     CoordinateSystem, PlaceSearchType, PlaceLookupRequest, PlaceLookupCandidate,
     PlaceLookupResponse, PlacePointRequest, PlacePointLocation, PlacePointResponse,
 )
+from assistant_api.schemas.preferences import MemorySelection, MemoryInputOptions, memory_source_constraints
 
 MatterState = Literal["active", "waiting", "archived", "deleted"]
 MatterGroup = Literal["active", "waiting", "archived", "all"]
@@ -71,7 +72,7 @@ class SchedulePayload(BaseModel):
             raise ValueError("日程绝对提醒与相对提醒只能选择一个。")
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("latitude 和 longitude 必须同时提供或同时为空。")
-        if self.ends_at is not None and ensure_aware(self.ends_at) <= ensure_aware(
+        if self.starts_at is not None and self.ends_at is not None and ensure_aware(self.ends_at) <= ensure_aware(
             self.starts_at
         ):
             raise ValueError("日程结束时间必须晚于开始时间。")
@@ -131,6 +132,27 @@ class NewTodoPayload(TodoPayload):
     todo_id: None = None
 
 
+class MemoryTodoInput(NewTodoPayload, MemoryInputOptions):
+    """Accept per-field todo memory choices separately from ordinary parameters."""
+    model_config = ConfigDict(extra='forbid', json_schema_extra={'allOf': [
+        TodoPayload.model_config['json_schema_extra'], *memory_source_constraints({'due_at', 'reminder_at'})]})
+
+
+class MemoryScheduleInput(NewSchedulePayload, MemoryInputOptions):
+    """Allow a selected memory to supply a schedule start before formal payload validation."""
+    model_config = ConfigDict(extra='forbid', json_schema_extra={'allOf': [
+        SchedulePayload.model_config['json_schema_extra'],
+        *memory_source_constraints({'location', 'starts_at', 'reminder_offset_seconds'})]})
+    starts_at: datetime | None = None
+
+    @model_validator(mode='after')
+    def require_selected_start(self):
+        """Require a real start or a model-selected start with an explicit business date."""
+        if self.starts_at is None and not (self.use_preferences and self.preference_date and 'starts_at' in self.memory_defaults):
+            raise ValueError('需要日程开始时间，或指定日期及本次记忆时间选择。')
+        return self
+
+
 class StructuredDraftRequest(DraftPayload):
     """Prepare new records for the existing atomic draft save transaction."""
     model_config = ConfigDict(extra="forbid", json_schema_extra={"oneOf": [
@@ -141,8 +163,8 @@ class StructuredDraftRequest(DraftPayload):
     matter_id: str | None = Field(default=None, min_length=1, max_length=36, description="追加到已有事项时提供真实ID；新建事项时省略。")
     expected_matter_version: int | None = Field(default=None, ge=1, description="已有事项的当前version；新建事项时省略。")
     title: str | None = Field(default=None, min_length=1, max_length=255)
-    schedule: NewSchedulePayload | None = None
-    todos: list[NewTodoPayload] = Field(default_factory=list, max_length=30)
+    schedule: MemoryScheduleInput | None = None
+    todos: list[MemoryTodoInput] = Field(default_factory=list, max_length=30)
     complete_todo_ids: list[str] = Field(default_factory=list, max_length=0)
 
     @model_validator(mode="after")
@@ -468,7 +490,18 @@ class ChangeRead(BaseModel):
     reason: str | None = None
 
 
+class MemoryDraftTodoInput(MemoryTodoInput):
+    """Reapply selected sources to a real todo in a combined edit draft."""
+    todo_id: str | None = None
+
+
+class MemoryDraftScheduleInput(MemoryScheduleInput):
+    """Keep the original schedule identifier while selecting new field sources in a draft."""
+    schedule_id: str | None = None
+
+
 class DraftPatchRequest(BaseModel):
+    """Patch formal fields or explicitly reapply memory choices without replacing record identities."""
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(ge=1)
@@ -476,10 +509,20 @@ class DraftPatchRequest(BaseModel):
     goal: str | None = Field(default=None, max_length=4000)
     changes_note: str | None = Field(default=None, max_length=2000)
     next_step: str | None = Field(default=None, max_length=500)
-    schedule: SchedulePayload | None = None
-    todos: list[TodoPayload] | None = Field(default=None, max_length=30)
+    schedule: MemoryDraftScheduleInput | None = None
+    todos: list[MemoryDraftTodoInput] | None = Field(default=None, max_length=30)
     complete_todo_ids: list[str] | None = Field(default=None, max_length=30)
     cancel_schedule_ids: list[str] | None = Field(default=None, max_length=30)
+
+    @field_validator('schedule', 'todos', mode='before')
+    @classmethod
+    def accept_formal_models(cls, value):
+        """Accept existing internal business models alongside JSON memory-aware input objects."""
+        if isinstance(value, BaseModel):
+            return value.model_dump()
+        if isinstance(value, list):
+            return [part.model_dump() if isinstance(part, BaseModel) else part for part in value]
+        return value
 
 
 class DraftSelectMatterRequest(BaseModel):
@@ -848,6 +891,7 @@ class TodoCreateRequest(RecordCreationTarget, NewTodoPayload):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
         TodoPayload.model_config["json_schema_extra"], _CREATE_TARGET_SCHEMA,
         {"properties": {"schedule_reminder": {"anyOf": [{"type": "null"}, {"type": "object", "required": ["schedule_id"], "properties": {"schedule_id": {"type": "string"}}}]}}},
+        *memory_source_constraints({'due_at', 'reminder_at'}),
     ]})
 
     @model_validator(mode="after")
@@ -859,15 +903,15 @@ class TodoCreateRequest(RecordCreationTarget, NewTodoPayload):
 
 
 class ScheduleCreateRequest(RecordCreationTarget, NewSchedulePayload):
-    """Create only a calendar record and its optional reminder, without todo fields."""
+    """Create a schedule from model-selected, nonoverlapping explicit inputs or verified memories."""
     model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
         SchedulePayload.model_config["json_schema_extra"], _CREATE_TARGET_SCHEMA,
     ]})
 
 
-class TodoPatchRequest(BaseModel):
+class TodoPatchRequest(MemoryInputOptions):
     """Patch specified todo fields while keeping its identity and all unrelated calendar records."""
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [{"properties": {key: {"not": {"type": "null"}} for key in ("title", "status")}}]})
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [{"properties": {key: {"not": {"type": "null"}} for key in ("title", "status")}}, *memory_source_constraints({"due_at", "reminder_at"})]})
     idempotency_key: str = Field(min_length=8, max_length=128)
     expected_matter_version: int = Field(ge=1)
     title: str | None = Field(default=None, min_length=1, max_length=255)
@@ -877,9 +921,9 @@ class TodoPatchRequest(BaseModel):
     status: TodoStatus | None = None
 
 
-class SchedulePatchRequest(BaseModel):
+class SchedulePatchRequest(MemoryInputOptions):
     """Patch only specified calendar fields; unspecified original fields remain local and unchanged."""
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [{"properties": {key: {"not": {"type": "null"}} for key in ("title", "starts_at", "coordinate_system")}}]})
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [{"properties": {key: {"not": {"type": "null"}} for key in ("title", "starts_at", "coordinate_system")}}, *memory_source_constraints({"location", "starts_at", "reminder_offset_seconds"})]})
     idempotency_key: str = Field(min_length=8, max_length=128)
     expected_matter_version: int = Field(ge=1)
     title: str | None = Field(default=None, min_length=1, max_length=255)

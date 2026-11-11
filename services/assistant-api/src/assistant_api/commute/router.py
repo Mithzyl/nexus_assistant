@@ -17,6 +17,7 @@ from assistant_api.commute.schemas import (
     CheckCreated,
     CheckRead,
     CommutePlanInput,
+    CommutePlanWrite,
     CommutePlanRead,
     PlanWeatherRead,
     PushDeviceInput,
@@ -95,6 +96,21 @@ async def get_commute_runtime(
     return RuntimeRead.model_validate(snapshot)
 
 
+async def resolved_plan(payload, request, db, user, *, scope):
+    """Validate only the model's supplied selections, then enforce the complete existing plan schema."""
+    from pydantic import ValidationError
+    from assistant_api.core.errors import InvalidRequestError
+    from assistant_api.services import memory_applications
+    values, receipt = await memory_applications.resolve_input(db, user, 'commute_plan', payload,
+        execution_run_id=request.scope.get('assistant_execution_run_id'))
+    try:
+        formal = CommutePlanInput.model_validate(values)
+    except ValidationError as exc:
+        raise InvalidRequestError('commute_plan_fields_invalid', '通勤计划缺少有效字段；请补齐参数或明确选择记忆，尚未保存。') from exc
+    application = {'kind': 'commute_plan', 'scope': scope, 'receipt': receipt} if receipt else None
+    return formal, application
+
+
 @router.get("/commute-plans", response_model=list[CommutePlanRead],
     summary='查询已保存通勤计划',
     description='返回每条计划的id（用于路径plan_id）、revision及周期配置。按用户已知名称唯一选定原计划；修改前继续GET该计划当前配置。',
@@ -112,17 +128,19 @@ async def list_commute_plans(
     response_model=CommutePlanRead,
     status_code=status.HTTP_201_CREATED,
     summary='创建周期通勤计划',
-    description='仅保存周期配置，不建立事项或首日日程。用户要求完整通勤安排时使用matters/commute-drafts→commute-quote→confirm。此接口需要真实坐标、时区、星期及到达检查时间；缺失信息询问。单独创建的配置不满足generate-day的matter_id/first_schedule_id前提。',
+    description='仅保存周期配置，不建立事项或首日日程。用户要求完整通勤安排时使用matters/commute-drafts→commute-quote→confirm。此接口需要真实坐标、时区、星期及到达检查时间；缺失信息询问。单独创建的配置不满足generate-day的matter_id/first_schedule_id前提。 本次AI选择可用memory_defaults提供字段、entry_id/version/source_quote/value/reason及必要references，省略同字段普通参数；后端校验和保存来源，不判断语义适用性，不要求用途/角色设置，不默认向页面或回答展示记忆内容。已有计划只有本次明确提交的选择才重新应用，If-Match仍必需。',
     openapi_extra={'x-assistant': {'effect': 'write'}}
 )
 async def create_commute_plan(
-    payload: CommutePlanInput,
+    payload: CommutePlanWrite,
     response: Response,
+    request: Request,
     db: DatabaseSession,
     user: CurrentUser,
 ) -> CommutePlanRead:
-    '仅保存周期配置，不建立事项或首日日程。用户要求完整通勤安排时使用matters/commute-drafts→commute-quote→confirm。此接口需要真实坐标、时区、星期及到达检查时间；缺失信息询问。单独创建的配置不满足generate-day的matter_id/first_schedule_id前提。'
-    plan = await plan_service.create_plan(db, user.user_id, payload)
+    """Create a configuration with optional model-selected sources, keeping quotes internal."""
+    formal, application = await resolved_plan(payload, request, db, user, scope='creation')
+    plan = await plan_service.create_plan(db, user.user_id, formal, memory_application=application)
     response.headers["ETag"] = _etag(plan.revision)
     return plan_read(plan)
 
@@ -146,26 +164,29 @@ async def get_commute_plan(
 
 @router.put("/commute-plans/{plan_id}", response_model=CommutePlanUpdateRead,
     summary='完整替换原通勤计划配置',
-    description='长期修改：先GET原计划，复制请求Schema接受的原配置并覆盖用户指定字段；If-Match为实际revision。保持plan_id，对已关联事项和首日日程的完整通勤安排，保存配置后立即重测下一次有效未来通勤，next_day返回真实结果；当天原时间已过时不修改历史，选择后续有效日期。明确单日修改请用days接口。next_day.applied=false时仅周期配置已保存，不声称已得到新出发时间。未来自动在前晚22点及当天早晨更新。',
+    description='长期修改：先GET原计划，复制请求Schema接受的原配置并覆盖用户指定字段；If-Match为实际revision。保持plan_id，对已关联事项和首日日程的完整通勤安排，保存配置后立即重测下一次有效未来通勤，next_day返回真实结果；当天原时间已过时不修改历史，选择后续有效日期。明确单日修改请用days接口。next_day.applied=false时仅周期配置已保存，不声称已得到新出发时间。未来自动在前晚22点及当天早晨更新。 本次AI选择可用memory_defaults提供字段、entry_id/version/source_quote/value/reason及必要references，省略同字段普通参数；后端校验和保存来源，不判断语义适用性，不要求用途/角色设置，不默认向页面或回答展示记忆内容。已有计划只有本次明确提交的选择才重新应用，If-Match仍必需。',
     openapi_extra={'x-assistant': {'effect': 'write', 'required_headers': ['If-Match']}}
 )
 async def update_commute_plan(
     plan_id: str,
-    payload: CommutePlanInput,
+    payload: CommutePlanWrite,
     response: Response,
+    request: Request,
     db: DatabaseSession,
     user: CurrentUser,
     runtime: CommuteRuntimeDependency,
     settings: SettingsDependency,
     if_match: str | None = IfMatch,
 ) -> CommutePlanUpdateRead:
-    """Save recurring configuration and immediately remeasure its next eligible future day."""
+    """Save explicit recurring edits and their source history, then reuse the existing next-day refresh."""
+    formal, application = await resolved_plan(payload, request, db, user, scope='reapplication')
     plan = await plan_service.update_plan(
         db,
         user_id=user.user_id,
         plan_id=plan_id,
-        payload=payload,
+        payload=formal,
         if_match=if_match,
+        memory_application=application,
     )
     response.headers["ETag"] = _etag(plan.revision)
     from assistant_api.services.commute_day_commands import remeasure_next_day

@@ -142,6 +142,28 @@ class CommutePlanInput(BaseModel):
         return self
 
 
+from assistant_api.schemas.preferences import MemoryInputOptions, memory_source_constraints, FIELDS
+
+
+class CommutePlanWrite(MemoryInputOptions):
+    """Accept explicit full-plan values or selected memory fields; validate the resolved plan before saving."""
+    model_config = ConfigDict(extra='forbid', json_schema_extra={'allOf': memory_source_constraints(FIELDS['commute_plan'])})
+    name: str = Field(min_length=1, max_length=120)
+    enabled: bool = True
+    effective_from: date | None = None
+    timezone: str | None = None
+    weekdays: list[Annotated[int, Field(ge=1, le=7)]] | None = None
+    arrival_local_time: str | None = None
+    check_local_time: str | None = None
+    transport_mode: TransportMode | None = None
+    buffer_minutes: int = Field(default=10, ge=0, le=120)
+    rain_probability_threshold: float = Field(default=0.4, ge=0, le=1, allow_inf_nan=False)
+    rain_extra_buffer_minutes: int = Field(default=10, ge=0, le=120)
+    notify_enabled: bool = True
+    origin: CommuteLocation | None = None
+    destination: CommuteLocation | None = None
+
+
 class CommutePlanRead(CommutePlanInput):
     matter_id: str | None = None
     first_schedule_id: str | None = None

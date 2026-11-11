@@ -1,0 +1,183 @@
+{
+  "date": "2026-11-11",
+  "scope": "Chrome 实际交互；当前 Web 源码副本与当前 Assistant；隔离 Assistant/Nexus SQLite 和本地 S3 协议存储样本，真实 opencode/glm-5.3-flash，无模型/业务工具模拟。未改 Nexus。",
+  "status": "passed",
+  "runs": [
+    {
+      "turn": 1,
+      "run_id": "172be2bb-d190-40c8-9244-e48b15f232d8",
+      "status": "succeeded",
+      "agent_count": 1,
+      "model_calls": 6,
+      "model": [
+        "opencode/glm-5.3-flash"
+      ],
+      "retries": 0,
+      "duration_seconds": 70.25,
+      "initial_memory_items": 1,
+      "operations": [
+        "resolve_operation_definitions",
+        "list_schedules",
+        "resolve_operation_definitions",
+        "get_schedule",
+        "create_todo"
+      ],
+      "answer": "已保存待办“资料整理”，截止时间为明天11月12日 09:30，也就是项目讨论会开始前30分钟。",
+      "cards": []
+    },
+    {
+      "turn": 2,
+      "run_id": "ec771373-c9cb-4add-b55c-535c13ae3a68",
+      "status": "succeeded",
+      "agent_count": 1,
+      "model_calls": 1,
+      "model": [
+        "opencode/glm-5.3-flash"
+      ],
+      "retries": 0,
+      "duration_seconds": 24.77,
+      "initial_memory_items": 1,
+      "operations": [],
+      "answer": "这条待办的截止时间是按你的记忆条目「请记住：我的资料整理待办要在相关会议开始前30分钟截止」算出来的，结合的会议是明天的「项目讨论会」。该项目讨论会开始时间为11月12日 10:00，按习惯提前30分钟，所以待办截止时间定为11月12日 09:30。没有创建或修改任何安排。",
+      "cards": [
+        {
+          "kind": "info",
+          "title": "资料整理待办截止时间依据",
+          "blocks": [
+            {
+              "type": "fields",
+              "items": [
+                {
+                  "label": "使用习惯",
+                  "value": "资料整理待办要在相关会议开始前30分钟截止",
+                  "format": "text"
+                },
+                {
+                  "label": "记忆来源",
+                  "value": "你曾明确要求记住这条习惯",
+                  "format": "text"
+                },
+                {
+                  "label": "结合的会议",
+                  "value": "项目讨论会（11月12日 10:00 开始）",
+                  "format": "text"
+                },
+                {
+                  "label": "计算结果",
+                  "value": "截止时间 11月12日 09:30（会议开始前30分钟）",
+                  "format": "text"
+                }
+              ]
+            }
+          ],
+          "status": "info"
+        }
+      ]
+    }
+  ],
+  "stored_provenance": [
+    {
+      "target_kind": "todo",
+      "target_id": "8ce98bff-db5b-430a-afe9-146e8f101203",
+      "target_revision": 2,
+      "record": {
+        "kind": "todo",
+        "index": 0,
+        "receipt": {
+          "preferences_version": null,
+          "selection_mode": "model",
+          "purpose": "todo",
+          "timezone": "Asia/Shanghai",
+          "values": {
+            "title": "资料整理",
+            "due_at": "2026-11-12T01:30:00+00:00"
+          },
+          "fields": {
+            "due_at": {
+              "source": "memory",
+              "status": "applied",
+              "entry_id": "3229f9a4-a0c6-4394-add7-73182bd0f8b0",
+              "version": 1,
+              "source_quote": "请记住：我的资料整理待办要在相关会议开始前30分钟截止。",
+              "selection_reason": "按用户习惯，资料整理待办在相关会议开始前30分钟截止",
+              "selected_by": "ai",
+              "proposed_value": "2026-11-12T01:30:00Z",
+              "application_purpose": "todo",
+              "references": [
+                {
+                  "kind": "schedule",
+                  "record_id": "13ff371e-1f3a-4ca7-8514-5c7bc300aa79",
+                  "version": 1,
+                  "snapshot": {
+                    "title": "项目讨论会",
+                    "starts_at": "2026-11-12T02:00:00",
+                    "ends_at": "2026-11-12T03:00:00",
+                    "status": "scheduled",
+                    "location": "验收会议室",
+                    "latitude": null,
+                    "longitude": null,
+                    "coordinate_system": "unknown",
+                    "location_city": null,
+                    "location_address": null
+                  }
+                }
+              ],
+              "reason": "applied",
+              "value_origin": "model_interpretation"
+            }
+          },
+          "application_status": "applied",
+          "matter_id": null,
+          "reference_date": "2026-11-12",
+          "local_run_id": "9d4432e2-2858-4e5b-8908-c6885537fc28"
+        },
+        "scope": "creation",
+        "target_id": "8ce98bff-db5b-430a-afe9-146e8f101203",
+        "target_revision": 2,
+        "actual_values": {
+          "due_at": "2026-11-12T01:30:00+00:00"
+        }
+      }
+    }
+  ],
+  "checks": [
+    {
+      "requirement": "按真实已检索记忆版本和日程生成待办，明天09:30截止",
+      "status": "passed"
+    },
+    {
+      "requirement": "加密来源记录包含记忆原文/版本、会议版本/真实快照及实际采用值",
+      "status": "passed"
+    },
+    {
+      "requirement": "首轮cards=[]，普通保存响应无新增来源字段，页面无记忆原文/内部编号",
+      "status": "passed"
+    },
+    {
+      "requirement": "用户追问后返回正确记忆和计算过程，信息卡片正常渲染",
+      "status": "passed"
+    },
+    {
+      "requirement": "第二轮只回答，不重复创建或修改；隔离库最终1条待办和1条日程",
+      "status": "passed"
+    },
+    {
+      "requirement": "浏览器控制台无错误或警告",
+      "status": "passed"
+    }
+  ],
+  "limitations": [
+    "仅此次待办创建与来源追问场景；未重测组合草稿/周期通勤/重新应用",
+    "第二轮依据初始检索记忆及允许的执行历史回答，没有新增来源查询接口，不证明能读取任意历史来源版本",
+    "桌面实际窗口1920×864，未扩大窄屏或其他浏览器检查",
+    "临时对象存储使用本地S3协议样本，不代表真实对象存储部署验证"
+  ],
+  "screenshots": [
+    "memory-sources-browser-20261111/first-answer.jpg",
+    "memory-sources-browser-20261111/source-answer.jpg"
+  ],
+  "automatic_ai": false,
+  "extra_tests": false,
+  "regression": false,
+  "hash_checks": false
+}

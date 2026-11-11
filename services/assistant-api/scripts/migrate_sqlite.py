@@ -170,13 +170,14 @@ async def _apply_indexes(conn) -> None:
 
 
 async def init(database_url: str) -> None:
-    """Initialize metadata and explicit supplement relations without inventing historical action types."""
+    """Initialize storage including encrypted business-memory applications; never infer historical sources."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             await _ensure_table(conn)
             await _record(conn, VERSION, "metadata")
+            await _record(conn, "0029_business_memory_applications", "metadata:business_memory_applications")
             await _record(conn, "0021_follow_ups", "metadata:follow_ups,follow_up_executions,business_change_events")
             await _record(conn, "0024_matter_supplements", "metadata:matter_supplements,supplement_texts")
             for version, table, column, sqltype in COLUMN_MIGRATIONS:
@@ -188,7 +189,7 @@ async def init(database_url: str) -> None:
 
 
 async def upgrade(database_url: str) -> None:
-    """Add missing storage and nullable relation types, preserving old text, origins and request payloads."""
+    """Add missing tables/columns including 0029 attribution, preserving all existing data without source backfills."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
@@ -210,6 +211,7 @@ async def upgrade(database_url: str) -> None:
             await _apply_indexes(conn)
             await _record(conn, "0021_follow_ups", "created missing follow-up tables")
             await _record(conn, "0024_matter_supplements", "created missing supplement tables")
+            await _record(conn, "0029_business_memory_applications", "created missing encrypted attribution table; no existing records changed")
             await _record(conn, VERSION, "upgrade")
     finally:
         await engine.dispose()
