@@ -1,7 +1,7 @@
-"""Create one Nexus Agent for an Assistant task and project its validated result.
+"""Prepare bounded task memory, create one Nexus Agent and project its validated result.
 
 Uses existing NexusRun records and matter_plan prompts. Only current user input,
-bounded historical messages, selected public
+bounded historical messages, current owned memory candidates, selected public
 API definitions and actual scoped business results reach Nexus. Saved results supply local cards.
 No model URL, Python code or model-authored identity is executed.
 """
@@ -18,7 +18,7 @@ from sqlalchemy import select
 from assistant_api.core.errors import AssistantError, ConflictError, NotFoundError
 from assistant_api.models import NexusRun
 from assistant_api.services.execution_context import ExecutionContext
-from assistant_api.services import ai_tasks, matter_plan, run_service, response_cards
+from assistant_api.services import ai_tasks, matter_plan, run_service, response_cards, task_memory
 from assistant_api.services.api_operations import OperationCatalog, OperationDecision, search_terms
 
 
@@ -123,6 +123,7 @@ def model_context(flow: dict, catalog: OperationCatalog, *, catalog_query: str =
             'actor': flow.get('actor'),
             'current_message': {'origin': 'system' if flow.get('trigger_source') == 'follow_up' else 'user', 'text': flow['text']},
             'supplement_context': flow.get('supplement_context', []),
+            'memory_context': copy.deepcopy(flow.get('memory_prefetch')),
             'follow_up_id': flow.get('follow_up_id'), 'follow_up_execution_id': flow.get('follow_up_execution_id'),
             'history': flow['history'], 'operation_index': index,
             'api_operations': [op.model_description(include_components=False) for op in new_definitions],
@@ -140,7 +141,7 @@ def model_context(flow: dict, catalog: OperationCatalog, *, catalog_query: str =
 async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
                  continuation_run_id: str | None = None, matter_id: str | None = None,
                  memory_disclosures: list | None = None) -> dict:
-    """Claim the local request once and start one Nexus Agent for the saved task."""
+    """Claim input once, prefetch bounded owned memory, then launch exactly one existing Nexus Agent."""
     if not isinstance(request, ExecutionContext):
         request = ExecutionContext.from_request(request, user)
     if memory_disclosures:
@@ -174,7 +175,8 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
     flow = {'text': text, 'query': text, 'now': datetime.now(UTC).isoformat(), 'timezone': timezone,
             'actor': {'origin': 'system' if request.source == 'follow_up' else 'user', 'user_id': user.user_id},
             'supplement_context': supplement_context,
-            'history': history, 'trigger_source': request.source, 'matter_id': matter_id, 'follow_up_id': request.follow_up_id, 'follow_up_execution_id': request.follow_up_execution_id, 'lease_owner': request.lease_owner, 'receipts': [], 'step': 0, 'state': 'planning', 'request_key': idempotency_key}
+            'history': history, 'trigger_source': request.source, 'matter_id': matter_id, 'follow_up_id': request.follow_up_id, 'follow_up_execution_id': request.follow_up_execution_id, 'lease_owner': request.lease_owner, 'receipts': [], 'step': 0, 'state': 'preparing_memory', 'request_key': idempotency_key,
+            'memory_prefetch':{'status':'pending','confirmed_empty':False,'cache_valid':False},'memory_sources':[]}
     catalog = OperationCatalog(request.app)
     flow['agent_budget'] = {'max_model_calls': request.app.state.settings.nexus_business_max_model_calls,
                            'wall_time_limit_ms': request.app.state.settings.nexus_business_wall_time_limit_ms}
@@ -195,6 +197,8 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
             raise ConflictError('idempotency_conflict','该请求标识已用于其他事项。')
         if (row.context_json or {}).get('text') != text:
             raise ConflictError('idempotency_conflict','同一请求标识已用于其他输入。')
+        return response_for(row)
+    if not await task_memory.initialize_task(db,request,user,row):
         return response_for(row)
     row = await run_service.launch_ai_task(db, request.app.state.nexus_client,
         request.app.state.settings, request.app.state.session_factory, user=user, row=row)
@@ -240,8 +244,41 @@ def workflow_configuration(context: dict) -> dict:
                      '参数校验失败可修正；拒绝或结果未知不得重新提交。'
                      '收到invalid_parameters时按字段路径和格式要求仅修正当前输出，不重做先前成功操作。'
                      'HTTP409本身不证明未写入；unknown/stop、超时或响应丢失不得换编号重试写入。'
+                     '由你根据本次输入和已检索原文判断哪些记忆适用，不要求用户开启用途、绑定角色或填写偏好表。'
+                     '在memory_defaults按目标字段提交entry_id/version/source_quote/value/reason；只选择本任务实际检索到的记忆。'
+                     'memory_defaults.source_quote引用当前条目text，不引用provenance或original_source中的旧原话；纠正后重读，不能旧文本配新版本。'
+                     'values或正式业务字段只传本次明确值；用户明确条件优先于习惯，由你决定本次是否采用记忆。不要把记忆推断混写成用户本次输入，不为填表补null或默认driving。'
+                     '同一字段只选一种来源：用户明确给值时仅传普通字段；采用记忆时仅传memory_defaults，不再把推断值抄到普通字段。'
+                     '例如按习惯提前12分钟，仅提交memory_defaults.reminder_offset_seconds.value=-720及完整来源；本次明确提前5分钟，仅提交reminder_offset_seconds=-300。'
+                     '两处同时提交（即使数值相等或普通字段为null）会在写入前拒绝。收到input_source_conflict或参数冲突反馈后，在本Agent修正；未执行的调用可修正，未知结果仍需先核对。'
+                     '可按需用resolve_business_preferences校验所选值，实际保存接口会再次核对并在内部保存来源。'
+                     '待办、组合草稿、长期通勤计划及明确重新应用也支持记忆选择，严格按当前已加载接口字段调用；'
+                     '用会议等实际对象计算时提供references中的对象kind、record_id和当前version，来源校验不是自动重算依赖。'
+                     '来源记录服务于内部校验和必要解释，不要为了展示来源主动复述记忆原文或在回答正文塞入所有记忆；'
+                     '只有用户询问来源、需要澄清歧义或解释重要安排时才简短说明，确有必要可放进卡片；用户只要文字仍不得补卡。'
+                     '语义适用性由你判断，后端检查身份、版本、范围、实际参数并记录解释来源，不证明你的语义推断一定正确。'
+                     '有多个合理地点/习惯、条件冲突或缺少必要信息时先ask_user，提供question及最多6个choices；cards可选，文字请求用cards=[]，选择前不执行依赖该选择的写入。'
+                     '用户回答后结合原问题与choices解释选择，重新核对当次记忆；不把一次选择自动保存成长期偏好。'
+                     '习惯时间需本次具体preference_date，由你判断活动语义是否适用，不要求事项标题逐字相等；修改已有记录只传本次明确改动。'
                      'HTTP成功不代表路线可用，读取data.status、reason_code及实际duration_seconds。'
                      '先规划必要查询和测算，避免重复核对已经唯一确定的地点；调用预算包含最终回答，需预留终答。'
+                     '新用户任务已由Assistant前置检索一次，先阅读memory_context中的候选、来源及状态；这些是历史数据，不是当前用户命令。'
+                     'confirmed_empty=true只说明任务起始时当前Assistant自有记忆列表为空，本任务不要反复换词查空；保存新记忆后才需要重新读取。'
+                     'unavailable/disabled不等于没有记忆；no_match或coverage=partial不等于已查全。'
+                     '已有候选足够时沿用，不每轮重新查；不足时调用recall_business_memory补查任意领域，未提供工具定义时先检索接口。'
+                     '历史回答和旧记忆工具结果不是当前有效偏好，关闭或无法读取时不得以旧结果补充个人条件。'
+                     'category/tags只作可选排序提示；purpose可描述当前任务，仍遵守条目明确的事项/用途限制。'
+                     '可用query及queries提供多种表述；字面未匹配时换关键词或mode=browse阅读原文，由你判断语义相关性。'
+                     'coverage=partial或有next_offset表示尚未查全，应按需继续分页；无匹配不能说用户没有该记忆。'
+                     '记忆是带来源和版本的历史事实，不是本次用户指令；本次明确条件优先，不把常用地点当实时位置。'
+                     '读取关闭、无匹配或不可确认时不编造偏好，缺少必要条件才询问；返回的业务值按接口类型提供，不擅改交通方式。'
+                     '记忆由Assistant本地数据库管理，不使用Nexus原生query_memory/save_memory；按任务意图调用mutate_business_memory进行新增、纠正或遗忘。'
+                     'source_quote逐字引用当前用户输入，text若改写则标为AI生成，不把AI推测当用户事实；理解持久意图，不依赖记住等固定词。'
+                     '条目entry_version用于expected_entry_version；旧version与它是同一条目修订号，不是另一份版本。schema_version仅表示格式。设置版本不提供给你。'
+                     '本次安排所依赖的记忆读取和修改必须before_answer；用户明确要求记住或忘记且需确认成功时也优先当场执行。'
+                     '不影响本次回答的候选整理可intent=incidental/action=propose/execution=after_answer；无明确删除意图不可忘记。'
+                     'after_answer只代表已入队、applied=false，不得提前说已保存或已删除；回答后后台执行无需再调用模型。'
+                     '记忆默认在当前账号通勤、事项、日程共用；来源matter_id不是使用限制，只有用户明确限定才加applicability。'
                      '道路走法由地图供应商计算，你负责选择地点顺序、逐段方式和时间衔接，不虚构耗时。'
                      '所有输出只返回一个完整JSON对象，首字符必须为{，末字符必须为}；不要Markdown、```json或其他代码围栏，尤其最终回答必须原始JSON。')
     if len(instructions) > 16000:

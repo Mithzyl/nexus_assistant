@@ -30,6 +30,7 @@ from assistant_api.models import NexusRun, UserAsk
 from assistant_api.nexus_client import NexusError, SseEvent
 from assistant_api.services import ai_tasks, run_service
 from assistant_api.services.memory_service import search_memory
+from assistant_api.services.memory_repository import for_session
 
 router = APIRouter(prefix="/api/v1", tags=["assistant"])
 
@@ -338,10 +339,10 @@ async def stream_ask_events(
 async def memory_search(
     payload: MemorySearchRequest, client: NexusClient, user: CurrentUser, db: DatabaseSession
 ):
-    """Return bounded memory hits for the caller, or an upstream error."""
+    """Return bounded Assistant-owned memory hits or an explicit local storage error."""
 
     result = await search_memory(
-        client,
+        for_session(db),
         db=db,
         external_user_id=user.user_id,
         query_text=payload.query_text,

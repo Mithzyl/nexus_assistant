@@ -39,6 +39,7 @@ from assistant_api.routers import (
     operation_catalog,
     matters,
     memory,
+    preferences,
     sync_ios,
 )
 from assistant_api.services.run_service import shutdown_background_tasks
@@ -152,6 +153,8 @@ def create_app(
     app.include_router(auth.router)
     app.include_router(assistant.router)
     app.include_router(memory.router)
+    app.include_router(memory.business_router)
+    app.include_router(preferences.router)
     app.include_router(internal_tools.router)
     app.include_router(agent_responses.router)
     app.include_router(operation_catalog.router)

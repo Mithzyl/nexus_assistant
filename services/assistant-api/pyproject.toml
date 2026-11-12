@@ -9,6 +9,7 @@ description = "Personal Assistant backend: business data, local identity, NexusP
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115",
+  "anyio>=4,<5",
   "sqlalchemy[asyncio]>=2.0.30",
   "aiosqlite>=0.20",
   "pydantic>=2.9",

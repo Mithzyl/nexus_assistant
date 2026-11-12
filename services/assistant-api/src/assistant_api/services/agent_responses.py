@@ -177,7 +177,7 @@ def definition_matches(operation, definitions, schemas):
 
 
 async def process_response(db, app, payload):
-    """Bind a callback to its saved account and task before claiming and dispatching it."""
+    """Check callback ownership, dispatch business calls and retain their memory sources."""
     identity = payload['execution_id']
     if payload['application_id'] != app.state.settings.nexus_application_id:
         raise ForbiddenError('application_mismatch', '应用标识与凭据不匹配。')
@@ -318,6 +318,17 @@ async def process_response(db, app, payload):
     flow['visible_result'] = business
     flow['step'] += 1
     if business['status'] == 'succeeded' and isinstance(business.get('data'), (dict, list)):
+        if operation.operation_id in {'save_business_memory_fact','mutate_business_memory'}:
+            from assistant_api.services.task_memory import invalidate
+            invalidate(flow,operation.operation_id)
+            changed=business['data'].get('entry_id')
+            if changed:
+                flow['memory_sources']=[source for source in flow.get('memory_sources',[]) if source['entry_id']!=changed]
+        if operation.operation_id == 'recall_business_memory':
+            dependencies = {source['entry_id']: source for source in flow.get('memory_sources', [])}
+            for item in business['data'].get('items', []):
+                dependencies[item['entry_id']] = item['source']
+            flow['memory_sources'] = list(dependencies.values())
         result = {**business, 'executed_arguments': actual.body, 'executed_call': actual.model_dump(mode='json'),
                   'proposed_summary': call.summary}
         flow['receipts'].append(result)
@@ -330,6 +341,39 @@ async def process_response(db, app, payload):
         return await finish(db, root, receipt, flow, outcome(identity, 'failed',
             error.get('message') or '索引参数无效，请按已发布uri修正；没有执行业务操作。',
             code=error.get('code')))
+    if (operation.operation_id=='resolve_business_preferences' or (
+        operation.path in {'/api/v1/schedules','/api/v1/commute/estimate','/api/v1/todos',
+                          '/api/v1/todos/{todo_id}','/api/v1/schedules/{schedule_id}',
+                          '/api/v1/matters/drafts','/api/v1/matters/drafts/{draft_id}',
+                          '/api/v1/matters/commute-drafts','/api/v1/matters/drafts/{draft_id}/commute-quote',
+                          '/api/v1/matters/drafts/{draft_id}/confirm',
+                          '/api/v1/commute-plans','/api/v1/commute-plans/{plan_id}'}
+        and business['http_status'] in {404,409,422}
+        and error.get('code') in {'input_source_conflict','preference_selection_unresolved','preference_task_unavailable',
+                                 'preferences_draft_changed','preferences_verification_required',
+                                 'business_memory_changed','business_memory_disabled','business_memory_unconfirmed',
+                                 'schedule_defaults_unresolved','schedule_time_required',
+                                 'memory_reference_changed','memory_reference_not_found',
+                                 'memory_not_found','commute_plan_fields_invalid','commute_draft_fields_invalid',
+                                 'commute_quote_fields_invalid','memory_fields_invalid'})):
+        # These failures precede formal writes. The same Agent can recall updated
+        # memory or ask for a choice; an actual timeout remains unknown above.
+        return await finish(db,root,receipt,flow,outcome(identity,'failed',
+            error.get('message') or '所选记忆尚未用于业务保存，请补查或询问用户。',
+            code=error.get('code') or 'preference_selection_unresolved'))
+    if operation.operation_id == 'recall_business_memory' or (
+        operation.operation_id in {'save_business_memory_fact','mutate_business_memory'}
+        and business['http_status'] in {409, 422}
+        and isinstance(business.get('data'), dict)
+        and (business['http_status']==422 or
+             (business['data'].get('error') or {}).get('code', '').startswith(('memory_', 'business_memory_')))
+    ):
+        # Recall has no business side effects. Documented fact validation failures
+        # happen before publishing a memory, so their actual failure is actionable.
+        error = (business.get('data') or {}).get('error') or {}
+        return await finish(db, root, receipt, flow, outcome(identity, 'failed',
+            error.get('message') or '记忆字段校验未通过，未执行写入，请按接口结构补齐。',
+            code=error.get('code') or 'memory_unavailable'))
     # A business handler may have committed before an HTTP error. No generic 4xx/5xx
     # response proves rollback; only our pre-dispatch validation is retryable.
     return await finish(db, root, receipt, flow, outcome(identity, 'unknown', '业务接口未返回确定成功结果，请核对原记录。'))

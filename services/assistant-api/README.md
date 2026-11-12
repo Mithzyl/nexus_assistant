@@ -297,18 +297,13 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
   `scripts/migrate_sqlite.py` 管理。
 - 记忆召回失败返回 5xx，不返回空列表——"没有"和"查不到"必须能区分。
 
-记忆桥接复用 `/api/v1/app/runs/{run_id}/user-memories` 和 `memory-settings`。
-服务端从当前账号的本地 Run 解析 Nexus Run；调用者不能指定远端身份或跨账号 Run。
-没有已建立的 Run 时返回 409 `memory_context_required`，不创建占位 Run，也不宣称记忆为空。
-搜索为正文关键词匹配，每次读取一个有界上游分页；`next_cursor` 可作为下一次 `offset`。
-`commands` 保留 Nexus 的候选确认、敏感内容确认、版本与幂等语义；`app_data.namespace`
-固定为 `personal_assistant`。此桥接不会自动提取历史，也不会把日程视为记忆。
+Assistant 使用本地数据库管理业务记忆。登录用户可通过 `GET /api/v1/memory` 列表、`GET /api/v1/memory/history/{entry_id}` 历史及 `GET /api/v1/memory/settings` 读取自己的数据。`POST /api/v1/memory/commands` 用于保存、纠正、遗忘、恢复及设置开关。本人管理可独立于聊天使用，旧客户端传入任务编号时仍核对任务归属。
 
-`POST /api/v1/asks` 可显式传入 `memory_disclosures`（最多 10 条，每条包含
-`entry_id`、当前 `expected_version`、`confirmed_sensitive: true`）。服务端先在新建的
-当前 Nexus Run 上执行既有 `disclose`，再启动模型；失败时不启动模型。默认不披露，
-授权只适用于该次对话，幂等重放不能改变授权列表。Nexus 继续核验归属和版本。
-网页当前只有记忆检索展示，尚未提供选择记忆并授权本次 AI 对话的交互。
+新聊天保存用户原文后，在首次调用模型前读取当前账号的相关记忆，并随同本次任务交给 Nexus。模型可用 `POST /api/v1/business-memory/query` 补查，也可通过 `POST /api/v1/business-memory/commands` 提出修改。Assistant 核对任务、账号、原话和版本。旧通用问答入口传入的 `memory_disclosures` 只在 Assistant 校验归属和版本。新的业务任务使用前述受限工具。
+
+模型登记允许延后的修改时，接口返回 `queued` 和 `applied=false`。最终回答成功保存后，Assistant 的后台工作进程执行已登记的命令，并通过 `GET /api/v1/memory/operations/{operation_id}` 提供实际结果。记忆关闭或版本冲突会阻止修改。处理过程无需调用模型。
+
+数据库迁移 `0028_owned_memory` 创建记忆条目、历史、开关和操作记录表。记忆加密密钥由 `ASSISTANT_MEMORY_ENCRYPTION_KEY_PATH` 指向，首次配置可使用 `scripts/configure_memory.py`。保留已有密钥，并随数据库一同私密备份。
 
 ### 网页注册
 
@@ -340,4 +335,4 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
 
 2026-11-11：待办记忆来源完成一次 Chrome 真实 AI 验收（隔离数据、两个连续输入、6+1 次模型调用、无重试）。首轮按会议时间和记忆保存 09:30 截止待办、cards=[]；用户追问后才展示记忆与计算解释卡片。真实来源记录与页面结果一致，未重复写入；未扩大重测组合草稿、周期计划或重新应用。范围与限制见 [当前流程的验收记录](../../docs/backend-integration/05-Agent-工具-记忆运行流程.md#2026-11-11-待办来源真实浏览器验收)。
 
-本次来源记录的直接依赖已随后续提交补齐，包含待办/日程参数衔接、共享来源结构、校验、本地读取/加密、模型装配和 0028 登记。同一次 Nexus 运行的工具回调和账号、任务归属校验已纳入提交。首轮记忆检索、对外记忆管理及回答后执行代码仍在工作区。已有完整 AI 聊天验收基于包含这些改动的工作区。
+本次来源记录的直接依赖已随后续提交补齐，包含待办/日程参数衔接、共享来源结构、校验、本地读取/加密、模型装配和 0028 登记。同一次 Nexus 运行的工具回调和账号、任务归属校验已纳入提交。2026-11-12 纳入首轮记忆检索、本人记忆管理接口和回答保存后由后台执行记忆修改。已有真实 AI 聊天验收使用当时的完整工作区。本次提交未重新运行验收。

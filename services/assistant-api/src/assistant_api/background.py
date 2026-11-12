@@ -16,7 +16,7 @@ from assistant_api.commute.heartbeat import record_heartbeat
 
 
 async def tick(app, component, identity, *, now=None, active_state=None):
-    """Process explicitly saved supplements, follow-ups and existing provider work in the shared worker."""
+    """Process queued post-answer memory, explicit supplements, follow-ups and provider work in the shared worker."""
     from assistant_api.commute.scheduler import scheduler_tick as provider_scheduler
     from assistant_api.commute.worker import worker_tick as provider_worker
     now=now or datetime.now(UTC)
@@ -33,7 +33,9 @@ async def tick(app, component, identity, *, now=None, active_state=None):
             await provider_scheduler(db,settings,owner=identity,now=now,auto_analysis_mode='weather_only',enqueue_enabled=settings.commute_auto_weather_enabled,runtime=None)
         return count
     from assistant_api.services import supplements
-    handled=await supplements.worker_tick(app,worker_id=identity)
+    from assistant_api.services import memory_repository
+    memory_handled=await memory_repository.process_pending(app)
+    handled=await supplements.worker_tick(app,worker_id=identity) or bool(memory_handled)
     # Retain follow-up progress even when supplement submissions are arriving continuously.
     handled=await follow_ups.worker_tick(app,now=now,worker_id=identity) or handled
     if not handled:

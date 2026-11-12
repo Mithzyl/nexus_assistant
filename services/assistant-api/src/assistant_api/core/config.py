@@ -55,7 +55,10 @@ class Settings(BaseSettings):
     nexus_workflow_start_timeout_seconds: float = Field(default=20.0, gt=0, le=60)
     nexus_business_max_model_calls: int = Field(default=24, ge=1, le=64)
     nexus_business_wall_time_limit_ms: int = Field(default=600000, ge=1000, le=600000)
-
+    # Task-start reads are bounded separately from optional Agent tool queries.
+    memory_prefetch_timeout_seconds: float = Field(default=3.0, ge=0.05, le=10)
+    memory_prefetch_scan_limit: int = Field(default=50, ge=1, le=200)
+    memory_prefetch_max_items: int = Field(default=3, ge=1, le=10)
     # A separate stable 32-byte base64 key; never derive it from a Nexus token.
     memory_encryption_key_path: Path | None = None
 

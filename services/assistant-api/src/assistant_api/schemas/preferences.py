@@ -39,6 +39,22 @@ class PreferenceBinding(BaseModel):
     version: int = Field(ge=1)
 
 
+class PreferencePatch(BaseModel):
+    """Patch controls with optimistic versioning; null removes only the named role binding."""
+    model_config = ConfigDict(extra='forbid')
+    expected_version: int = Field(ge=0)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    purposes: dict[LegacyPurpose, bool] = Field(default_factory=dict)
+    bindings: dict[Role, PreferenceBinding | None] = Field(default_factory=dict, max_length=32)
+    defaults: dict[LegacyPurpose, dict[str, Role]] = Field(default_factory=dict)
+
+    @model_validator(mode='after')
+    def supported_fields(self):
+        """Constrain business consumers, without enumerating memory categories or user roles."""
+        for purpose, fields in self.defaults.items():
+            if set(fields) - FIELDS[purpose]:
+                raise ValueError('该用途不支持指定的默认字段。')
+        return self
 
 
 class PreferenceResolveRequest(BaseModel):
@@ -73,6 +89,17 @@ class PreferenceRead(BaseModel):
     selection_mode: Literal['model'] = 'model'
 
 
+class PreferenceResolution(BaseModel):
+    """Publish values and field-by-field applied, explicit or unused provenance."""
+    preferences_version: int | None = None
+    selection_mode: Literal['model'] = 'model'
+    purpose: Purpose
+    timezone: str
+    values: dict[str, JsonValue]
+    fields: dict[str, dict[str, JsonValue]]
+    application_status: Literal['resolved','applied','not_applied'] = 'resolved'
+    matter_id: str | None = None
+    reference_date: date | None = None
 
 
 class MemoryBusinessReference(BaseModel):

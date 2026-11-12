@@ -108,6 +108,7 @@ class MemoryQueryRequest(StrictRequest):
 
 
 class MemoryHit(UpstreamModel):
+    """Preserve structured business facts for existing search clients."""
     memory_id: str
     memory_type: str
     content: str
@@ -117,11 +118,20 @@ class MemoryHit(UpstreamModel):
     version: int | None = None
     sensitive: bool = False
     app_data: dict | None = None
+    typed_data: dict | None = None
+    business: dict | None = None
 
 
 class MemoryQueryResponse(UpstreamModel):
+    """Return lexical search coverage without equating no match with no personal memory."""
     items: list[MemoryHit] = Field(default_factory=list)
     next_cursor: str | None = None
+    scanned: int = 0
+    truncated: bool = False
+    match_status: str | None = None
+    retrieval_method: str | None = None
+    coverage: dict | None = None
+    next_steps: list[str] = Field(default_factory=list)
 
 
 class SseEvent(StrictRequest):

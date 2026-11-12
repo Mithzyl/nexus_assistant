@@ -350,19 +350,20 @@ async def _start_workflow(
     except AssistantError as exc:
         await _finish(db, row, status="failed", error_code=exc.code)
         raise
-    # Nexus enforces owner/version checks and per-run sensitive disclosure.
-    # Complete these explicit grants before any model starts; errors fail closed.
-    for disclosure in (row.context_json or {}).get("memory_disclosures", []):
-        await client.mutate_product_memory(
-            external_user_id,
-            row.nexus_run_id,
-            {
-                **disclosure,
-                "action": "disclose",
-                "scope": "personal",
-                "key": f"disclose:{row.local_run_id}:{disclosure['entry_id']}",
-            },
-        )
+    # Legacy entry references are validated locally; never write a disclosure
+    # into Nexus's platform memory for an Assistant-owned business fact.
+    if (row.context_json or {}).get('memory_disclosures'):
+        from assistant_api.services.business_memory import validate_sources
+        from assistant_api.services.memory_repository import for_session
+        sources = [
+            {"entry_id": disclosure["entry_id"], "version": disclosure["expected_version"]}
+            for disclosure in row.context_json["memory_disclosures"]
+        ]
+        try:
+            await validate_sources(for_session(db), external_user_id, sources)
+        except (AssistantError, NexusError) as exc:
+            await _finish(db, row, status="failed", error_code=exc.code)
+            raise
     ready: asyncio.Future[WorkflowView] = asyncio.get_running_loop().create_future()
     task = asyncio.create_task(
         _consume_workflow(

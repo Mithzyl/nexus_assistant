@@ -73,7 +73,8 @@ def search_terms(text: str) -> set[str]:
                   '草稿': 'draft', '修改': 'update edit patch', '调整': 'update edit patch',
                   '补充': 'update edit', '确认': 'confirm', '查询': 'list get',
                   '删除': 'delete', '取消': 'cancel', '新增': 'create post', '创建': 'create post', '新建': 'create post',
-                  '搜索': 'search query', '地点': 'place', '路线': 'route', '测算': 'estimate'}
+                  '搜索': 'search query', '地点': 'place', '路线': 'route', '测算': 'estimate',
+                  '记忆': 'memory', '习惯': 'memory preference', '偏好': 'memory preference', '记住': 'memory save'}
     for phrase, aliases in vocabulary.items():
         if phrase in text:
             terms.update(aliases.split())

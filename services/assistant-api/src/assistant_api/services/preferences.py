@@ -8,7 +8,8 @@ from datetime import UTC, datetime, time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from assistant_api.core.errors import ConflictError, InvalidRequestError
 from assistant_api.models import UserProfile
@@ -39,6 +40,10 @@ async def controls(db, user):
     return profile,raw,deepcopy(settings)
 
 
+async def read(db, user):
+    """Return the authenticated owner's settings without stored request receipts."""
+    _,_,settings=await controls(db,user)
+    return PreferenceRead.model_validate(settings).model_dump(mode='json')
 
 
 async def current_memory(client, user_id, entry_id, version):
@@ -55,6 +60,58 @@ async def current_memory(client, user_id, entry_id, version):
     return item
 
 
+async def patch(db, client, user, payload):
+    """Persist legacy owner settings for compatibility without controlling new memory selections.
+
+The latest 32 settings requests can replay their saved response. Older requests
+with the original version fail with 409 instead of performing another update.
+No memory text is copied, no upstream settings are widened, and no migration is needed.
+"""
+    from assistant_api.services.memory_repository import for_session
+    client=for_session(db)
+    profile,raw,settings=await controls(db,user)
+    command=payload.model_dump(mode='json')
+    for receipt in settings.get('receipts',[]):
+        if receipt['key']==payload.idempotency_key:
+            if receipt['request']!=command:
+                raise ConflictError('idempotency_key_reused','该请求标识已用于另一项设置。')
+            return {**receipt['result'],'replayed':True}
+    if settings['version']!=payload.expected_version:
+        raise ConflictError('preferences_changed','偏好已修改，请重新读取。')
+    bindings=dict(settings['bindings'])
+    if payload.bindings:
+        # Management can remove a binding while memory use is disabled.
+        for role,binding in payload.bindings.items():
+            if binding is None:
+                bindings.pop(role,None)
+            else:
+                await current_memory(client,user.user_id,str(binding.entry_id),binding.version)
+                bindings[role]=binding.model_dump(mode='json')
+    if len(bindings)>32:
+        raise InvalidRequestError('preferences_too_many_bindings','最多保留 32 个默认角色绑定。')
+    defaults={**settings['defaults'],**payload.defaults}
+    if any(role not in bindings for fields in defaults.values() for role in fields.values()):
+        raise InvalidRequestError('preference_role_missing','默认字段引用的角色必须存在；删除角色前请同时移除默认字段。')
+    result={'version':settings['version']+1,'purposes':{**settings['purposes'],**payload.purposes},
+            'bindings':bindings,'defaults':defaults,'replayed':False}
+    receipts=[*settings.get('receipts',[]),{'key':payload.idempotency_key,'request':command,'result':result}][-32:]
+    updated={**raw,NAMESPACE:{**result,'receipts':receipts}}
+    if profile is None:
+        db.add(UserProfile(user_id=user.user_id,preferences_json=updated))
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise ConflictError('preferences_changed','偏好已修改，请重新读取。') from exc
+    else:
+        changed=await db.execute(update(UserProfile).where(UserProfile.user_id==user.user_id,
+            UserProfile.preferences_json==raw).values(preferences_json=updated).execution_options(synchronize_session=False))
+        if changed.rowcount!=1:
+            await db.rollback()
+            raise ConflictError('preferences_changed','偏好或其他个人设置已修改，请重新读取。')
+        await db.commit()
+        await db.refresh(profile)
+    return result
 
 
 def business_time(request, timezone):

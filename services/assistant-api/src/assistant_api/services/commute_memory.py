@@ -48,10 +48,12 @@ async def candidate(db,client,user,draft):
     return {'status':'candidate','local_run_id':row.local_run_id,**value}
 
 async def save(db,client,user,draft):
+    """Save the confirmed commute candidate in Assistant's shared account memory store."""
     value=await candidate(db,client,user,draft)
     if value['status']=='saved':return value
     if value['status']!='candidate':raise ConflictError('memory_not_ready','记忆提取未完成，不能保存。')
     row=await run_service.get_run(db,user=user,local_run_id=value['local_run_id'])
-    saved=await client.mutate_product_memory(user.user_id,row.nexus_run_id,{'scope':'personal','action':'save','key':'commute-memory-save:'+draft.draft_id,'text':value['text'],'app_data':value['app_data'],'sensitive':True,'confirmed_sensitive':True})
+    from assistant_api.services.memory_repository import for_session
+    saved=await for_session(db).mutate_application_memory(user.user_id,{'scope':'personal','action':'save','key':'commute-memory-save:'+draft.draft_id,'text':value['text'],'app_data':value['app_data'],'sensitive':True,'confirmed_sensitive':True})
     draft.result_json={**draft.result_json,'memory_saved':saved};await db.commit()
     return {**saved,'status':'saved','memory_status':saved.get('status')}

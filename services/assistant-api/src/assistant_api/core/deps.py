@@ -101,3 +101,11 @@ CommuteRuntimeDependency = Annotated[CommuteRuntime, Depends(get_commute_runtime
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
 NexusClient = Annotated[NexusPilotClient, Depends(get_nexus_client)]
+
+
+def get_memory_store(request: Request):
+    """Return Assistant's own persistent memory service, independent of the Nexus client."""
+    return request.app.state.memory_store
+
+
+MemoryStoreDependency = Annotated[Any, Depends(get_memory_store)]
