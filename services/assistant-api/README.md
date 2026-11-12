@@ -16,11 +16,11 @@ NexusPilot 提供模型与 Agent 工作流。Assistant 使用 `matter_plan` 提�
 
 ## 单 Agent 正文处理接入
 
-当前工作区已接入正式 App 协议：创建工作流时传 `application_response_mode=caller_processed`、
-`application_protocol_instructions` 和 `final_output_schema`。Nexus 将完整正文交给已批准的
-`POST /internal/nexus/agent-responses`，Assistant 校验并执行业务，通过 HTTP 返回结果。
-Nexus 追加原正文和结果，继续原 Agent；Assistant 不在每步业务后创建新的 `api-step` 运行。
-旧 `/internal/nexus/tools` 只读回调继续兼容，不用它冒充正文处理入口。
+Assistant 为每次用户任务创建一个 Nexus 运行。创建工作流时使用 `application_response_mode=caller_processed`，并提供模型指令和最终回答的 JSON 结构。Nexus 将完整模型正文发给 `POST /internal/nexus/agent-responses`。Assistant 验证应用凭据和应用标识，按外部账号及 Nexus 运行编号查找本地任务，再检查工作流编号。执行业务接口时使用已核对的账号和本地任务编号 `local_run_id`。
+
+Nexus 将模型正文、实际工具参数和结果保留在原运行中，供下一次模型调用使用。Assistant 在执行业务前保存本次执行编号和请求。同编号同内容可读取已有结果，结果未确认时停止重复写入。最终回答由原运行保存，页面重连后按本地任务编号读取结果。旧 `/internal/nexus/tools` 继续提供既有只读接口。
+
+首轮消息提供业务接口简表和 `resolve_operation_definitions` 的参数结构。模型需要其他业务接口时，调用已认证的 `POST /api/v1/operation-catalog/resolve`，按简表里的 URI 读取完整定义。Assistant 依据原运行已收到的定义校验参数，定义变化时要求重新读取。
 
 Nexus 私有 App 配置需要绑定此路径和独立服务端凭据，不能由模型指定执行地址或身份。
 Assistant 新增迁移 `0026_agent_response_receipts`，保存原文、关联身份、实际参数及处理回执。
@@ -340,4 +340,4 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
 
 2026-11-11：待办记忆来源完成一次 Chrome 真实 AI 验收（隔离数据、两个连续输入、6+1 次模型调用、无重试）。首轮按会议时间和记忆保存 09:30 截止待办、cards=[]；用户追问后才展示记忆与计算解释卡片。真实来源记录与页面结果一致，未重复写入；未扩大重测组合草稿、周期计划或重新应用。范围与限制见 [当前流程的验收记录](../../docs/backend-integration/05-Agent-工具-记忆运行流程.md#2026-11-11-待办来源真实浏览器验收)。
 
-本次来源记录的直接依赖已随后续提交补齐，包含待办/日程参数衔接、共享来源结构、校验、本地读取/加密、模型装配和 0028 登记。Agent/首轮记忆检索、对外记忆管理及回答后队列仍未纳入，完整 AI 聊天验收依赖当前未提交工作；提交整理期间未新增运行验证。
+本次来源记录的直接依赖已随后续提交补齐，包含待办/日程参数衔接、共享来源结构、校验、本地读取/加密、模型装配和 0028 登记。同一次 Nexus 运行的工具回调和账号、任务归属校验已纳入提交。首轮记忆检索、对外记忆管理及回答后执行代码仍在工作区。已有完整 AI 聊天验收基于包含这些改动的工作区。

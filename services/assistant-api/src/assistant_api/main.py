@@ -35,6 +35,8 @@ from assistant_api.routers import (
     calendar_feed,
     data_sources,
     internal_tools,
+    agent_responses,
+    operation_catalog,
     matters,
     memory,
     sync_ios,
@@ -151,6 +153,8 @@ def create_app(
     app.include_router(assistant.router)
     app.include_router(memory.router)
     app.include_router(internal_tools.router)
+    app.include_router(agent_responses.router)
+    app.include_router(operation_catalog.router)
     app.include_router(data_sources.router)
     app.include_router(data_sources.content_router)
     app.include_router(commute_router)

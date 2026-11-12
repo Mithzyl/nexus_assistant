@@ -178,6 +178,7 @@ async def init(database_url: str) -> None:
             await _ensure_table(conn)
             await _record(conn, VERSION, "metadata")
             await _record(conn, "0029_business_memory_applications", "metadata:business_memory_applications")
+            await _record(conn, "0026_agent_response_receipts", "metadata:agent_response_receipts")
             await _record(conn, "0028_owned_memory", "metadata:assistant_memory_scopes,assistant_memory_entries,assistant_memory_versions,assistant_memory_operations")
             await _record(conn, "0021_follow_ups", "metadata:follow_ups,follow_up_executions,business_change_events")
             await _record(conn, "0024_matter_supplements", "metadata:matter_supplements,supplement_texts")
@@ -213,6 +214,7 @@ async def upgrade(database_url: str) -> None:
             await _record(conn, "0021_follow_ups", "created missing follow-up tables")
             await _record(conn, "0024_matter_supplements", "created missing supplement tables")
             await _record(conn, "0029_business_memory_applications", "created missing encrypted attribution table; no existing records changed")
+            await _record(conn, "0026_agent_response_receipts", "created missing agent_response_receipts")
             await _record(conn, "0028_owned_memory", "created missing Assistant owned memory tables; no existing data moved or removed")
             await _record(conn, VERSION, "upgrade")
     finally:

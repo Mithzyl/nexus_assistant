@@ -3,7 +3,7 @@
 from assistant_api.models.base import Base
 from assistant_api.models.memory import MemoryEntry, MemoryScope, MemoryVersion, MemoryOperation, BusinessMemoryApplication
 from assistant_api.models.bark import BarkReminderSetting
-from assistant_api.models.bridge import NexusRun, ToolCallReceipt, UserAsk
+from assistant_api.models.bridge import AgentResponseReceipt, NexusRun, ToolCallReceipt, UserAsk
 from assistant_api.models.business import BusinessRecord, Note, ScheduleEvent, TaskItem
 from assistant_api.models.calendar import CalendarSubscription
 from assistant_api.models.content import (

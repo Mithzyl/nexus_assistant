@@ -20,8 +20,10 @@ class ExecutionContext:
         return cls(request.app, user.user_id, dict(request.headers))
 
 
-async def dispatch_local(app, scope, receive, send, *, user_id):
-    """Attach a server-owned identity to an in-process ASGI call, unavailable to HTTP clients."""
+async def dispatch_local(app, scope, receive, send, *, user_id, local_run_id=None):
+    """Attach server-owned user/run provenance; HTTP headers cannot impersonate either."""
     scoped = dict(scope)
     scoped['assistant_execution_user_id'] = user_id
+    if local_run_id:
+        scoped['assistant_execution_run_id'] = local_run_id
     await app(scoped, receive, send)

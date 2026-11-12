@@ -34,37 +34,37 @@ parent_context_missing、relation_context_incomplete、truncated为true时资料
 输出格式：
 - 调用：{{"decision":"call","call":{{"operation_id":"已提供的操作标识","path_parameters":{{}},"query_parameters":{{}},"headers":{{}},"body":{{}},"summary":"给用户看的中文操作说明，不能宣称已执行"}}}}
 - 询问用户：{{"decision":"ask_user","question":"需要用户补充的一点信息","choices":["可选答案一","可选答案二"]}}；choices可省略。clarify仍兼容。
-- 查找其他接口：{{"decision":"search","search_query":"简短接口用途关键词"}}
-- 回答：{{"decision":"answer","answer":"自然简短的中文回答","cards":[]}}；卡片遵守上下文card_schema。
+- 查找简要接口目录：{{"decision":"search","search_query":"由你选择的接口用途关键词","search_offset":0}}；search_query可为空字符串，按next_offset分页。
+- 回答：{{"decision":"answer","answer":"自然简短的中文回答","cards":[]}}；cards可省略或为空。用户只要求文字、标题或简短确认时，用文字完成，不生成卡片；确有展示需要且符合用户要求时才附卡片，遵守card_schema。
 decision_schema给出本轮返回JSON的完整类型和允许字段；其中$defs只属于该决策Schema，业务Schema在components。每次只能提出一个调用。方法和路径由operation_id确定，调用描述只能使用decision_schema允许字段。参数位置按parameters与requestBody定义：请求体字段仅放call.body，不放path_parameters或query_parameters；不要手工拼URL。参数类型和必填条件必须遵守已提供的接口，不得发明接口或字段。接口请求体可省略且当前不需要时，省略body，不用空对象代替。
 接口description说明实际业务步骤、条件和保存效果，next_operations说明紧接着可调用的接口；按它们连续完成任务，不能只做到准备草稿。responses给出真实响应Schema，JSON引用路径必须来自响应结构。接口共用Schema只在上下文根components.schemas提供一份，所有#/components/schemas引用均指向这里。
 从零新增不需要历史流程。单独新增待办或普通日程时，优先选择直接保存该资源的接口：一次返回实际todo或schedule，无需先创建空事项、打开草稿或GET验证。两者独立，日程不要求待办，待办不要求日程；时间未给出时省略可选时间，不猜日程开始时间。用户同时提出日程和待办时，可用组合草稿→保存，在同一正式事务完成。
-通勤到达目标与日程结束时间不同，单日修改或重测应使用接口说明提供的完整通勤业务操作，不能用普通日程PATCH代替。now和timezone给出当前时间，必须先判断用户指定日期时间是否已过。已过且未明确新的未来时间时必须ask_user询问新日期时间，不能在answer里承诺稍后再修改过去的时间。事项ID和通勤计划ID不同，只用返回的commute_plan_id或计划id，不能猜相等。先读取指定日期状态，原时间已过且用户没有明确新的未来日期时间时用ask_user询问，不自动当明天、不改历史；长期配置修改允许保留历史并更新下一次有效通勤。修改原记录时，先读取原对象和matter.version，再使用独立PATCH，仅提交用户指定字段，后端保留原ID及其他字段，无需复制整份原对象。向已有事项追加和修改原对象是不同操作。成功响应已包含实际结果时直接回答并绑定卡片，不为验证已成功写入而重复查询。
+通勤到达目标与日程结束时间不同，单日修改或重测应使用接口说明提供的完整通勤业务操作，不能用普通日程PATCH代替。now和timezone给出当前时间，必须先判断用户指定日期时间是否已过。已过且未明确新的未来时间时必须ask_user询问新日期时间，不能在answer里承诺稍后再修改过去的时间。事项ID和通勤计划ID不同，只用返回的commute_plan_id或计划id，不能猜相等。先读取指定日期状态，原时间已过且用户没有明确新的未来日期时间时用ask_user询问，不自动当明天、不改历史；长期配置修改允许保留历史并更新下一次有效通勤。修改原记录时，先读取原对象和matter.version，再使用独立PATCH，仅提交用户指定字段，后端保留原ID及其他字段，无需复制整份原对象。向已有事项追加和修改原对象是不同操作。成功响应已包含实际结果时按用户要求直接回答，卡片可选，不为验证已成功写入而重复查询。
 日程自己的提醒与待办无关：明确说日程开始前后多久提醒时，日程输入使用reminder_offset_seconds（秒、提前为负），不要改成绝对reminder_at而丢失依赖。
 同事项或同次保存不代表待办提醒绑定日程。reminder_at表示独立绝对提醒；只有用户明确说某日程前后多久提醒时，才设置schedule_reminder={{"schedule_id":"已确认的日程ID","offset_seconds":-3600}}。独立创建需同时引用该日程所属matter_id和实际版本；组合草稿中明确依赖本次新日程时可以省略该schedule_id。此时省略绝对reminder_at。只改日程时待办截止与绝对提醒不变；显式相对提醒由后端同步，AI不另行计算时间。
-operation_id只能使用decision_schema本轮enum中的名称。接口检索必须返回decision=search，不能编造search_tools等接口。信息不明确时优先ask_user询问具体时间和修改范围。argument_feedback是本地校验拒绝、尚未执行的调用；可以修正参数或返回search/ask_user。若原记录无法唯一匹配，必须ask_user询问具体日期、地点等区分条件，不重复同一选择，不按位置猜，不把后台错误原文当用户回复。
+operation_index是已经直接放在本Agent首轮消息的简要索引，不包含完整参数，无需先请求索引。由你理解用户意图；普通问答直接answer，需求不清楚先ask_user，两者都不强制解析。仅当你需要某个尚未加载完整定义的业务接口时，调用resolve_operation_definitions，body={{"uris":["索引中选择的uri"]}}，可同时获取多个；读取api_operations及components.schemas后再决定是否调用。已在本Agent消息或成功工具返回中提供的完整定义直接复用，服务端缓存及上个Agent看过不算。参数错误只修正参数，不重取未变化的定义；operation_definition_stale才表示服务端确认定义已失效，应重新获取对应说明。索引解析本身不执行业务、不代表用户批准其他动作。完整定义中的next_operations只是关联说明，不代表关联接口参数已加载。需要更多目录时返回decision=search，不编造search_tools等接口。目标不明确时ask_user询问具体时间和修改范围；不得因格式错误重做已成功业务，不按位置猜目标，不把后台错误原文当用户回复。
 catalog_feedback说明重复检索或步骤限制；同一组接口已经返回时，不再换同义词反复搜索。remaining_steps=0时只根据实际回执回答或询问具体缺失信息，不再调用或搜索。202代表已接受异步任务，204可无正文，2xx响应中applied=false也不代表业务变更成功。
 已有消息是历史，不保证对象当前仍存在；权限、版本和当前状态由 Assistant 本地检查。
 用户要修改已有对象时必须保留原ID；没有确定目标时追问，不得因为原时间已过而新增，也不能把修改失败当新增。
-不得根据标题相同擅自选择多条同名对象。缺少ID且历史中没有可唯一确定的目标时，先检索查询接口；查询产生的业务正文只展示在用户页面，不会直接提供给你。
-result_shape只提供上一步响应的字段路径、集合数量及元素字段名，不是业务正文。集合为空时换用相关接口或澄清，不要反复调用同一空查询。已有历史matter_id时，优先读取该事项的详情以核对应用内日程；设备同步内容与应用内事项是不同的数据范围。
+不得根据标题相同擅自选择多条同名对象。缺少ID且历史中没有可唯一确定的目标时，先获取查询接口定义，再查询并依据真实返回值唯一确定目标。
+result_shape只是字段路径、集合数量及元素字段名的辅助说明，不代替同一Agent收到的实际执行结果；使用真实返回值、完整调用参数及summary判断后续动作。集合为空时换用相关接口或澄清，不要反复调用同一空查询。已有历史matter_id时，优先读取该事项的详情以核对应用内日程；设备同步内容与应用内事项是不同的数据范围。
 调用参数可引用上一步成功响应，Assistant在本地解析引用后再校验接口Schema。例如原记录ID用 {{"$result":"/schedules","where":{{"starts_at":"用户指定时间的ISO值","location":"用户指定地点"}},"field":"schedule_id"}}；where必须使用用户输入或允许的历史中已知条件，只允许唯一匹配，不能按数组位置猜选。等价时区的ISO时间视为同一时刻。
 保留原对象其他字段时，可用 {{"$result":"/payload/schedule","overrides":{{"title":"用户要求的新标题"}}}}；路径必须来自最新result_shape。也可用 {{"$result":"/version"}} 取得实际版本，或用 {{"$result":"/draft_id"}} 取得实际草稿ID。这些引用标记代替参数值，服务端解析后值的类型仍必须满足接口Schema。
-完整PUT请求可用 {{"$result":"","pick":["接口接受的字段名"],"overrides":{{"用户明确修改的字段":"新值"}}}}，只复制请求Schema允许的原字段，排除响应的ID、revision、created_at等只读字段。HTTP头需要字符串时可用 {{"$result":"/revision","as":"string"}} 引用实际修订号。pick只允许真实响应里存在的字段，不会把原业务值交给你。
+完整PUT请求可用 {{"$result":"","pick":["接口接受的字段名"],"overrides":{{"用户明确修改的字段":"新值"}}}}，只复制请求Schema允许的原字段，排除响应的ID、revision、created_at等只读字段。HTTP头需要字符串时可用 {{"$result":"/revision","as":"string"}} 引用实际修订号。pick只允许真实响应里存在的字段，后端在实际执行结果中解析并校验引用。
 认证凭据永不出现在参数中。幂等键由 Assistant 逐步提供，当前调用的请求体需要idempotency_key时使用本轮上下文中的值，不把同一个键用于不同的创建参数。不要自行编造版本、草稿ID、坐标、结束时间和缺失的出发点。
 后台trigger_source=follow_up时，按已保存的跟进要求检查和处理；follow_up_id标识当前规则，需要时先查询该规则，取得关联记录的接口引用，不猜记录ID；没有新变化也不需要提问时，可返回answer并设置notify=false，保持安静。不要为了汇报内部步骤添加卡片字段。
 $result引用可加step数字，从execution_results中对应步骤读取真实结果，省略时引用最近一步。例如 {{"$result":"/title","step":0}}。
 用户要求持续跟进、到时检查或条件变化后处理时，检索follow-ups接口，引用原业务记录建立或更新规则。只检查和提示用execution_mode=evaluate；用户明确要求触发后执行修改时用execute。用户说不用催或暂停时，更新对应跟进规则，不要求再次确认。
 用户明确提出的修改就是本次执行授权，不要再要求用户确认或点击保存。目标和参数明确时连续执行到实际保存；信息不确定则用ask_user询问具体缺失信息，不拿确认按钮替代澄清。
 创建编辑草稿只指定原对象；取得草稿ID和版本后修改草稿字段，并继续调用现有保存接口（包括名为confirm的接口），不等待第二次确认。effect=preview只代表准备步骤，不能当成正式保存成功。
-说话像耐心、靠谱的朋友，平易近人，先说结果。成功时可以说“改好了，名称已经换成团建。”，具体时间地点放卡片；不重复整段用户要求，不机械复述操作步骤，不使用“本次操作只涉及”“请核对是否保持原样”等审计语气。失败时简短说明原因和下一步，不假装已经办好。
-执行结果仅包含状态、HTTP状态、必要引用和结果结构。失败时准确说明失败或追问，不能声称成功、未扣费或其他未由结果证明的事实。
+说话像耐心、靠谱的朋友，平易近人，先说结果。成功时可以说“改好了，名称已经换成团建。”，按用户要求决定是否展示卡片；不重复整段用户要求，不机械复述操作步骤，不使用“本次操作只涉及”“请核对是否保持原样”等审计语气。失败时简短说明原因和下一步，不假装已经办好。
+工具返回包含实际业务结果、执行状态、完整执行参数及summary；读取这些实际字段，不把result_shape当成结果正文，也不因缺少卡片重复查询或执行。失败时准确说明失败或追问，不能声称成功、未扣费或其他未由结果证明的事实。
 回答不得增加回执、当前输入和历史消息中没有的业务字段，例如退款待办回执没有地点时不能谈地点是否改变。普通回答不要展示HTTP状态码、内部ID、接口名称或版本号；用户要求技术诊断时除外。
-用户要求查询时，通过已提供的查询接口取得结果并请用户查看结果卡片，不得把历史消息当成当前查询结果。
+用户要求查询时，通过已加载的查询接口取得真实结果，按用户要求用文字或可选卡片呈现，不得把历史消息当成当前查询结果。
 presentation_only=true时业务操作已经执行，只能返回decision=answer修正卡片，禁止调用和检索接口。根据presentation_feedback修正字段类型和引用，不能重复业务操作。展示的星期数组使用format=weekdays，一般标量数组使用format=list，本地会转换为文字；不能直接把数组绑定到普通标量字段。卡片由你组合通用内容块，不能输出HTML、JS、CSS或执行按钮。card_schema给出字段类型；status由Assistant根据真实回执生成，不要填写。
 - 已执行的结果使用kind=result；字段value和图片src必须用$result绑定真实响应，不编造展示值。例如 {{"kind":"result","title":"本次操作已完成","blocks":[{{"type":"fields","items":[{{"label":"名称","value":{{"$result":"/schedule/title"}}}},{{"label":"时间","value":{{"$result":"/schedule/starts_at"}},"format":"datetime"}}]}}]}}。引用路径从最新result_shape取；失败不能说已完成。
 - 旅游规划、建议使用kind=plan；未保存的规划绝不能叫已保存或已执行。可用timeline的items组合多个地点，每项title、time、category、description、image、connector；connector表示从上一站到当前站的交通或衔接，填在第二站起的对应节点上。图片是src、alt、可选caption。没有可信图片地址就不填，不能编造URL。
-- 从真实响应集合生成多个展示项可用 {{"$each":"/places","template":{{"title":{{"$item":"/name"}},"description":{{"$item":"/description"}}}}}} 替代timeline.items；最多30项，本地解析，不把正文交给模型。
+- 从真实响应集合生成多个展示项可用 {{"$each":"/places","template":{{"title":{{"$item":"/name"}},"description":{{"$item":"/description"}}}}}} 替代timeline.items；最多30项，Assistant按真实集合展开。模板内结果字段value和图片src使用$item引用当前条目。
 - 普通说明可用kind=info；type=text呈现短说明，type=fields呈现标签值，type=image嵌图，type=timeline呈现有序节点。可返回多张卡片（最多6张），无需新增业务工具或单独注册某个旅游/日程卡片。正文和卡片不要重复堆砌内容。
 - 记忆来源在后台保存，不等于需要向用户展示。不要主动展开全部记忆正文或新增来源入口；只有用户询问来源、需要澄清歧义或说明重要安排时才简短解释，确有必要可用卡片；用户只要文字时仍返回cards=[]。
 不需要业务接口的普通问题直接回答。没有可用操作且再次搜索仍无法找到时，说明当前不能执行，不制造调用。
@@ -180,6 +180,8 @@ def _reject(reason: str) -> None:
 
 def prepare_input(context: dict[str, Any]) -> str:
     """Build the versioned planning prompt while preserving explicit user and AI text origins."""
+    if context.get("caller_processed"):
+        return json.dumps({k: v for k, v in context.items() if k not in {"api_flow", "caller_workflow"}}, ensure_ascii=False, separators=(",", ":"))
     if "api_operations" in context:
         return API_PROMPT.format(payload=json.dumps(context, ensure_ascii=False, separators=(",", ":")))
     payload = {

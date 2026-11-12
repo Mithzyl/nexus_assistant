@@ -101,8 +101,8 @@ def answer_text(row: NexusRun) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def workflow_request(settings: Settings, idempotency_key: str) -> WorkflowCreateRequest:
-    """Build the current general-agent request from server-side configuration."""
+def workflow_request(settings: Settings, idempotency_key: str, caller_configuration: dict | None = None) -> WorkflowCreateRequest:
+    """Build model bindings with the caller Agent-loop budget and reuse the frozen task protocol."""
 
     try:
         raw = json.loads(settings.nexus_role_bindings_json.get_secret_value())
@@ -117,6 +117,13 @@ def workflow_request(settings: Settings, idempotency_key: str) -> WorkflowCreate
             raise ValueError("controller binding is required")
         if settings.nexus_review_policy != "never" and "reviewer" not in bindings:
             raise ValueError("reviewer binding is required by the review policy")
+        if (caller_configuration or {}).get('application_response_mode')=='caller_processed':
+            # Nexus uses this duration for the entire role's tool loop. Leaving
+            # its default 60s contradicts our longer declared workflow budget.
+            seconds=max(1,min(600,((caller_configuration or {}).get('wall_time_limit_ms',
+                settings.nexus_business_wall_time_limit_ms)+999)//1000))
+            bindings={role:binding if binding.timeout_seconds is not None else
+                binding.model_copy(update={'timeout_seconds':seconds}) for role,binding in bindings.items()}
         return WorkflowCreateRequest(
             workflow_name=settings.nexus_workflow_name,
             workflow_version=settings.nexus_workflow_version,
@@ -125,6 +132,7 @@ def workflow_request(settings: Settings, idempotency_key: str) -> WorkflowCreate
             role_bindings=bindings,
             review_policy=settings.nexus_review_policy,
             stream=True,
+            **(caller_configuration or {}),
         )
     except (ValueError, TypeError, json.JSONDecodeError) as exc:
         raise AssistantError(
@@ -338,7 +346,7 @@ async def _start_workflow(
     """
 
     try:
-        payload = workflow_request(settings, f"{row.idempotency_key}:workflow")
+        payload = workflow_request(settings, f"{row.idempotency_key}:workflow", (row.context_json or {}).get("caller_workflow"))
     except AssistantError as exc:
         await _finish(db, row, status="failed", error_code=exc.code)
         raise

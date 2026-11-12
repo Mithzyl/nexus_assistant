@@ -103,3 +103,21 @@ class ToolCallReceipt(TimestampMixin, Base):
     # rows are null and remain readable; new rows always carry the digest.
     arguments_sha256: Mapped[str | None] = mapped_column(String(64))
     response_json: Mapped[dict] = mapped_column(JSON)
+
+
+class AgentResponseReceipt(TimestampMixin, Base):
+    """Persist the original body, actual dispatch and outcome without content hashes.
+
+    A dispatching receipt is never executed again: a crash may have occurred
+    after the business transaction committed but before its HTTP result arrived.
+    """
+
+    __tablename__ = 'agent_response_receipts'
+    __table_args__ = (UniqueConstraint('local_run_id', 'response_id', name='uq_agent_response_run_response'),)
+    execution_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    local_run_id: Mapped[str] = mapped_column(ForeignKey('nexus_runs.local_run_id'), index=True)
+    response_id: Mapped[str] = mapped_column(String(128))
+    request_json: Mapped[dict] = mapped_column(JSON)
+    executed_call_json: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(24), default='processing')
+    response_json: Mapped[dict | None] = mapped_column(JSON)

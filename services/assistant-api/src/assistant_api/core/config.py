@@ -53,6 +53,8 @@ class Settings(BaseSettings):
         '{"controller":{"provider":"openai","model":"gpt-4o-mini"}}'
     )
     nexus_workflow_start_timeout_seconds: float = Field(default=20.0, gt=0, le=60)
+    nexus_business_max_model_calls: int = Field(default=24, ge=1, le=64)
+    nexus_business_wall_time_limit_ms: int = Field(default=600000, ge=1000, le=600000)
 
     # A separate stable 32-byte base64 key; never derive it from a Nexus token.
     memory_encryption_key_path: Path | None = None

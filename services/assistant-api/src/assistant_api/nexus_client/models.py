@@ -39,10 +39,11 @@ class UpstreamModel(BaseModel):
 
 
 class RoleBinding(StrictRequest):
-    """One server-configured model binding for a general-agent role."""
+    """Bind a role and optional native Agent-loop duration, independently from a single HTTP timeout."""
 
     provider: str = Field(min_length=1, max_length=64)
     model: str = Field(min_length=1, max_length=128)
+    timeout_seconds: int | None = Field(default=None,ge=1,le=600)
 
 
 class RunCreateRequest(StrictRequest):
@@ -68,6 +69,12 @@ class WorkflowCreateRequest(StrictRequest):
     idempotency_key: str = Field(min_length=8, max_length=128)
     role_bindings: dict[str, RoleBinding]
     review_policy: Literal["always", "on_verification_failure", "never"] = "never"
+    application_response_mode: Literal["standard", "caller_processed"] = "standard"
+    application_native_tools_enabled: bool = True
+    application_protocol_instructions: str | None = Field(default=None, min_length=1, max_length=16000)
+    final_output_schema: dict | None = None
+    max_model_calls: int = Field(default=0, ge=0)
+    wall_time_limit_ms: int = Field(default=600000, ge=1000, le=600000)
     stream: bool = True
 
 

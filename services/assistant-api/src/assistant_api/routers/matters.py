@@ -95,10 +95,13 @@ async def list_intake_results(
 
 @router.get("/matters/intake/{local_run_id}", response_model=schemas.IntakeResultRead)
 async def get_intake_result(
-    local_run_id: str, db: DatabaseSession, user: CurrentUser
+    local_run_id: str, db: DatabaseSession, user: CurrentUser, client: NexusClient
 ) -> dict:
-    """Reload one answer, clarification, draft or unresolved processing state."""
-
+    """Recover an owned terminal answer by read-only Nexus queries after reconnect."""
+    from assistant_api.services import run_service
+    row = await run_service.get_run(db, user=user, local_run_id=local_run_id)
+    if (row.context_json or {}).get('caller_processed'):
+        await run_service.refresh_run(db, client, user=user, row=row)
     return await matters.get_intake_result(db, user, local_run_id)
 
 

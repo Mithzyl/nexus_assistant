@@ -41,20 +41,22 @@ class OperationDecision(BaseModel):
     answer: str | None = Field(default=None, max_length=6000)
     question: str | None = Field(default=None, max_length=2000)
     search_query: str | None = Field(default=None, max_length=300)
+    search_offset: int = Field(default=0, ge=0, le=100000)
     choices: list[str] = Field(default_factory=list, max_length=6)
     notify: bool = True
     cards: list[dict[str, Any]] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def require_action_fields(self):
-        """Refuse incomplete or contradictory model decisions before any dispatch."""
+        """Require decision-specific fields; index searches may use an empty query to paginate all descriptions."""
         required = {"call": self.call, "answer": self.answer, "clarify": self.question, "ask_user": self.question, "search": self.search_query}
-        if not required[self.decision]:
-            raise ValueError("当前决策缺少必要内容")
+        if (self.decision == 'search' and self.search_query is None) or (self.decision != 'search' and not required[self.decision]):
+            field = {'call': 'call', 'answer': 'answer', 'clarify': 'question', 'ask_user': 'question', 'search': 'search_query'}[self.decision]
+            raise ValueError(f"decision={self.decision} 必须提供非空 {field}。")
         if self.decision != "call" and self.call is not None:
             raise ValueError("非调用决策不能附带调用")
-        if self.decision != "answer" and self.cards:
-            raise ValueError("卡片只能随最终回答返回")
+        if self.decision not in {'answer','ask_user','clarify'} and self.cards:
+            raise ValueError('卡片只能随回答或询问用户返回')
         if any(not choice.strip() or len(choice) > 160 for choice in self.choices):
             raise ValueError("选项内容无效")
         return self
@@ -70,7 +72,8 @@ def search_terms(text: str) -> set[str]:
                   '待办': 'todo task', '提醒': 'reminder', '通勤': 'commute',
                   '草稿': 'draft', '修改': 'update edit patch', '调整': 'update edit patch',
                   '补充': 'update edit', '确认': 'confirm', '查询': 'list get',
-                  '删除': 'delete', '取消': 'cancel', '新增': 'create post'}
+                  '删除': 'delete', '取消': 'cancel', '新增': 'create post', '创建': 'create post', '新建': 'create post',
+                  '搜索': 'search query', '地点': 'place', '路线': 'route', '测算': 'estimate'}
     for phrase, aliases in vocabulary.items():
         if phrase in text:
             terms.update(aliases.split())
@@ -78,6 +81,11 @@ def search_terms(text: str) -> set[str]:
         if re.search(r"[\u4e00-\u9fff]", word):
             terms.update(word[i:i + 2] for i in range(len(word) - 1))
     return terms
+
+
+OPERATION_URI_PREFIX = 'assistant://operations/'
+INDEX_PAGE_SIZE = 128
+DEFINITION_RESOLVER = 'resolve_operation_definitions'
 
 
 @dataclass
@@ -91,9 +99,14 @@ class PublishedOperation:
     components: dict
     effect: str
 
+    @property
+    def uri(self) -> str:
+        """Identify a local published definition; this URI is never fetched over the network."""
+        return OPERATION_URI_PREFIX + quote(self.operation_id, safe='')
+
     def model_description(self, *, include_components: bool = True) -> dict:
         """Describe one operation, optionally leaving shared schemas to the enclosing model context."""
-        description = {"operation_id": self.operation_id, "method": self.method, "path": self.path,
+        description = {"operation_id": self.operation_id, "uri": self.uri, "method": self.method, "path": self.path,
                        "effect": self.effect, **self.definition}
         if include_components:
             description['components'] = {'schemas': self.components}
@@ -171,26 +184,55 @@ class OperationCatalog:
             for child in value:
                 self._collect_components(child, selected)
 
-    def search(self, query: str, limit: int = 5) -> list[PublishedOperation]:
-        """Rank operation summaries and fields; fetch full definitions only for selected matches."""
+    def search(self, query: str, limit: int = INDEX_PAGE_SIZE) -> list[PublishedOperation]:
+        """Match catalogue text without interpreting prohibitions, intent or permitted business actions.
+
+        Only an Agent-supplied search uses this matcher. New tasks see an unfiltered
+        compact index first; searches do not automatically load full definitions.
+        """
         terms = search_terms(query)
         ranked = []
         for operation in self.operations.values():
-            text = json.dumps({k: v for k, v in operation.definition.items() if k not in {'responses', 'next_operations'}}, ensure_ascii=False) + ' ' + operation.path + ' ' + operation.operation_id
-            # An operation's purpose must outweigh incidental matches in long
-            # parameter descriptions (for example many endpoints mention version).
             headline = operation.definition.get('summary', '') + ' ' + operation.path + ' ' + operation.operation_id
             keywords = ' '.join(operation.definition.get('keywords', []))
-            score = 16 * len(terms & search_terms(keywords)) + 8 * len(terms & search_terms(headline)) + len(terms & search_terms(text))
+            score = len(terms & search_terms(keywords + ' ' + headline))
             ranked.append((score, operation.operation_id, operation))
         ranked.sort(key=lambda row: (-row[0], row[1]))
         matches = [row[2] for row in ranked if row[0] > 0]
-        # An unknown/new user can request another catalogue query; do not inject
-        # the entire application's OpenAPI merely because matching was sparse.
-        return self.with_next_operations(matches[:min(limit, 5)])
+        return matches[:max(0, limit)]
+
+    def index_page(self, *, query: str = '', offset: int = 0, limit: int = INDEX_PAGE_SIZE) -> dict:
+        """Return a bounded, paginated first-level index without argument/response schemas."""
+        if not 0 <= offset <= 100000 or not 1 <= limit <= INDEX_PAGE_SIZE:
+            raise ValueError('索引分页参数无效。')
+        operations = (self.search(query, limit=len(self.operations)) if query.strip()
+                      else sorted(self.operations.values(), key=lambda item: item.operation_id))
+        selected = operations[offset:offset + limit]
+        return {'items': [{'uri': operation.uri,
+                           'summary': operation.definition.get('summary', operation.operation_id)[:180],
+                           'effect': operation.effect}
+                          for operation in selected],
+                'query': query, 'offset': offset, 'limit': limit, 'total': len(operations),
+                'next_offset': offset + limit if offset + limit < len(operations) else None}
+
+    def resolve_definitions(self, uris: list[str]) -> dict:
+        """Resolve only exact local identifiers, collecting shared schemas once and enforcing a response budget."""
+        from assistant_api.core.errors import InvalidRequestError
+        if not 1 <= len(uris) <= 8:
+            raise InvalidRequestError('operation_uri_invalid', '每次提供1至8个目录中的完整uri。')
+        by_uri = {operation.uri: operation for operation in self.operations.values()}
+        if any(uri not in by_uri for uri in uris):
+            raise InvalidRequestError('operation_uri_invalid', 'uri不存在或未发布，请从接口索引选择；不会访问外部地址。')
+        selected = [by_uri[uri] for uri in dict.fromkeys(uris)]
+        result = {'api_operations': [operation.model_description(include_components=False) for operation in selected],
+                  'components': {'schemas': {name: schema for operation in selected for name, schema in operation.components.items()}},
+                  'resolved_uris': [operation.uri for operation in selected]}
+        if len(json.dumps(result, ensure_ascii=False).encode('utf-8')) > 150000:
+            raise InvalidRequestError('operation_definitions_too_large', '定义总量过大，请减少本次uri数量后分别获取。')
+        return result
 
     def with_next_operations(self, selected: list[PublishedOperation], *, previous: str | None = None) -> list[PublishedOperation]:
-        """Include immediate declared continuations, preferring the last executed operation's steps."""
+        """Retain legacy link inspection for existing callers; indexed Agent startup never uses this expansion."""
         result = []
         seen = set()
         if previous in self.operations:
@@ -198,10 +240,12 @@ class OperationCatalog:
                 op = self.operations[link['operation_id']]
                 result.append(op)
                 seen.add(op.operation_id)
-        # Add matches and their immediate next steps together so a generic
-        # draft can reach save without consuming a separate search/model turn.
-        for operation in selected:
-            for op in [operation] + [self.operations[link['operation_id']] for link in operation.definition.get('next_operations', [])]:
+        # Keep each independently relevant capability before expanding a broad
+        # draft's links. Otherwise one draft family can occupy most of the limit.
+        groups = [selected, [self.operations[link['operation_id']] for operation in selected
+                            for link in operation.definition.get('next_operations', [])]]
+        for group in groups:
+            for op in group:
                 if op.operation_id not in seen:
                     result.append(op)
                     seen.add(op.operation_id)
@@ -224,7 +268,7 @@ class OperationCatalog:
                     if parameter.get('required') and name.lower() != 'idempotency-key':
                         raise ValueError(f'缺少接口参数：{name}')
                     continue
-                self._validate_schema(parameter.get('schema', {}), values[name], operation)
+                self._validate_schema(parameter.get('schema', {}), values[name], operation, location=f'{location}.{name}')
             if location == 'header' and any(not isinstance(v, str) for v in values.values()):
                 raise ValueError('HTTP头参数必须为字符串')
             if location == 'header' and any(k.lower() in {'authorization', 'cookie', 'host'} for k in values):
@@ -233,7 +277,7 @@ class OperationCatalog:
         schema = body.get('content', {}).get('application/json', {}).get('schema')
         if schema is not None:
             if call.body is not None or body.get('required'):
-                self._validate_schema(schema, call.body, operation)
+                self._validate_schema(schema, call.body, operation, location='body')
         elif call.body:
             raise ValueError('接口不接受 JSON 请求体')
         for value in call.path_parameters.values():
@@ -242,13 +286,26 @@ class OperationCatalog:
         return operation, call
 
     @staticmethod
-    def _validate_schema(schema: dict, value, operation: PublishedOperation) -> None:
-        """Use the full JSON Schema validator, including referenced and conditional types."""
+    def _validate_schema(schema: dict, value, operation: PublishedOperation, *, location: str = 'body') -> None:
+        """Report field paths and published requirements without echoing submitted values."""
         validator = Draft202012Validator({**schema, 'components': {'schemas': operation.components}}, format_checker=FormatChecker())
         error = next(validator.iter_errors(value), None)
         if error:
-            # Report location and rule, not a possibly sensitive raw input value.
-            raise ValueError('参数不符合接口定义：' + '.'.join(map(str, error.path)) + ' (' + str(error.validator) + ')')
+            path = '.'.join([location, *map(str, error.path)])
+            rule = str(error.validator)
+            expected = error.validator_value
+            if rule == 'required' and isinstance(error.instance, dict):
+                missing = [name for name in expected if name not in error.instance]
+                detail = '缺少必填字段 ' + ', '.join(f'{path}.{name}' for name in missing[:5])
+            elif rule == 'additionalProperties':
+                detail = f'{path} 只允许接口定义的字段，请删除未声明字段'
+            elif rule in {'type', 'enum', 'const', 'format', 'minimum', 'maximum', 'minLength', 'maxLength', 'minItems', 'maxItems', 'pattern'}:
+                detail = f'{path} 要求 {rule}={json.dumps(expected, ensure_ascii=False)[:300]}'
+            else:
+                # Conditional schemas can contain large shared definitions. Name
+                # the rule and refer to the offered schema, never dump the input.
+                detail = f'{path} 不满足 {rule}，请按已提供的接口定义检查互斥字段及条件必填项'
+            raise ValueError('参数不符合接口定义：' + detail)
 
 
 def result_shape(value, path: str = '', depth: int = 0) -> dict:
@@ -377,8 +434,8 @@ def model_receipt(receipt: dict) -> dict:
     return projected | {'references': references, 'result_shape': result_shape(data)}
 
 
-async def execute_call(app, authorization: str, operation: PublishedOperation, call: OperationCall, execution_id: str, *, execution_user_id: str | None = None) -> dict:
-    """Dispatch in-process HTTP through original authentication/handlers without following redirects."""
+async def execute_call(app, authorization: str, operation: PublishedOperation, call: OperationCall, execution_id: str, *, execution_user_id: str | None = None, execution_run_id: str | None = None) -> dict:
+    """Dispatch through real handlers with server-bound run provenance, never model-authored headers."""
     path = operation.path
     for key, value in call.path_parameters.items():
         path = path.replace('{' + key + '}', quote(str(value), safe=''))
@@ -387,7 +444,7 @@ async def execute_call(app, authorization: str, operation: PublishedOperation, c
     if execution_user_id and not authorization:
         from functools import partial
         from assistant_api.services.execution_context import dispatch_local
-        transport_app = partial(dispatch_local, app, user_id=execution_user_id)
+        transport_app = partial(dispatch_local, app, user_id=execution_user_id, local_run_id=execution_run_id)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=transport_app), base_url='http://assistant-internal', follow_redirects=False) as client:
         response = await client.request(operation.method, path, params=call.query_parameters, json=call.body if operation.method != 'GET' else None, headers=headers)
     if len(response.content) > 200000:
