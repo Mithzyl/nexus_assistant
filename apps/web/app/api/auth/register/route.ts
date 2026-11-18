@@ -19,14 +19,14 @@ import { normalizeUtcTimestamp } from "@/lib/mobile/session";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-interface LoginBody {
+interface RegistrationBody {
   email?: unknown;
   password?: unknown;
   display_name?: unknown;
   invite_code?: unknown;
 }
 
-interface PaLoginResponse {
+interface PaRegistrationResponse {
   user: PaMeResponse;
   token: string;
   expires_at: string;
@@ -40,13 +40,18 @@ interface PaMeResponse {
   display_name: string;
 }
 
+/** Create the account upstream and return the identity with a cookie-backed session. */
 export async function POST(request: NextRequest) {
   const crossSite = sameOriginFailure(request);
   if (crossSite) return crossSite;
 
-  let body: LoginBody;
+  let body: RegistrationBody;
   try {
-    body = (await request.json()) as LoginBody;
+    const value: unknown = await request.json();
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return errorResponse(400, "invalid_request", "请求格式无效。");
+    }
+    body = value as RegistrationBody;
   } catch {
     return errorResponse(400, "invalid_request", "请求格式无效。");
   }
@@ -73,7 +78,8 @@ export async function POST(request: NextRequest) {
       "",
     );
   } catch {
-    return errorResponse(502, "web_upstream_unavailable", "无法连接 PA 服务器。", true);
+    // The account may already exist when the upstream response is lost.
+    return errorResponse(502, "web_upstream_unavailable", "未能确认注册结果，请先尝试登录。");
   }
 
   if (!upstream.ok) {
@@ -81,18 +87,26 @@ export async function POST(request: NextRequest) {
     return errorResponse(detail.status, detail.code, detail.message, detail.retryable);
   }
 
-  const session = (await upstream.json()) as PaLoginResponse;
+  let session: PaRegistrationResponse;
+  try {
+    session = (await upstream.json()) as PaRegistrationResponse;
+    if (!session?.token || !session.user?.user_id || !session.expires_at) {
+      return errorResponse(502, "invalid_session_response", "注册已受理，但登录状态无效，请尝试登录。");
+    }
+  } catch {
+    return errorResponse(502, "invalid_session_response", "注册已受理，但登录状态无法读取，请尝试登录。");
+  }
   const me = session.user;
   const expiresAt = normalizeUtcTimestamp(session.expires_at);
   if (!expiresAt) {
-    return errorResponse(502, "invalid_session_response", "账号已创建，但会话期限无效。", true);
+    return errorResponse(502, "invalid_session_response", "账号已创建，但会话期限无效，请尝试登录。");
   }
   const cookies = sessionCookieOptions(expiresAt, session.token);
   const response = NextResponse.json({
     user: me,
     expires_at: expiresAt,
     expires_in: Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)),
-  });
+  }, { status: 201 });
   response.cookies.set(cookies.token);
   response.cookies.set(cookies.expires);
   response.headers.set("Cache-Control", "no-store");

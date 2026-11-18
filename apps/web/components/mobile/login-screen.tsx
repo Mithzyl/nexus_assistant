@@ -1,17 +1,18 @@
 "use client";
 
-/** Login form used by `/login` and by inline "login required" prompts. */
+/** Login and registration form used by the login page and inline prompts. */
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 
-import { ApiError, registrationOptions } from "@/lib/mobile/api";
+import { ApiError, registrationOptions, type RegistrationOptions } from "@/lib/mobile/api";
 import { useAuth } from "@/components/mobile/providers";
 import { PrimaryButton } from "@/components/mobile/buttons";
 import { NexusLogin } from "@/components/mobile/nexus-login";
 
+/** Offer email registration when enabled and use the returned account session. */
 export function LoginScreen() {
   const router = useRouter();
   const { state, user, login, register } = useAuth();
@@ -19,7 +20,7 @@ export function LoginScreen() {
   const [displayName, setDisplayName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
-  const [options, setOptions] = useState<{enabled: boolean; invite_required: boolean} | null>(null);
+  const [options, setOptions] = useState<RegistrationOptions | null>(null);
   const [optionsError, setOptionsError] = useState(false);
   useEffect(() => {
     let active = true;
@@ -39,9 +40,14 @@ export function LoginScreen() {
     }
   }, [state, user, router]);
 
+  /** Validate the active form and submit one login or registration request. */
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
+    if (creating && !options?.enabled) {
+      setError("暂未开放注册，请返回登录或稍后重试。");
+      return;
+    }
     if (!email.trim() || !password) {
       setError("请填写邮箱和密码。");
       return;
@@ -66,10 +72,10 @@ export function LoginScreen() {
         setError(
           !creating && caught.status === 401
             ? "邮箱或密码不正确。"
-            : caught.message || "登录未能完成。",
+            : caught.message || (creating ? "注册未能完成。" : "登录未能完成。"),
         );
       } else {
-        setError("暂时无法连接，请稍后再试。");
+        setError(creating ? "未能确认注册结果，请先尝试登录。" : "暂时无法连接，请稍后再试。");
       }
     } finally {
       setBusy(false);
@@ -104,6 +110,8 @@ export function LoginScreen() {
               autoComplete="username"
               autoCapitalize="none"
               spellCheck={false}
+              maxLength={320}
+              required={creating}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="输入邮箱或账号"
@@ -161,7 +169,7 @@ export function LoginScreen() {
             </p>
           ) : null}
 
-          <PrimaryButton type="submit" busy={busy} disabled={busy}>
+          <PrimaryButton type="submit" busy={busy} disabled={creating && !options?.enabled}>
             {busy ? (creating ? "正在创建…" : "正在登录…") : (creating ? "创建并进入" : "登录")}
           </PrimaryButton>
         </form>

@@ -1222,10 +1222,25 @@ export interface RevertResponse {
   reverted_at: string;
 }
 
-export interface RegistrationInput { email: string; display_name: string; password: string; invite_code?: string }
-export function register(input: RegistrationInput) {
+/** Fields accepted by the email registration endpoint. */
+export interface RegistrationInput {
+  email: string;
+  display_name: string;
+  password: string;
+  invite_code?: string;
+}
+
+/** Registration availability and the invite requirement configured by Assistant. */
+export interface RegistrationOptions {
+  enabled: boolean;
+  invite_required: boolean;
+}
+
+/** Create an account and adopt the cookie-backed session returned by the Web route. */
+export function register(input: RegistrationInput): Promise<LoginResult> {
   return apiRequest<LoginResult>("/api/auth/register", { method: "POST", body: input });
 }
-export function registrationOptions() {
-  return apiRequest<{ enabled: boolean; invite_required: boolean }>("/api/auth/register");
+/** Read public registration settings before the user signs in. */
+export function registrationOptions(): Promise<RegistrationOptions> {
+  return apiRequest<RegistrationOptions>("/api/auth/register");
 }
