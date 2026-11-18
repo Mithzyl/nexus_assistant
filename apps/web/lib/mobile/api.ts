@@ -1006,6 +1006,8 @@ export interface IntakePendingContext {
   /** An explicit empty array suppresses cards; older responses without a list may display their execution receipt. */
   cards?: EmbeddedCard[];
   choices?: string[];
+  /** Assistant-owned receipt IDs for memory changes made or queued by this turn. */
+  memory_operation_ids?: string[];
   execution_result?: { status: "succeeded" | "failed" | "unknown"; http_status: number; data: unknown } | null;
   missing_information?: string[];
   schedule_candidates?: IntakeScheduleCandidate[];

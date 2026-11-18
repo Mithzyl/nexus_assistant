@@ -842,9 +842,9 @@ export default function AskPage() {
                     <p className="ask-message__note">这次没有后续内容了。</p>
                   ) : null}
 
-                  {serverRunId && serverItem && item.status !== "pending" && item.status !== "running" ? (
-                    <MemoryWriteReceipts runId={serverRunId} />
-                  ) : null}
+                  {state === "signedIn" && pendingContext?.memory_operation_ids?.map((operationId) => (
+                    <MemoryWriteReceipts key={operationId} operationId={operationId} />
+                  ))}
 
                   {(answer || (historyNote && serverItem && item.history_target_id)) ? (
                     <div className="ask-message__actions">
@@ -1004,7 +1004,6 @@ export default function AskPage() {
                       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
                     }}
                   />
-                  {!concealed && item.serverId && ["succeeded", "failed", "cancelled"].includes(item.phase) ? <MemoryWriteReceipts runId={item.serverId} /> : null}
                 </div>
               </div>
             );
