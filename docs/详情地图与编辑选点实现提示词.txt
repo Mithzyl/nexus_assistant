@@ -1,0 +1,92 @@
+请在 superapp-next 当前 Web worktree 中直接实现“通勤详情、日程详情地图展示，以及编辑时地图选点和候选地点选择”。先读取实际代码及适用 AGENTS.md，保留所有已有改动，不停在计划。
+
+一、实际环境与修改范围
+
+本提示词写于2026-11-04。执行时重新核对仓库 remote、worktree、Git 状态和运行进程，不照抄另一台机器的路径。
+当前目标：/Users/mith/Desktop/superapp-next-worktrees/web，处于 detached HEAD，已有大量未提交页面、文案和类型改动。不要切换分支、reset、restore、stash、覆盖文件或把全部差异当作本次修改。
+后端参考：/Users/mith/Desktop/superapp-next-worktrees/backend，backend/dev，服务目录 services/assistant-api。
+Assistant 前端3001，后端8010；Nexus8000，独立Worker，Nexus前端3000。已有服务不等于当前源码必然已加载，需只读核对实际 OpenAPI。
+
+本任务修改前端地图组件、相关页面、类型、调用方和必要文档。优先复用已有结构，不另建地图SDK加载器、另一套地图服务、事项保存逻辑或通勤状态管理。
+没有提交推送、部署、重启其他项目服务、数据库迁移或真实业务写入授权。需要后端新行为时说明具体缺口，继续不依赖缺口的工作。
+
+二、必须复用的现有代码
+
+- apps/web/lib/mobile/amap.ts：loadAmap()、AMap 类型、GCJ-02坐标约定。
+- apps/web/components/mobile/amap-map.tsx：AmapMapCanvas，已有 points、routeSegments、purpose、pickMode、focusCenter、onPointSelect、onCenterChange、onStatusChange。
+- apps/web/components/mobile/route-map-sheet.tsx、route-planner-sheet.tsx：既有路线详情地图、文字说明和地点编辑流程，先检查实际调用，按各自职责扩展。
+- apps/web/components/mobile/commute-place-input.tsx：已接入共享POST搜索，包含600ms防抖与取消请求。
+- apps/web/lib/mobile/places-api.ts：searchPlaceCandidates()、lookupMapPoint()及无草稿令牌的类型。
+- apps/web/lib/mobile/matters-api.ts：searchPlaces()、pickMapLocation()、confirmPlaceSelection()等原有草稿调用，准确名称以当前源码为准。
+- apps/web/components/mobile/matter-real-detail.tsx、matter-draft-sheet.tsx：真实日程展示和草稿保存。
+- apps/web/app/(mobile)/me/commute/[id]/page.tsx、commute-form.tsx、commute-day-panel.tsx、lib/mobile/commute-day.ts：实际通勤详情和单日操作。
+
+不要假定已有独立 /schedules/[id] 页面。先找日程详情的真实入口；若它位于事项详情内，优先在对应日程展开区、详情面板或现有编辑面板中实现。
+
+三、共享查询接口和草稿接口必须区分
+
+共享查询已拆成后端 services/place_queries.py，复用现有 PlaceProvider/AmapProvider。
+下面两个接口需登录，只查询，不创建日程、计划或草稿，不需要 draft_id。
+浏览器通过 /api/pa 转发；所有搜索和坐标条件放JSON，不得放URL query或路径中。当前代理与后端会拒绝地点接口的查询参数。
+
+1. POST /api/pa/places/search -> POST /api/v1/places/search
+JSON：query必填1–255字符，city可选最多64字符，search_type为place/address（默认place），limit为1–10（默认5）。
+响应：query、city、search_type、ambiguous、candidates、reason_code。
+候选字段：provider、provider_place_id、name、address、city、latitude、longitude、coordinate_system、source。
+共享候选不带selection_token，不得拿它冒充草稿候选。
+
+2. POST /api/pa/places/map-pick -> POST /api/v1/places/map-pick
+JSON：latitude、longitude必填；coordinate_system仅支持gcj02，默认gcj02。
+响应：status=available/unavailable、reason_code、address_notice、location。
+location包含provider、可空provider_place_id、name、address、city、latitude、longitude、coordinate_system、source；没有selection_token。
+它返回选中坐标附近的一个真实地址，不是“附近多个POI搜索”。可将真实反查结果作为待确认项展示，不得编造建筑、门牌或多个候选。
+如果需要多项候选，可展示用户实际搜索得到的candidates；若要求按坐标返回周边多个POI而现有接口不支持，报告具体后端缺口，不自行伪造结果。
+
+3. 原日程草稿接口保留：
+- POST /api/pa/commute/places/search：共享搜索字段加真实draft_id，返回草稿绑定的selection_token。
+- POST /api/pa/commute/places/map-pick：坐标字段加真实draft_id，返回草稿绑定的selection_token。
+- POST /api/pa/commute/places/confirm：仅draft_id、selection_token；实际请求不接受expected_version，尽管旧说明可能提到版本。
+草稿必须属于当前用户、处于preview状态且包含日程。候选令牌绑定账号及草稿，有效期15分钟。
+这些接口只更新草稿，正式日程继续走现有版本检查和confirm保存流程。
+
+已有API仍负责业务保存。通勤表单查询不应为了查地点创建日程草稿；日程编辑应保留原有草稿权限和候选确认流程。后端内部复用函数，不绕HTTP调用自己。
+
+四、详情地图展示
+
+1. 通勤详情展示已保存起终点、交通方式和实际日期的路线；周期计划默认点位与某日实际路线要标清日期，不能混用。
+2. 日程详情展示日程真实地点；存在关联路线时复用GET /api/v1/commute/routes/{schedule_id}，展示服务端保存的起终点和shape.segments。
+3. 只绘制真实已保存线段；shape.status=missing时只显示有效点位和缺少路线说明，partial时说明不完整，不补造直线道路。
+4. 打开详情、切换页面和加载地图只读取已保存数据，不自动请求高德路线重测。
+5. 坐标缺失、坐标系不支持、地点未确认、路线过期、SDK加载失败各自清楚反馈；仍保留文字地点、时间和用户可用操作。
+6. 点位、交通线段须有文字和图例，不仅用颜色区分。窄屏、深色模式、键盘和safe-area不能遮挡地图控制与确认按钮。
+
+五、编辑选点与候选展示
+
+1. 用户从现有地点编辑入口打开原生网页底部面板，在面板内切换文字搜索和地图选点，不离开原编辑上下文。
+2. 地图初始中心来自当前已确认的有效地点；没有有效地点时提供搜索或用户主动定位，不猜用户位置，不自动申请定位权限。
+3. 用户明确点击地图，或拖动后点击“使用此位置”，才对该点反查；不要在moveend的每一帧自动连续收费查询。
+4. 展示待确认坐标标记、实际反查地址、地址精度提示，以及实际搜索返回的候选列表。点击候选只更新面板的当前选择，不保存正式业务。
+5. 列表候选与地图标记编号、选中状态同步；显示名称、地址和城市，不因第一个结果存在就自动确认。
+6. 用户点击“使用此地点”才将所选名称、城市、坐标和坐标系一起填回编辑表单或原草稿流程；取消恢复原表单位置，不留下半次选择。
+7. 草稿流程使用真实draft_id、对应候选令牌和当前草稿返回结果；共享查询结果不能直接送进草稿confirm。要从查询切换到草稿确认时，使用既有草稿搜索/选点接口取得该草稿的真实令牌。
+8. 保存按钮继续调用既有业务接口，保持对象ID、版本、未修改字段及错误反馈。通勤时间/地点变更须走后端已有重测规则，不能只改地图显示就宣称路线已更新。
+9. 用户快速输入、切换起终点或关闭面板时取消旧请求，防止旧结果覆盖新位置；保留已有防抖，不自动重复失败请求。
+10. 地点查询只读不代表无成本，不在刷新、展开面板和失焦时反复查询。
+
+六、配置与隐私
+
+浏览器地图使用Web JS Key及其配套安全配置；后端Web服务Key不得复制到NEXT_PUBLIC变量。
+当前web worktree此前缺少NEXT_PUBLIC_AMAP_JS_KEY和NEXT_PUBLIC_AMAP_SECURITY_CODE。另一个web-next worktree可能已有浏览器配置，只作为待核对来源，不盲目覆盖目标env、不打印值，也不把“环境变量存在”当成SDK加载成功。
+无有效地图配置时保留文字搜索及必要错误状态，明确地图验证未完成。
+
+自有地点请求固定POST URL，地址、城市、坐标、检索条件和候选凭证只放JSON；不打印完整请求体或供应商完整URL，不向外部地图链接拼入私密位置。
+当前供应商适配器仍使用高德v3和Open-Meteo的GET接口；本次后端变更未解决供应商侧URL参数，不能宣称整条外部链路无URL参数。更换供应商协议、版本或凭据需要单独核对与授权，不擅自改动。
+
+七、验证与交付
+
+不做多余测试、不做回归、不做哈希、不调用AI、不改数据库、不自动注册账号或修改真实通勤/日程。只做必要类型检查及相关页面的定向浏览器查看；已有依赖能用时不安装或升级。
+验证至少区分：地点查询成功/无结果/供应商不可用；候选与标记联动；选点后用户确认；取消无保存；请求URL无query；无草稿通勤搜索和有草稿日程编辑各自使用正确接口。
+真实地图或浏览器检查受配置、登录、权限限制时写明未执行及具体原因，不能用mock或静态检查宣称真实地图可用。
+新增或实质修改的具名函数、方法和组件必须有准确用途注释。
+
+交付说明实际修改文件、调用接口、浏览器验证结果、未完成事项，以及用户原有改动是否保留。任务完成前不提交或推送，除非用户另外明确要求。
