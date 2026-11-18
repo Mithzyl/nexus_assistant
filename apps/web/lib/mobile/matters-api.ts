@@ -13,6 +13,10 @@ import {
   type FollowUpRead,
   type InitialDeleteResponse,
   type MatterDetail,
+  type MatterSupplement,
+  type SupplementCreateInput,
+  type SupplementRelationFilter,
+  type SupplementRelationsPage,
   type MatterChange,
   type MatterDraft,
   type MatterEditInput,
@@ -27,6 +31,10 @@ import {
   type MatterVersionInput,
   type MapPickResponse,
   type RevertResponse,
+  type ScheduleCreateInput,
+  type ScheduleOperation,
+  type TodoCreateInput,
+  type TodoOperation,
   type PlaceSearchResponse,
   type RouteEstimate,
   type ScheduledRoute,
@@ -118,6 +126,119 @@ export function reopenMatterTodo(matterId: string, todoId: string): Promise<Matt
   return apiRequest<MatterTodo>(pa(`/matters/${id(matterId)}/todos/${id(todoId)}/reopen`), {
     method: "POST",
   });
+}
+
+/**
+ * Create one todo in a single business call.
+ *
+ * Pass `matter_id` with its current `expected_matter_version` to add the todo to
+ * an existing matter; omit both to let the server create the owning matter.
+ */
+export function createTodo(input: TodoCreateInput): Promise<TodoOperation> {
+  return apiRequest<TodoOperation>(pa("/todos"), { method: "POST", body: input });
+}
+
+/**
+ * Create one schedule without creating a todo.
+ *
+ * The server rejects changes to time or place on commute-managed schedules;
+ * those belong to the commute-day endpoints.
+ */
+export function createSchedule(input: ScheduleCreateInput): Promise<ScheduleOperation> {
+  return apiRequest<ScheduleOperation>(pa("/schedules"), { method: "POST", body: input });
+}
+
+/**
+ * Save one supplement before the AI analysis runs.
+ *
+ * The caller keeps the returned supplement and polls it separately; this call
+ * never waits for model output and never changes schedules or todos.
+ */
+export function saveMatterSupplement(
+  matterId: string,
+  input: SupplementCreateInput,
+): Promise<MatterSupplement> {
+  return apiRequest<MatterSupplement>(pa(`/matters/${id(matterId)}/supplements`), {
+    method: "POST",
+    body: input,
+  });
+}
+
+/** Read supplements newest-first; `beforeId` pages further back. */
+export function listMatterSupplements(
+  matterId: string,
+  options: { limit?: number; beforeId?: string | null } = {},
+  signal?: AbortSignal,
+): Promise<MatterSupplement[]> {
+  const query = new URLSearchParams({ limit: String(options.limit ?? 20) });
+  if (options.beforeId) query.set("before_id", options.beforeId);
+  return apiRequest<MatterSupplement[]>(
+    pa(`/matters/${id(matterId)}/supplements?${query.toString()}`),
+    { signal },
+  );
+}
+
+/** Read one supplement and its analysis state without starting new model work. */
+export function getMatterSupplement(
+  matterId: string,
+  supplementId: string,
+  signal?: AbortSignal,
+): Promise<MatterSupplement> {
+  return apiRequest<MatterSupplement>(
+    pa(`/matters/${id(matterId)}/supplements/${id(supplementId)}`),
+    { signal },
+  );
+}
+
+/** Record that the user accepted one assistant-written text; does not execute it. */
+export function acceptSupplementText(
+  matterId: string,
+  supplementId: string,
+  textId: string,
+): Promise<MatterSupplement> {
+  return apiRequest<MatterSupplement>(
+    pa(`/matters/${id(matterId)}/supplements/${id(supplementId)}/texts/${id(textId)}/accept`),
+    { method: "POST", body: {} },
+  );
+}
+
+/** Queue one explicit retry after a definite failure; unknown results cannot retry. */
+export function retrySupplementAnalysis(
+  matterId: string,
+  supplementId: string,
+): Promise<MatterSupplement> {
+  return apiRequest<MatterSupplement>(
+    pa(`/matters/${id(matterId)}/supplements/${id(supplementId)}/retry`),
+    { method: "POST", body: {} },
+  );
+}
+
+/**
+ * Read one page of corrections, answers or legacy links for a single text.
+ *
+ * `beforeId` is the last relation text id, not a supplement id; reuse the same
+ * filter when following `next_before_id`. This read never starts AI work.
+ */
+export function listSupplementTextRelations(
+  matterId: string,
+  supplementId: string,
+  textId: string,
+  options: {
+    relationType?: SupplementRelationFilter | null;
+    limit?: number;
+    beforeId?: string | null;
+  } = {},
+  signal?: AbortSignal,
+): Promise<SupplementRelationsPage> {
+  const query = new URLSearchParams({ limit: String(options.limit ?? 20) });
+  if (options.relationType) query.set("relation_type", options.relationType);
+  if (options.beforeId) query.set("before_id", options.beforeId);
+  return apiRequest<SupplementRelationsPage>(
+    pa(
+      `/matters/${id(matterId)}/supplements/${id(supplementId)}/texts/${id(textId)}/relations?${query.toString()}`,
+    ),
+    { signal },
+  );
 }
 
 export function getToday(date?: string, signal?: AbortSignal): Promise<TodayView> {
@@ -352,7 +473,7 @@ export function revertMatterChange(
 }
 
 export function confirmSummary(response: DraftConfirmResponse): string {
-  if (!response.applied) return "云端没有确认这次写入，请重新检查草稿。";
+  if (!response.applied) return "这次没保存成功，检查一下草稿。";
   const parts: string[] = [];
   if (response.schedule) parts.push(`日程「${response.schedule.title}」已更新`);
   if (response.reminders.length > 0) parts.push(`${response.reminders.length} 个提醒已保存`);
@@ -408,10 +529,34 @@ export class IntakeStreamError extends ApiError {
 
 function interruptedStream(): IntakeStreamError {
   return new IntakeStreamError({error:{error_code:"assistant_stream_interrupted",error_type:"transport_error",
-    public_message:"连接已中断，暂未取得最终结果。输入已保留，请核对本次请求。",
+    public_message:"连接中断了，还没拿到结果。内容留着，稍后再核对。",
     is_retryable:false,outcome_is_known:false,details_reference_id:null}});
 }
 
+/** Read one SSE frame; comment lines such as `: heartbeat` carry no event. */
+function readSseFrame(frame: string): { type: string; data: string } | null {
+  let type = "message";
+  const data: string[] = [];
+  for (const rawLine of frame.split("\n")) {
+    const line = rawLine.replace(/\r$/, "");
+    if (!line || line.startsWith(":")) continue;
+    const colon = line.indexOf(":");
+    const field = colon === -1 ? line : line.slice(0, colon);
+    const value = colon === -1 ? "" : line.slice(colon + 1).replace(/^ /, "");
+    if (field === "event") type = value;
+    if (field === "data") data.push(value);
+  }
+  return data.length > 0 ? { type, data: data.join("\n") } : null;
+}
+
+/**
+ * Stream one intake turn and return its persisted result.
+ *
+ * `answer` frames carry the whole public answer so far and replace the draft
+ * text; `accepted` only means the request arrived and never renders as a
+ * business result. A broken stream keeps the caller's input and idempotency key
+ * so the same run can be recovered instead of dispatched again.
+ */
 export async function streamIntakeMatter(text: string, idempotencyKey: string,
   continuationRunId: string | null | undefined,
   memoryDisclosures: import("@/components/mobile/account-memory").SelectedMemory[],
@@ -424,7 +569,7 @@ export async function streamIntakeMatter(text: string, idempotencyKey: string,
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new ApiError(response.status, body?.error?.code ?? "assistant_connection_failed",
-      body?.error?.message ?? "暂时无法连接助手，请保留本次输入。", body?.error?.retryable === true);
+      body?.error?.message ?? "暂时连不上助手，内容先留着。", body?.error?.retryable === true);
   }
   if (!response.body) throw interruptedStream();
   const reader = response.body.getReader();
@@ -434,17 +579,27 @@ export async function streamIntakeMatter(text: string, idempotencyKey: string,
     while (true) {
       const { value, done } = await reader.read();
       buffer += decoder.decode(value, { stream: !done });
+      buffer = buffer.replace(/\r\n/g, "\n");
       let boundary;
       while ((boundary = buffer.indexOf("\n\n")) >= 0) {
-        const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
-        const type = frame.match(/^event: (.+)$/m)?.[1];
-        const raw = frame.match(/^data: (.+)$/m)?.[1];
-        if (!raw) continue;
-        const data = JSON.parse(raw);
-        if (type === "answer") onAnswer(data.text);
-        if (type === "result") return data as MatterIntakeResponse;
-        if (type === "error") {
-          if (data.error) throw new IntakeStreamError(data);
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const parsed = readSseFrame(frame);
+        if (!parsed) continue;
+        let data: Record<string, unknown>;
+        try {
+          data = JSON.parse(parsed.data);
+        } catch {
+          continue;
+        }
+        if (parsed.type === "accepted") continue;
+        if (parsed.type === "answer") {
+          onAnswer(String(data.text ?? ""));
+          continue;
+        }
+        if (parsed.type === "result") return data as unknown as MatterIntakeResponse;
+        if (parsed.type === "error") {
+          if (data.error) throw new IntakeStreamError(data as { error: WorkflowError });
           throw interruptedStream();
         }
       }

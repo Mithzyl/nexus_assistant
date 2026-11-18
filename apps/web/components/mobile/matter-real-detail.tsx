@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Circle, Pencil, Trash2, Undo2 } from "lucide-react";
 
@@ -12,6 +13,7 @@ import type {
   MatterDetail,
   MatterReminder,
   MatterSchedule,
+  MatterSupplement,
   MatterTodo,
   RouteEstimate,
   TodayRoute,
@@ -23,12 +25,16 @@ import {
   cancelDraft,
   completeMatterTodo,
   createMatterEditDraft,
+  createSchedule,
+  createTodo,
   deleteMatter,
   getMatter,
   getToday,
   initialDeleteMatter,
   intakeMatterProgress,
+  getMatterSupplement,
   listMatterChanges,
+  listMatterSupplements,
   newOperationKey,
   reopenMatter,
   reopenMatterTodo,
@@ -43,11 +49,17 @@ import {
   isEditableSchedule,
   isRecordChangedError,
   summarizeMatterChange,
+  matterProgressText,
+  reminderDisplayTitle,
 } from "@/lib/mobile/matter-draft.mjs";
 import { useAuth, useUI } from "./providers";
 import { MatterDraftSheet } from "./matter-draft-sheet";
 import { ApiOperationCard } from "./api-operation-card";
 import { MatterFollowUps } from "./matter-follow-ups";
+import { MatterSupplementComposer } from "./matter-supplement-composer";
+import { MatterSupplementReplySheet } from "./matter-supplement-reply-sheet";
+import type { SupplementReplyTarget } from "./matter-supplement-reply-sheet";
+import { MatterSupplementList } from "./matter-supplement-list";
 import { RouteTextCard } from "./route-text-card";
 import { RoutePlannerSheet } from "./route-planner-sheet";
 import { RouteMapSheet } from "./route-map-sheet";
@@ -154,6 +166,13 @@ function TodoRow({
   );
 }
 
+/** Convert a `datetime-local` value to UTC; empty input means "not provided". */
+function localInputToIso(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 /** Display real matter data and the results of API operations from progress input. */
 export function MatterRealDetail({ id }: { id: string }) {
   const router = useRouter();
@@ -175,6 +194,12 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [progressContinuationRunId, setProgressContinuationRunId] =
     useState<string | null>(null);
   const [progressAnswer, setProgressAnswer] = useState<{ question: string; result: MatterIntakeResponse } | null>(null);
+  const [supplements, setSupplements] = useState<MatterSupplement[]>([]);
+  const [supplementsLoading, setSupplementsLoading] = useState(true);
+  const [supplementsError, setSupplementsError] = useState<string | null>(null);
+  const [supplementHasMore, setSupplementHasMore] = useState(false);
+  const [supplementLoadingMore, setSupplementLoadingMore] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<SupplementReplyTarget | null>(null);
   const [editingDraft, setEditingDraft] = useState<Awaited<ReturnType<typeof intakeMatterProgress>>["draft"] | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveCancelSchedules, setArchiveCancelSchedules] = useState(true);
@@ -186,6 +211,8 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [changesError, setChangesError] = useState<string | null>(null);
   const [routeBySchedule, setRouteBySchedule] = useState<Record<string, TodayRoute>>({});
   const [routeDetails, setRouteDetails] = useState<Record<string, RouteEstimate>>({});
+  const [routeError, setRouteError] = useState(false);
+  const [routeRefresh, setRouteRefresh] = useState(0);
   const [routeMapScheduleId, setRouteMapScheduleId] = useState<string | null>(null);
   const [routePlannerSchedule, setRoutePlannerSchedule] =
     useState<MatterSchedule | null>(null);
@@ -195,6 +222,15 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [initialDeleteTarget, setInitialDeleteTarget] = useState<MatterChange | null>(
     null,
   );
+  const [quickAdd, setQuickAdd] = useState<"todo" | "schedule" | null>(null);
+  const [quickTitle, setQuickTitle] = useState("");
+  const [quickStart, setQuickStart] = useState("");
+  const [quickEnd, setQuickEnd] = useState("");
+  const [quickDue, setQuickDue] = useState("");
+  const [quickLocation, setQuickLocation] = useState("");
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [quickSaving, setQuickSaving] = useState(false);
+  const quickAddKey = useRef<string | null>(null);
   const progressOperation = useRef<{
     text: string;
     key: string;
@@ -206,9 +242,10 @@ export function MatterRealDetail({ id }: { id: string }) {
     setError(null);
     setChangesLoading(true);
     setChangesError(null);
-    const [matterResult, changesResult] = await Promise.allSettled([
+    const [matterResult, changesResult, supplementsResult] = await Promise.allSettled([
       getMatter(id),
       listMatterChanges(id),
+      listMatterSupplements(id),
     ]);
     if (matterResult.status === "fulfilled") {
       setMatter(matterResult.value);
@@ -228,9 +265,60 @@ export function MatterRealDetail({ id }: { id: string }) {
           : "读取调整记录失败",
       );
     }
+    if (supplementsResult.status === "fulfilled") {
+      setSupplements(supplementsResult.value);
+      setSupplementHasMore(supplementsResult.value.length === 20);
+      setSupplementsError(null);
+    } else {
+      setSupplementsError(
+        supplementsResult.reason instanceof Error
+          ? supplementsResult.reason.message
+          : "读取补充内容失败",
+      );
+    }
     setLoading(false);
     setChangesLoading(false);
+    setSupplementsLoading(false);
   }, [id]);
+
+  /** Keep one supplement row in place after accept, retry or a poll result. */
+  const onSupplementUpdated = useCallback((next: MatterSupplement) => {
+    setSupplements((current) => {
+      const known = current.some((item) => item.supplement_id === next.supplement_id);
+      return known
+        ? current.map((item) => (item.supplement_id === next.supplement_id ? next : item))
+        : [next, ...current];
+    });
+  }, []);
+
+  /** Refresh a corrected/answered original without inserting it as a new row. */
+  const onSupplementRefreshed = useCallback((next: MatterSupplement) => {
+    setSupplements((current) =>
+      current.some((item) => item.supplement_id === next.supplement_id)
+        ? current.map((item) => (item.supplement_id === next.supplement_id ? next : item))
+        : current,
+    );
+  }, []);
+
+  /** Load one older page of supplements with the owned cursor. */
+  const loadMoreSupplements = async () => {
+    const last = supplements[supplements.length - 1];
+    if (!last || supplementLoadingMore) return;
+    setSupplementLoadingMore(true);
+    setSupplementsError(null);
+    try {
+      const page = await listMatterSupplements(id, { beforeId: last.supplement_id });
+      setSupplements((current) => {
+        const known = new Set(current.map((item) => item.supplement_id));
+        return [...current, ...page.filter((item) => !known.has(item.supplement_id))];
+      });
+      setSupplementHasMore(page.length === 20);
+    } catch (caught) {
+      setSupplementsError(caught instanceof Error ? caught.message : "读取更早的补充失败");
+    } finally {
+      setSupplementLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -247,6 +335,7 @@ export function MatterRealDetail({ id }: { id: string }) {
   );
 
   useEffect(() => {
+    setRouteError(false);
     if (!matter || matter.schedules.length === 0) {
       setRouteBySchedule({});
       setRouteDetails({});
@@ -263,12 +352,12 @@ export function MatterRealDetail({ id }: { id: string }) {
         setRouteBySchedule(summaries);
       })
       .catch(() => {
-        if (alive) setRouteBySchedule({});
+        if (alive) { setRouteBySchedule({}); setRouteError(true); }
       });
     return () => {
       alive = false;
     };
-  }, [matter]);
+  }, [matter, routeRefresh]);
 
   const run = async (key: string, action: () => Promise<void>) => {
     setBusy(key);
@@ -335,8 +424,17 @@ export function MatterRealDetail({ id }: { id: string }) {
     });
   };
 
-  /** Submit progress, retain missing-information prompts and refresh actual data after execution. */
-  const startProgress = async (
+  /** Open the change-arrangement sheet with a clean operation history. */
+  const openChange = () => {
+    setProgressError(null);
+    setProgressPendingContext({});
+    setProgressContinuationRunId(null);
+    progressOperation.current = null;
+    setProgressOpen(true);
+  };
+
+  /** Submit one explicit change request; missing details come back as a question. */
+  const submitChange = async (
     text: string,
     continuationOverride?: string | null,
   ) => {
@@ -391,7 +489,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       setProgressError(
         result.clarify ||
           result.message ||
-          "还需要更具体的信息，请补充后再提交。",
+          "还缺一点信息，补充后可以继续。",
       );
     } catch (caught) {
       if (
@@ -401,11 +499,11 @@ export function MatterRealDetail({ id }: { id: string }) {
           caught.code.includes("unknown"))
       ) {
         setProgressError(
-          "处理结果暂时不确定。可以保留输入，并用同一操作继续查询或重试。",
+          "还没收到结果。保留内容，用同样的说法再试一次。",
         );
       } else {
         setProgressError(
-          caught instanceof Error ? caught.message : "暂时无法提交补充进展。",
+          caught instanceof Error ? caught.message : "暂时没提交上，再试一次。",
         );
       }
     } finally {
@@ -449,6 +547,99 @@ export function MatterRealDetail({ id }: { id: string }) {
       });
       setEditingDraft(draft);
     });
+  };
+
+  /** Reset the small add form; the kind decides which fields are shown. */
+  const openQuickAdd = (kind: "todo" | "schedule") => {
+    quickAddKey.current = newOperationKey(kind === "todo" ? "web-todo-new" : "web-schedule-new");
+    setQuickAdd(kind);
+    setQuickTitle("");
+    setQuickStart("");
+    setQuickEnd("");
+    setQuickDue("");
+    setQuickLocation("");
+    setQuickError(null);
+  };
+
+  /**
+   * Save one todo or schedule through the independent record endpoints.
+   *
+   * This never creates an empty matter or a draft first. A conflict keeps the
+   * typed values and reloads the matter so the next save uses the current version.
+   */
+  const submitQuickAdd = async () => {
+    if (!matter || !quickAdd || quickSaving) return;
+    const title = quickTitle.trim();
+    if (!title) {
+      setQuickError("给它起个名字。");
+      return;
+    }
+    if (quickAdd === "schedule") {
+      const startsAt = localInputToIso(quickStart);
+      if (!startsAt) {
+        setQuickError("选一下开始时间。");
+        return;
+      }
+      const endsAt = localInputToIso(quickEnd);
+      if (endsAt && new Date(endsAt) <= new Date(startsAt)) {
+        setQuickError("结束时间要晚于开始。");
+        return;
+      }
+    }
+    setQuickSaving(true);
+    setQuickError(null);
+    try {
+      if (quickAdd === "todo") {
+        const dueAt = localInputToIso(quickDue);
+        const result = await createTodo({
+          idempotency_key: quickAddKey.current as string,
+          title,
+          matter_id: matter.matter_id,
+          expected_matter_version: matter.version,
+          ...(dueAt ? { due_at: dueAt } : {}),
+        });
+        if (!result.applied) {
+          setQuickError("这次没存上，再试一次。");
+          await load();
+          return;
+        }
+        toast("待办已新增");
+      } else {
+        const startsAt = localInputToIso(quickStart) as string;
+        const endsAt = localInputToIso(quickEnd);
+        const result = await createSchedule({
+          idempotency_key: quickAddKey.current as string,
+          title,
+          starts_at: startsAt,
+          ends_at: endsAt,
+          matter_id: matter.matter_id,
+          expected_matter_version: matter.version,
+          location: quickLocation.trim() || null,
+        });
+        if (!result.applied) {
+          setQuickError("这次没存上，再试一次。");
+          await load();
+          return;
+        }
+        toast("日程已新增");
+      }
+      quickAddKey.current = null;
+      setQuickAdd(null);
+      requestTodayRefresh();
+      await load();
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === "matter_changed") {
+        setQuickError("这件刚在别处改过，已经更新，再保存一次就好。");
+        await load();
+      } else if (caught instanceof ApiError && caught.code === "idempotency_key_reused") {
+        quickAddKey.current = newOperationKey("web-todo-new");
+        setQuickError("这次内容和刚才不一样，重新试一次。");
+      } else {
+        setQuickError(caught instanceof Error ? caught.message : "这次没加成功。");
+      }
+    } finally {
+      setQuickSaving(false);
+    }
   };
 
   const revertChange = async (change: MatterChange) => {
@@ -559,25 +750,32 @@ export function MatterRealDetail({ id }: { id: string }) {
       new Date(schedule.starts_at).getTime() > Date.now(),
   );
   const primarySchedule = futureSchedules[0] ?? matter.schedules.find((schedule) => !schedule.deleted_at) ?? null;
+  // Supplement originals are rendered once in their own section, never twice.
+  const visibleProgress = matter.progress.filter((entry) => entry.kind !== "supplement");
   return (
     <PageShell
       title="事项详情"
       fallbackHref="/matters"
       action={
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="纠正事项"
-          onClick={() => {
-            setTitle(matter.title);
-            setGoal(matter.goal);
-            setNextStep(matter.next_step ?? "");
-            setEditError(null);
-            setEditOpen(true);
-          }}
-        >
-          <Pencil size={17} />
-        </button>
+        <div className="flex items-center gap-8">
+          <button type="button" className="btn btn--secondary btn--small" onClick={openChange}>
+            改变安排
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="纠正事项"
+            onClick={() => {
+              setTitle(matter.title);
+              setGoal(matter.goal);
+              setNextStep(matter.next_step ?? "");
+              setEditError(null);
+              setEditOpen(true);
+            }}
+          >
+            <Pencil size={17} />
+          </button>
+        </div>
       }
     >
       <div className="work-detail">
@@ -594,8 +792,42 @@ export function MatterRealDetail({ id }: { id: string }) {
           ) : null}
         </section>
 
-        <section>
-          <h2 className="section-title" style={{ marginBottom: 8 }}>安排</h2>
+        <div className="matter-detail-layout">
+          <div className="matter-detail-main">
+            <section>
+              <MatterSupplementComposer
+                matterId={matter.matter_id}
+                onSaved={(supplement) => {
+                  onSupplementUpdated(supplement);
+                  // Saving bumps the matter version; refresh it so later edits do not conflict.
+                  void getMatter(matter.matter_id).then(setMatter).catch(() => undefined);
+                  toast("补充已保存");
+                }}
+                onMatterChanged={() => void load()}
+              />
+              {supplementsError ? (
+                <p className="micro" style={{ marginTop: 8 }}>{supplementsError}</p>
+              ) : null}
+              {supplementsLoading ? (
+                <p className="micro" style={{ marginTop: 10 }}>正在读取补充内容…</p>
+              ) : supplements.length > 0 ? (
+                <div className="card" style={{ marginTop: 12 }}>
+                  <h2 className="section-title" style={{ fontSize: 16, margin: "0 0 10px" }}>补充记录</h2>
+                  <MatterSupplementList
+                    matterId={matter.matter_id}
+                    items={supplements}
+                    onUpdated={onSupplementUpdated}
+                    onReply={setReplyTarget}
+                    hasMore={supplementHasMore}
+                    loadingMore={supplementLoadingMore}
+                    onLoadMore={() => void loadMoreSupplements()}
+                  />
+                </div>
+              ) : null}
+            </section>
+
+            <section>
+              <h2 className="section-title" style={{ marginBottom: 8 }}>安排</h2>
           <div className="card card--tight">
             {matter.schedules.length === 0 &&
             openReminders.length === 0 ? (
@@ -624,14 +856,15 @@ export function MatterRealDetail({ id }: { id: string }) {
                         <Pencil size={12} /> 调整
                       </button>
                     </div>
-                    <RouteTextCard
+                    {routeDetails[schedule.schedule_id]?.status === "available" || routeBySchedule[schedule.schedule_id]?.status === "available" ? <RouteTextCard
                       embedded
                       originLabel={
                         routeBySchedule[schedule.schedule_id]?.origin_basis === "previous_schedule"
                           ? "从上一项安排出发"
                           : routeBySchedule[schedule.schedule_id]?.origin_basis === "user_confirmed"
                             ? "从已确认起点出发"
-                            : "出发地待补充"
+                            : routeBySchedule[schedule.schedule_id]?.origin_basis === "memory"
+                              ? "从记忆地点出发" : null
                       }
                       destinationLabel={schedule.location || schedule.title}
                       arrivalAt={schedule.starts_at}
@@ -689,29 +922,47 @@ export function MatterRealDetail({ id }: { id: string }) {
                           : undefined
                       }
                       onPlanRoute={() => setRoutePlannerSchedule(schedule)}
-                    />
+                    /> : <div className="mt-6">
+                      {routeBySchedule[schedule.schedule_id]?.status === "unavailable" ? <p className="caption">{routeBySchedule[schedule.schedule_id]?.message || "暂时无法测算出行路线，已保存的日程不受影响。"}</p> : null}
+                      <button type="button" className="link-button" onClick={() => setRoutePlannerSchedule(schedule)}>规划出行（可选）</button>
+                    </div>}
                   </div>
                 ))}
                 {openReminders.map((reminder) => (
                   <p key={reminder.reminder_id} className="caption" style={{ margin: "4px 0 0" }}>
-                    提醒：{reminder.title} · {formatDateTime(reminder.trigger_at)} · {syncLabel(reminder)}
+                    {reminderDisplayTitle(reminder.title)} · {formatDateTime(reminder.trigger_at)} · {syncLabel(reminder)}
                     {reminder.status === "due" ? " · 等待你确认" : ""}
                   </p>
                 ))}
               </div>
             )}
+            {routeError ? <p role="alert" className="caption">路线信息读取失败，已保存的日程仍保留。<button type="button" className="link-button" onClick={() => setRouteRefresh(value => value + 1)}>重新读取路线</button></p> : null}
             <p className="micro" style={{ margin: "10px 0 0" }}>
               调整后会先生成预览，确认后才会修改安排。
             </p>
-            <button type="button" className="link-button mt-6" onClick={() => {
-              setProgressError(null);
-              setProgressPendingContext({});
-              setProgressContinuationRunId(null);
-              progressOperation.current = null;
-              setProgressOpen(true);
-            }}>
-              补充安排
-            </button>
+            <div className="flex items-center gap-12 mt-6" style={{ flexWrap: "wrap" }}>
+              <button type="button" className="link-button" onClick={() => {
+                setProgressError(null);
+                setProgressPendingContext({});
+                setProgressContinuationRunId(null);
+                progressOperation.current = null;
+                setProgressOpen(true);
+              }}>
+                补充安排
+              </button>
+              <button type="button" className="link-button" onClick={() => openQuickAdd("schedule")} disabled={Boolean(busy)}>
+                新建日程
+              </button>
+            </div>
+            {matter.commute_plan_id ? (
+              <p className="micro" style={{ margin: "8px 0 0" }}>
+                这条和通勤计划连着，
+                <Link href={`/me/commute/${matter.commute_plan_id}`} className="link-button link-button--inline">
+                  到达时间去通勤页改
+                </Link>
+                。
+              </p>
+            ) : null}
           </div>
         </section>
 
@@ -733,34 +984,35 @@ export function MatterRealDetail({ id }: { id: string }) {
                 ))}
               </div>
             )}
+            <button type="button" className="link-button mt-8" onClick={() => openQuickAdd("todo")} disabled={Boolean(busy)}>
+              新建待办
+            </button>
           </div>
         </section>
 
         <MatterFollowUps matterId={matter.matter_id} onChanged={() => void load()} />
 
-        <section>
-          <div className="matter-section-head">
-            <h2 className="section-title">进展</h2>
-            <span className="micro">{matter.progress.length > 0 ? `全部 ${matter.progress.length} 条 ›` : "暂无"}</span>
-          </div>
-          {matter.progress.length === 0 ? (
-            <p className="caption">还没有进展记录。</p>
-          ) : (
+        {visibleProgress.length > 0 ? (
+          <section>
+            <div className="matter-section-head">
+              <h2 className="section-title">其他进展</h2>
+              <span className="micro">{`全部 ${visibleProgress.length} 条 ›`}</span>
+            </div>
             <div className="card card--tight">
               <div className="matter-log">
-                {matter.progress.map((entry) => {
+                {visibleProgress.map((entry) => {
                   const [date, time] = formatDateTime(entry.created_at).split(" ");
                   return (
                     <div key={entry.progress_id} className="matter-log__item">
                       <span className="matter-log__time">{date}<br />{time}</span>
-                      <span className="matter-log__text">{entry.text}</span>
+                      <span className="matter-log__text">{matterProgressText(entry.text, matter.title)}</span>
                     </div>
                   );
                 })}
               </div>
             </div>
-          )}
-        </section>
+          </section>
+        ) : null}
 
         <section id="changes">
           <div className="flex items-center justify-between gap-12" style={{ marginBottom: 8 }}>
@@ -830,18 +1082,45 @@ export function MatterRealDetail({ id }: { id: string }) {
           <p className="micro" style={{ margin: "8px 0 0" }}>
             只有最近一次调整可以撤回。
           </p>
-        </section>
+            </section>
+          </div>
+
+          <aside className="matter-detail-side">
+            <section className="card card--tight">
+              <h2 className="section-title" style={{ fontSize: 16, margin: 0 }}>事项状态</h2>
+              <div className="matter-side-rows">
+                <div className="matter-side-row">
+                  <span>状态</span>
+                  <span>{matter.status === "active" ? "正在推进" : matter.status === "waiting" ? "等待外部反馈" : "已归档"}</span>
+                </div>
+                <div className="matter-side-row">
+                  <span>最近更新</span>
+                  <span>{formatDateTime(matter.updated_at)}</span>
+                </div>
+                <div className="matter-side-row">
+                  <span>下一步</span>
+                  <span>{matter.next_step || "还没定"}</span>
+                </div>
+              </div>
+            </section>
+            <section className="card card--tight matter-side-change">
+              <h2 className="section-title" style={{ fontSize: 16, margin: 0 }}>改变安排</h2>
+              <p className="micro" style={{ marginTop: 6 }}>
+                说清楚要改哪一场、改成什么，助手会直接执行并返回结果。
+              </p>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                style={{ width: "100%", marginTop: 10 }}
+                onClick={openChange}
+              >
+                改变安排
+              </button>
+            </section>
+          </aside>
+        </div>
 
         <div className="work-actions">
-          <button type="button" className="btn btn--primary grow" onClick={() => {
-            setProgressError(null);
-            setProgressPendingContext({});
-            setProgressContinuationRunId(null);
-            progressOperation.current = null;
-            setProgressOpen(true);
-          }} disabled={Boolean(busy)}>
-            补充进展
-          </button>
           {matter.status !== "archived" ? (
             <button type="button" className="btn btn--secondary" onClick={() => {
               setArchiveCancelReminders(true);
@@ -861,14 +1140,31 @@ export function MatterRealDetail({ id }: { id: string }) {
         </div>
       </div>
 
+      <MatterSupplementReplySheet
+        open={Boolean(replyTarget)}
+        matterId={matter.matter_id}
+        target={replyTarget}
+        onClose={() => setReplyTarget(null)}
+        onSaved={(supplement, target) => {
+          onSupplementUpdated(supplement);
+          // The corrected/answered text lives in another supplement; refresh it so its
+          // counts and previews include this new relation without inserting a duplicate.
+          void getMatterSupplement(matter.matter_id, target.supplementId)
+            .then(onSupplementRefreshed)
+            .catch(() => undefined);
+          void getMatter(matter.matter_id).then(setMatter).catch(() => undefined);
+          toast(target.relationType === "answer" ? "回答已保存" : "纠正已保存");
+        }}
+      />
+
       <ProgressSheet
         open={progressOpen}
         title={matter.title}
-        note="提交后会先生成待确认草稿；确认前不会修改正式进展或日程。"
+        note="说清楚要改哪一场、改成什么，助手会直接执行并返回结果。"
         stayOpenOnSubmit
         busy={busy === "progress"}
         error={progressError}
-        choices={[...(progressPendingContext.choices ?? []).map((choice, index) => ({ id: `clarify-${index}`, title: choice, detail: "", onSelect: () => void startProgress(choice, progressContinuationRunId) })), ...(progressPendingContext.schedule_candidates ?? []).map((candidate) => ({
+        choices={[...(progressPendingContext.choices ?? []).map((choice, index) => ({ id: `clarify-${index}`, title: choice, detail: "", onSelect: () => void submitChange(choice, progressContinuationRunId) })), ...(progressPendingContext.schedule_candidates ?? []).map((candidate) => ({
           id: candidate.schedule_id,
           title: candidate.title,
           detail: `${formatDateTime(candidate.starts_at)}${
@@ -878,7 +1174,7 @@ export function MatterRealDetail({ id }: { id: string }) {
             const runId = progressContinuationRunId;
             setProgressError(null);
             setProgressPendingContext({});
-            void startProgress(
+            void submitChange(
               `选择「${candidate.title}」（${formatDateTime(candidate.starts_at)}${
                 candidate.location ? `，地点：${candidate.location}` : ""
               }）`,
@@ -886,7 +1182,7 @@ export function MatterRealDetail({ id }: { id: string }) {
             );
           },
         }))]}
-        submitLabel="交给助手整理"
+        submitLabel="改变安排"
         onClose={() => {
           setProgressOpen(false);
           setProgressError(null);
@@ -894,8 +1190,89 @@ export function MatterRealDetail({ id }: { id: string }) {
           setProgressContinuationRunId(null);
           progressOperation.current = null;
         }}
-        onSubmit={(text) => void startProgress(text)}
+        onSubmit={(text) => void submitChange(text)}
       />
+      <Sheet
+        title={quickAdd === "schedule" ? "新建日程" : "新建待办"}
+        open={Boolean(quickAdd)}
+        onClose={() => setQuickAdd(null)}
+      >
+        <div className="m-stack-12">
+          <label className="field">
+            <span className="field__label">标题</span>
+            <input
+              className="input"
+              value={quickTitle}
+              onChange={(event) => setQuickTitle(event.target.value)}
+            />
+          </label>
+          {quickAdd === "schedule" ? (
+            <>
+              <label className="field">
+                <span className="field__label">开始时间</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  value={quickStart}
+                  onChange={(event) => setQuickStart(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span className="field__label">结束时间（可选）</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  value={quickEnd}
+                  onChange={(event) => setQuickEnd(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span className="field__label">地点（可选）</span>
+                <input
+                  className="input"
+                  value={quickLocation}
+                  onChange={(event) => setQuickLocation(event.target.value)}
+                />
+              </label>
+              <p className="micro" style={{ margin: 0 }}>
+                只会新增这条日程，不会自动加待办。
+              </p>
+            </>
+          ) : (
+            <>
+              <label className="field">
+                <span className="field__label">截止时间（可选）</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  value={quickDue}
+                  onChange={(event) => setQuickDue(event.target.value)}
+                />
+              </label>
+              <p className="micro" style={{ margin: 0 }}>
+                只会新增这条待办，不占用日历。
+              </p>
+            </>
+          )}
+          {quickError ? (
+            <p className="danger-text" style={{ margin: 0 }} role="alert">
+              {quickError}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={quickSaving}
+            onClick={() => void submitQuickAdd()}
+          >
+            {quickSaving ? "正在保存…" : "保存"}
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={() => setQuickAdd(null)}>
+            取消
+          </button>
+        </div>
+      </Sheet>
+
       <Sheet title="纠正事项内容" open={editOpen} onClose={() => setEditOpen(false)}>
         <div className="m-stack-12">
           <label className="field">
@@ -1000,14 +1377,14 @@ export function MatterRealDetail({ id }: { id: string }) {
         onClose={() => setRouteMapScheduleId(null)}
       />
       <Sheet
-        title="助手回答"
+        title="改变安排"
         open={Boolean(progressAnswer)}
         onClose={() => setProgressAnswer(null)}
       >
         {progressAnswer ? (
           <div className="m-stack-12">
             <p className="caption" style={{ margin: 0 }}>
-              你补充的是“{progressAnswer.question}”
+              你说的是“{progressAnswer.question}”
             </p>
             <div className="card">
               <p className="body-text" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
@@ -1042,7 +1419,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ConfirmDialog
         open={Boolean(initialDeleteTarget)}
         title="删除这个新事项？"
-        body="删除前会再次核对资格，并移除该事项及本次新建的日程、待办和提醒；其他事项、参考日程和苹果导入副本不受影响。"
+        body="删除会移除这个事项和本次新建的日程、待办、提醒；其他事项和手机导入的副本不受影响。"
         confirmLabel="删除新事项"
         danger
         onCancel={() => setInitialDeleteTarget(null)}
@@ -1102,7 +1479,7 @@ export function MatterRealDetail({ id }: { id: string }) {
           <div className="card card--tight">
             <p className="micro" style={{ margin: 0 }}>日程范围</p>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              取消未来日程时，其尚未触发的提醒也会停止。手机导入的只读日程需在原设备处理。
+              取消未来日程时，还没触发的提醒也会停止；手机导入的日程要在原设备处理。
             </p>
             {futureSchedules.length > 0 ? (
               <label className="flex items-start gap-8 mt-10"><input type="checkbox" checked={archiveCancelSchedules} onChange={(event) => setArchiveCancelSchedules(event.target.checked)} /><span className="caption">同时取消以下未发生的应用内日程（共 {futureSchedules.filter((s) => !s.source || s.source === "web_native").length} 项）</span></label>
@@ -1164,7 +1541,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ConfirmSheet
         open={deleteOpen}
         title="彻底删除这件事？"
-        body="删除后，该事项及关联安排将移除；后续助手不再把这些已删除内容作为有效资料使用。当前聊天界面已经显示的文字不会自动抹除。"
+        body="删除后，这个事项和关联安排会移除；助手不再使用这些内容。已经显示的聊天文字不会消失。"
         confirmLabel="彻底删除"
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => {

@@ -51,7 +51,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
             title="这是概念预览中的事项"
-            body="事项服务尚未接入云端。请先在“我的”开启概念预览，再查看当前设备示例。"
+            body="先在“我的”开启实验室，再查看本机示例。"
           />
         </div>
       </PageShell>
@@ -75,7 +75,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
   return (
     <PageShell
       title="事项详情"
-      subtitle="当前设备概念预览 · 未写入云端"
+      subtitle="本机示例 · 不影响正式事项"
       fallbackHref="/me/lab/plan"
       action={
         <button type="button" className="icon-button" onClick={() => setEditOpen(true)} aria-label="纠正事项">
@@ -142,7 +142,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
               </div>
             )}
             <p className="micro" style={{ margin: "10px 0 0" }}>
-              修改只保存到当前设备预览；正式日程和提醒请在“事项”页用云端草稿确认。
+              修改只保存到本机预览；正式日程和提醒请在“事项”页确认。
             </p>
           </div>
         </section>
@@ -214,7 +214,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
 
         <div className="work-actions">
           <button type="button" className="btn btn--primary grow" onClick={() => setProgressOpen(true)}>
-            补充进展
+            改变安排
           </button>
           <button type="button" className="btn btn--secondary" onClick={() => setStopOpen(true)}>
             停止跟进
@@ -224,7 +224,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
           </button>
         </div>
         <p className="micro text-center" style={{ marginTop: 8 }}>
-          删除只移除此浏览器中的预览；不会删除云端事项，也不会取消真实提醒。
+          删除只移除此浏览器中的预览；正式事项和提醒不受影响。
         </p>
       </div>
 
@@ -273,7 +273,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
       <ConfirmSheet
         open={stopOpen}
         title="停止跟进这件事？"
-        body="预览会把它移入“已完成／归档”，并保留跟进记录。该操作不会取消云端提醒，因为这里只有当前设备数据。"
+        body="预览会把它移入“已完成／归档”并保留记录；正式提醒不受影响。"
         confirmLabel="停止跟进并归档"
         onClose={() => setStopOpen(false)}
         onConfirm={() => {
@@ -286,7 +286,7 @@ export function WorkMatterDetail({ id }: { id: string }) {
       <ConfirmSheet
         open={deleteOpen}
         title="彻底删除这条预览？"
-        body="只会移除当前浏览器中的预览和关联日程；云端数据和正式提醒不会被删除。删除后无法从当前设备撤回。"
+        body="只会移除本机预览和关联日程；正式数据和提醒不受影响。删除后无法从当前设备撤回。"
         confirmLabel="彻底删除当前设备预览"
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => {

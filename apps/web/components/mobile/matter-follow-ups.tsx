@@ -45,7 +45,7 @@ function nextCheckLabel(followUp: FollowUpRead): string {
   if (followUp.state === "paused") return "暂停期间不检查";
   if (followUp.next_trigger_at) return `下次检查 ${formatDateTime(followUp.next_trigger_at)}`;
   if (followUp.trigger.kind === "record_changed") return "记录变化时检查";
-  return "等待时间条件";
+  return "到设定时间再检查";
 }
 
 /** Follow-up questions and controls inside a matter, without exposing backend stages. */

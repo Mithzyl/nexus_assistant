@@ -123,8 +123,8 @@ function phaseForStatus(status: RunStatus | null): AskPhase {
 }
 
 function messageForStatus(status: RunStatus): string | null {
-  if (status === "failed") return "云端未能完成这次处理。";
-  if (status === "unknown") return "处理状态暂不确定，可以稍后刷新核对。";
+  if (status === "failed") return "这次没处理完。";
+  if (status === "unknown") return "结果还在确认，刷新看看。";
   if (status === "cancelled") return "这次提问已取消。";
   return null;
 }
@@ -299,12 +299,12 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
         if (accountRef.current !== account) return;
         if (caught instanceof ApiError && caught.status === 401) {
           void refreshAuth();
-          setVerificationError("登录状态已失效，当前设备旧记录暂时无法核对。");
+          setVerificationError("登录已过期，这台设备上的旧记录暂时对不上。");
         } else {
           setVerificationError(
             caught instanceof Error
-              ? `当前设备旧记录暂时无法核对：${caught.message}`
-              : "当前设备旧记录暂时无法核对。",
+              ? `这台设备上的旧记录暂时对不上：${caught.message}`
+              : "这台设备上的旧记录暂时对不上。",
           );
         }
       } finally {
@@ -333,7 +333,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
           classification: "chat",
           phase: "submissionUncertain",
           errorMessage:
-            "上次提交结果暂不确定：请求可能已到达云端，也可能没有。重试会复用同一个请求键。",
+            "上次提交还没确认，可能已经到了、也可能没到。再试会沿用同一次提交，不会重复。",
         };
       }
       return { ...item, classification };
@@ -423,7 +423,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                         ...item,
                         pollingPaused: true,
                         errorMessage:
-                          "云端暂时没有返回这条记录；本机暂存仍保留，稍后可以再次核对。",
+                          "这条记录暂时没同步回来；本机的还留着，稍后再核对。",
                       }
                     : item,
                 ),
@@ -456,7 +456,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                       ...item,
                       pollingPaused: true,
                       errorMessage:
-                        "暂时无法读取最新状态；云端上的执行没有取消，稍后可继续核对。",
+                        "暂时读不到最新状态；原来的执行还在继续，稍后可以再核对。",
                     }
                   : item,
               ),
@@ -704,7 +704,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                     phase: "failed",
                     errorMessage:
                       caught.status === 409
-                        ? "云端拒绝了这次提交，请稍后刷新核对。"
+                        ? "这次提交没能通过，刷新看看原因。"
                         : caught.message,
                   }
                 : entry,
@@ -718,7 +718,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                     ...entry,
                     phase: "submissionUncertain",
                     errorMessage:
-                      "提交结果暂不确定：请求可能已经到达云端，也可能没有。重试会复用同一个请求键，不会创建第二次执行。",
+                      "结果还没确认：可能已经提交，也可能没提交。再试会沿用同一次提交，不会重复执行。",
                   }
                 : entry,
             ),
@@ -777,7 +777,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                       ? "failed"
                       : "submissionUncertain",
                   errorMessage:
-                    caught instanceof ApiError ? caught.message : "提交结果仍不确定，请稍后刷新。",
+                    caught instanceof ApiError ? caught.message : "结果还没确认，稍后刷新看看。",
                 }
               : entry,
           ),
@@ -807,7 +807,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
             setItems((current) =>
               current.map((entry) =>
                 entry.id === id
-                  ? { ...entry, errorMessage: "已不可取消，已刷新真实状态。" }
+                  ? { ...entry, errorMessage: "已经不能取消了，状态已刷新。" }
                   : entry,
               ),
             );
@@ -819,7 +819,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                 entry.id === id
                   ? {
                       ...entry,
-                      errorMessage: "取消结果暂不确定，正在继续核对。",
+                      errorMessage: "取消还没确认，正在继续核对。",
                     }
                   : entry,
               ),

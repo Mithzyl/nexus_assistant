@@ -79,7 +79,7 @@ export default function MePage() {
   const accountTitle = (() => {
     if (state === "loading") return "正在验证会话…";
     if (signedIn && user) return user.display_name;
-    if (state === "offline") return user ? `${user.display_name}（离线）` : "登录状态暂无法验证";
+    if (state === "offline") return user ? `${user.display_name}（离线）` : "登录状态还没确认";
     if (state === "anonymous") return user ? user.display_name : "未登录";
     return "未登录";
   })();
@@ -87,8 +87,8 @@ export default function MePage() {
   const accountDetail = (() => {
     if (state === "loading") return "正在同步账号状态…";
     if (signedIn) return "已登录，内容会同步到你的账号。";
-    if (state === "offline") return "网络不可用，保留上次登录状态与暂存内容。";
-    return "登录账号后，问答与通勤提醒会同步到云端。";
+    if (state === "offline") return "现在没网；上次的登录和暂存内容都在。";
+    return "登录后，问答和通勤提醒会跟着账号走。";
   })();
 
   const doLogout = async () => {
@@ -99,9 +99,9 @@ export default function MePage() {
     setLogoutNote(
       result.revoked
         ? "已退出，并结束当前设备的登录状态。"
-        : "当前设备已退出；云端退出暂未确认，重新登录后旧登录会自然过期。",
+        : "这台设备已退出；账号那边还没确认，重新登录后旧登录会自动过期。",
     );
-    toast(result.revoked ? "已退出登录" : "当前设备已退出，云端退出未确认");
+    toast(result.revoked ? "已退出登录" : "这台设备已退出，账号侧未确认");
     router.push("/today");
   };
 
@@ -256,6 +256,7 @@ export default function MePage() {
             title="通勤设置"
             detail="常用地点与出发时间"
           />
+          <Row href="/me/notifications" icon={<Bell size={18} />} title="浏览器通知" detail="待办、日程和通勤的到期推送" />
           <Row
             href="/me/commute/bark"
             icon={<Bell size={14} strokeWidth={1.5} />}

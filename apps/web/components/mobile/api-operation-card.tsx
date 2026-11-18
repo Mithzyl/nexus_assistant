@@ -24,7 +24,7 @@ function Fields({ items }: { items: ResponseField[] }) {
 function CardImage({ value, thumbnail = false }: { value: ResponseImage; thumbnail?: boolean }) {
   const [failed, setFailed] = useState(false);
   return <figure className={thumbnail ? styles.thumbnail : styles.figure}>
-    {failed ? <div className={styles.imageFallback} role="img" aria-label={value.alt}>图片暂时无法显示</div> :
+    {failed ? <div className={styles.imageFallback} role="img" aria-label={value.alt}>图片没显示出来</div> :
       // Remote image sources are validated by Assistant; no provider credentials are sent.
       // eslint-disable-next-line @next/next/no-img-element
       <img src={value.src} alt={value.alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />}

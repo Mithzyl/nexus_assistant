@@ -37,12 +37,12 @@ export function CommuteBundlePanel({draft,onChanged,onDirty}:{draft:MatterDraft;
   {([['origin','起点',origin,setOrigin],['destination','终点',destination,setDestination]] as const).map(([side,label,value,set])=><fieldset key={side}><legend>{label}候选</legend>{c[`${side}_search`]?.candidates.map((p)=><label className="field" key={p.selection_token}><span><input type="radio" name={`commute-${side}`} checked={value===p.selection_token} onChange={()=>{set(p.selection_token);onDirty();}} /> {p.name} · {p.city} · {p.address}（{p.longitude}, {p.latitude}）</span></label>)}{!c[`${side}_search`]?.candidates.length?<p role="alert">未取得候选：{c[`${side}_search`]?.reason_code ?? c.status}</p>:null}</fieldset>)}
   <label className="field">首次生效日期<input className="input" type="date" value={day} onChange={e=>{setDay(e.target.value);onDirty();}} /></label>
   <fieldset><legend>重复星期</legend>{['一','二','三','四','五','六','日'].map((label,i)=><label key={label} style={{marginRight:12}}><input type="checkbox" checked={days.includes(i+1)} onChange={e=>{setDays(e.target.checked?[...days,i+1]:days.filter(d=>d!==i+1));onDirty();}} />周{label}</label>)}</fieldset>
-  <label className="field">提前到达余量（分钟）<input className="input" type="number" min={0} max={120} value={buffer} onChange={e=>{setBuffer(Number(e.target.value));onDirty();}} /></label>
-  <label className="field">保存的出行方式<select className="input" value={mode} onChange={e=>{setMode(e.target.value);onDirty();}}><option value="driving">驾车</option><option value="transit">公交</option></select></label>
-  <label><input type="checkbox" checked={testOnly} onChange={e=>{setTestOnly(e.target.checked);onDirty();}} />仅为联调测试数据，不是真人永久习惯</label>
-  <button className="btn btn--primary" disabled={busy||!origin||!destination||!day||!days.length} onClick={()=>void compare()}>{busy?'正在比较真实路线…':c.routes?'应用选择（复用有效测算）':'确认地点并比较驾车与公交'}</button>
+  <label className="field">提前到岗（分钟）<input className="input" type="number" min={0} max={120} value={buffer} onChange={e=>{setBuffer(Number(e.target.value));onDirty();}} /></label>
+  <label className="field">出行方式<select className="input" value={mode} onChange={e=>{setMode(e.target.value);onDirty();}}><option value="driving">驾车</option><option value="transit">公交</option></select></label>
+  <label><input type="checkbox" checked={testOnly} onChange={e=>{setTestOnly(e.target.checked);onDirty();}} />这是测试用的示例设置</label>
+  <button className="btn btn--primary" disabled={busy||!origin||!destination||!day||!days.length} onClick={()=>void compare()}>{busy?'正在比较路线…':c.routes?'应用这个选择':'比较驾车与公交'}</button>
   {error?<p role="alert">{error}</p>:null}
-  {Object.entries(c.routes??{}).map(([key,r])=><div className="card" key={key}><strong>{key==='driving'?'驾车':'公交'}</strong>{r.status==='available'?<p>约 {Math.ceil((r.duration_seconds??0)/60)} 分钟 · {r.distance_meters} 米{r.fare_cny!=null?` · 费用估计 ¥${r.fare_cny}`:''}</p>:<p>无法取得路线：{r.reason_code ?? r.status}</p>}<p>{r.accuracy_notice}</p></div>)}
-  {c.status==='quoted'?<p>确认后同时保存事项、首日日程及重复计划，并绑定所选路线。建议出发：{new Date(c.suggested_departure_at!).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}。未来耗时可能变化，不保证准点。</p>:null}
+  {Object.entries(c.routes??{}).map(([key,r])=><div className="card" key={key}><strong>{key==='driving'?'驾车':'公交'}</strong>{r.status==='available'?<p>约 {Math.ceil((r.duration_seconds??0)/60)} 分钟 · {r.distance_meters} 米{r.fare_cny!=null?` · 费用估计 ¥${r.fare_cny}`:''}</p>:<p>路线暂时没取到。</p>}<p>{r.accuracy_notice}</p></div>)}
+  {c.status==='quoted'?<p>确认后会保存这条通勤和所选路线。建议 {new Date(c.suggested_departure_at!).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})} 出发；路上时间可能变化。</p>:null}
  </section>;
 }

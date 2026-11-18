@@ -55,7 +55,7 @@ export default function MattersPage() {
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
             title="实验室只展示当前设备概念"
-            body="正式事项、日程和提醒已在“事项”页通过云端草稿确认；实验室不会把本地示例混入正式数据。"
+            body="正式事项、日程和提醒在“事项”页里确认；实验室的内容单独存放。"
           >
             <div className="m-stack-8">
               <Link href="/me/lab" className="btn btn--secondary">
@@ -72,12 +72,12 @@ export default function MattersPage() {
                   toast("已开启概念预览，仅使用当前设备示例");
                 }}
               >
-                显式开启概念预览
+                开启概念预览
               </button>
             </div>
           </EmptyState>
           <p className="micro text-center mt-16">
-            需要真实写入时请回到事项页；这里的当前设备预览与云端数据保持隔离。
+            需要真实保存时请回到事项页；这里只修改本机预览。
           </p>
         </div>
       ) : !plan.ready ? (
@@ -122,7 +122,7 @@ export default function MattersPage() {
               <ArrowRight size={14} />
             </button>
             <p className="micro text-center mt-8">
-              预览数据只在本浏览器；停止、删除和确认都不会改变云端。
+              预览数据只在本浏览器；停止、删除和确认都不会影响正式内容。
             </p>
           </div>
         </>

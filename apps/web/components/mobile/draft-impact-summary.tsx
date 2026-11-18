@@ -108,7 +108,7 @@ function actionDescription(
             ends_at: afterEnd ?? null,
             location: afterLocation ?? null,
           })
-        : "云端未返回新时间";
+        : "还没有返回新时间";
       return `调整日程「${title}」：${scheduleRange(before)} → ${afterText}`;
     }
     return `调整日程「${title}」${
@@ -189,7 +189,7 @@ export function DraftImpactSummary({
               </li>
             ))}
           </ul>
-          <p className="micro">这些安排已经保存在云端中，不会因为本次确认重复新增。</p>
+          <p className="micro">这些安排已经保存过，不会因为这次确认重复新增。</p>
         </section>
       ) : null}
 
@@ -204,7 +204,7 @@ export function DraftImpactSummary({
               </li>
             ))}
           </ul>
-          <p className="micro">云端只把这里用于核对冲突，不会把这些内容当成已保存预约，也不会创建它们。</p>
+          <p className="micro">这里只用来核对冲突，不会把这些内容当成已保存预约，也不会创建。</p>
         </section>
       ) : null}
 

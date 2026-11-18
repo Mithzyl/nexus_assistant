@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiRequest, pa, type CommuteLocation, type PlaceCandidate, type PlaceSearchResponse } from "@/lib/mobile/api";
+import type { CommuteLocation } from "@/lib/mobile/api";
+import { searchPlaceCandidates, type PlaceLookupCandidate } from "@/lib/mobile/places-api";
 
-/** One place input; selecting a provider candidate commits its city and coordinates together. */
+/** Search without a draft or URL parameters; only a user selection fills the form's location. */
 export function CommutePlaceInput({ id, title, value, onChange }: {
   id: string; title: string; value: CommuteLocation; onChange: (point: CommuteLocation) => void;
 }) {
-  const [rows, setRows] = useState<PlaceCandidate[]>([]);
+  const [rows, setRows] = useState<PlaceLookupCandidate[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [composing, setComposing] = useState(false);
@@ -20,24 +21,25 @@ export function CommutePlaceInput({ id, title, value, onChange }: {
     setRows([]); setError(""); setBusy(false);
     const query = value.label.trim();
     if (composing || located || query.length < 2) return;
+    const controller = new AbortController();
     setBusy(true);
     const timer = setTimeout(() => {
-      apiRequest<PlaceSearchResponse>(pa(`/commute/places?query=${encodeURIComponent(query)}`))
+      searchPlaceCandidates({ query, city: value.city, search_type: "place", limit: 5 }, controller.signal)
         .then(result => {
           if (!alive) return;
           setRows(result.candidates);
-          if (result.reason_code) setError("地点搜索暂时不可用，请稍后重试。");
+          if (result.reason_code && result.reason_code !== "place_not_found") setError("地点搜索暂时不可用，请稍后重试。");
           else if (!result.candidates.length) setError("没有找到匹配地点，请加上城市或更详细的地址。");
         })
         .catch(e => { if (alive) setError(e instanceof Error ? e.message : "地点搜索失败，请重试。"); })
         .finally(() => { if (alive) setBusy(false); });
     }, 600);
-    return () => { alive = false; clearTimeout(timer); };
-  }, [value.label, located, composing, retry]);
+    return () => { alive = false; clearTimeout(timer); controller.abort(); };
+  }, [value.label, value.city, located, composing, retry]);
 
   return <div className="field">
     <label className="field__label" htmlFor={`${id}-place`}>搜索{title}</label>
-    <input id={`${id}-place`} className="input" value={value.label} autoComplete="off"
+    <input id={`${id}-place`} className="input" value={value.label} autoComplete="off" maxLength={255}
       placeholder="输入地点名称或详细地址，建议带上城市"
       aria-describedby={`${id}-hint`} aria-controls={rows.length ? `${id}-results` : undefined}
       onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}

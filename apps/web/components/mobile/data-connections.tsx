@@ -39,7 +39,7 @@ import { useApiResource } from "@/lib/mobile/use-api-resource";
 import { ConfirmDialog, Pill } from "./ui";
 
 function sourceRange(source: DataSource): string {
-  if (source.scope_keys.length === 0) return "范围尚未列出";
+  if (source.scope_keys.length === 0) return "还没设置范围";
   return `${source.scope_keys.length} 个已授权范围`;
 }
 
@@ -117,7 +117,7 @@ export function DataConnections({
         ? "读取中"
         : shortcutSources.length > 0
           ? "已建立来源"
-          : "尚未连接";
+          : "还没连接";
   const appState = !signedIn
     ? "需登录"
     : mattersError
@@ -303,7 +303,7 @@ export function DataConnections({
           </summary>
           <div className="connection-card__body">
             <p>订阅只包含选定事项中的确认日程，手机端只读。更新可能延迟，私人订阅地址需要保密。</p>
-            <p>私人链接只在创建或重新生成时返回一次，不写入浏览器普通缓存；状态查询无法找回旧链接。</p>
+            <p>私人链接只在创建时显示一次；关掉后不能再找回。</p>
             {currentSubscription ? (
               <p>
                 {currentSubscription.last_read_at
@@ -343,7 +343,7 @@ export function DataConnections({
                 <p className="micro">{privateSubscription.feed_url}</p>
                 {/localhost|127\.0\.0\.1/i.test(privateSubscription.feed_url) ? (
                   <p className="micro danger-text">
-                    当前是本地调试地址，手机暂时无法访问。
+                    这是本机地址，手机连不上。
                   </p>
                 ) : null}
                 <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
@@ -371,7 +371,7 @@ export function DataConnections({
                       setOpenedSubscription(false);
                     }}
                   >
-                    关闭并清除链接
+                    清除并关闭
                   </button>
                 </div>
                 {openedSubscription ? (
@@ -517,7 +517,7 @@ export function DataConnections({
                   className="btn btn--quiet btn--small"
                   onClick={() => setShortcutCredential(null)}
                 >
-                  关闭并清除连接码
+                  清除并关闭
                 </button>
                 <p className="micro">连接码只显示一次，关闭后无法再次查看。</p>
               </div>
@@ -529,7 +529,7 @@ export function DataConnections({
                     <strong>{token.display_name}</strong>
                     {" · "}
                     {token.enabled ? "有效" : "已撤销"}
-                    {token.last_used_at ? ` · 最近使用 ${formatDateTime(token.last_used_at)}` : " · 尚未使用"}
+                    {token.last_used_at ? ` · 最近使用 ${formatDateTime(token.last_used_at)}` : " · 还没用过"}
                     {token.enabled ? (
                       <button
                         type="button"
@@ -559,11 +559,11 @@ export function DataConnections({
                 管理来源与上传记录
               </Link>
               <button type="button" className="btn btn--quiet btn--small" onClick={onRetry}>
-                重新读取连接状态
+                重新读取
               </button>
             </div>
             <p className="micro">按上面的步骤配置快捷指令即可。</p>
-            <p className="micro">我们不会要求 Apple 账号密码；请勿截图或分享设备连接码。</p>
+            <p className="micro">我们不会要求 Apple 账号密码；设备连接码不要截图或分享。</p>
           </div>
         </details>
       </div>

@@ -55,16 +55,16 @@ export default function NewCommutePage() {
   };
 
   return (
-    <PageShell title="新建通勤计划" subtitle="搜索并选择起点、终点，服务器将据此测算通勤路线。">
+    <PageShell title="新建通勤计划" subtitle="选好起点和终点，助手会据此测算路线。">
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后保存通勤计划" body="登录账号后，通勤计划会同步到云端。">
+        <EmptyState title="登录生活助手" body="跨设备同步你的通勤计划与提醒。">
           <Link href="/login" className="btn btn--primary">登录</Link>
         </EmptyState>
       ) : null}
       {signedIn ? (
         <CommuteForm
           savedPlaces={savedPlaces}
-          submitLabel="保存并继续"
+          submitLabel="保存并测算"
           saving={saving}
           serverError={error}
           onSubmit={(draft) => void submit(draft)}

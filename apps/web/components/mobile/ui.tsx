@@ -365,17 +365,19 @@ export function ConfirmDialog({
   );
 }
 
-/** Full-height sheet used for long forms on small screens. */
+/** Focus and restore a sheet; optionally keep the title and close action visible while long content scrolls. */
 export function Sheet({
   title,
   open,
   onClose,
   children,
+  stickyHeader = false,
 }: {
   title: string;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  stickyHeader?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -442,7 +444,7 @@ export function Sheet({
         tabIndex={-1}
       >
         <div className="sheet-handle" />
-        <div className="flex items-center gap-10" style={{ marginBottom: 14 }}>
+        <div className="flex items-center gap-10" style={{ marginBottom: 14, ...(stickyHeader ? { position: "sticky", top: 0, zIndex: 1, background: "var(--m-warm)", paddingBlock: 8 } : {}) }}>
           <p className="card-title grow" style={{ margin: 0 }}>
             {title}
           </p>

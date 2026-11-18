@@ -46,7 +46,7 @@ function validate(draft: CommutePlanDraft): string | null {
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.arrival_local_time)) return "到达时间格式无效。";
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.check_local_time)) return "检查时间格式无效。";
   if (draft.check_local_time >= draft.arrival_local_time) {
-    return "检查时间必须早于到达时间，不支持跨午夜。";
+    return "检查时间要早于到达时间，不能跨过午夜。";
   }
   if (draft.buffer_minutes < 0 || draft.buffer_minutes > 120) return "缓冲时间应在 0–120 分钟。";
   if (
@@ -329,7 +329,7 @@ export function CommuteForm({
             到达前提醒
           </span>
           <span className="caption" style={{ display: "block", marginTop: 2 }}>
-            由云端调度检查；浏览器关闭后仍可经 Bark 送达（需先绑定）。
+            由账号里的通勤检查来跑；绑定 Bark 后，关掉页面也能收到提醒。
           </span>
         </span>
         <span className="switch" aria-checked={draft.notify_enabled} role="switch" />
@@ -338,7 +338,7 @@ export function CommuteForm({
       <div className="notice mt-12">
         <strong>路线与出发时间</strong>
         <p style={{ margin: "4px 0 0" }}>
-          选择起点和终点后，路线和建议出发时间由服务器测算。
+          选好起点和终点，路线和出发时间交给助手测算。
         </p>
       </div>
 

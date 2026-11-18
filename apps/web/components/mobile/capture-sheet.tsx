@@ -3,9 +3,8 @@
 /**
  * Global capture sheet.
  *
- * Demo mode replays the designed sample outcomes and mutates in-memory demo
- * state. Real mode only saves a browser-local record and says so; it never
- * pretends a business matter was created on the server.
+ * Demo mode shows sample outcomes. Real submissions open the Ask page,
+ * which runs the existing intake flow and displays its actual result.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -22,10 +21,11 @@ import {
 } from "lucide-react";
 
 import { DEMO_SOURCES, type CaptureOutcome } from "@/lib/mobile/demo";
-import { writeSession } from "@/lib/mobile/storage";
+import { accountKey, writeSession } from "@/lib/mobile/storage";
 import { PrimaryButton, SecondaryButton } from "@/components/mobile/buttons";
-import { useDemo, useLocalRecords } from "@/components/mobile/providers";
+import { useAuth, useDemo, useUI } from "@/components/mobile/providers";
 
+/** Collect text from anywhere in the app and hand real submissions to Ask. */
 export function CaptureSheet({
   preset,
   onClose,
@@ -35,7 +35,8 @@ export function CaptureSheet({
 }) {
   const router = useRouter();
   const { enabled, captureDemo } = useDemo();
-  const { addRecord } = useLocalRecords();
+  const { state, user } = useAuth();
+  const { setCaptureSubmission } = useUI();
 
   const [mode, setMode] = useState<"choose" | "say">(preset);
   const [text, setText] = useState("");
@@ -70,6 +71,7 @@ export function CaptureSheet({
     [sourceId],
   );
 
+  /** Preserve the exact input before navigating to the existing assistant flow. */
   const submit = () => {
     setError(null);
     if (mode === "say" && !text.trim()) {
@@ -81,15 +83,20 @@ export function CaptureSheet({
         setError("先把要交给助手的内容粘贴进来。");
         return;
       }
-      const title = text.trim().split("\n")[0].slice(0, 28) || "本机暂存";
-      addRecord({ kind: mode === "say" ? "note" : "capture", title, text: text.trim() });
-      setOutcome({
-        tone: "done",
-        title: "已保存在当前设备",
-        body: "这段内容已暂存在当前设备，可在“今天”的最近整理中查看。",
-        route: null,
-      });
-      setStage("result");
+      if (state !== "signedIn" || !user) {
+        setError(state === "offline" || state === "loading"
+          ? "暂时无法确认登录状态，原文已保留。"
+          : "请先登录再发送，原文已保留。");
+        return;
+      }
+      if (text.trim().length > 4000) {
+        setError("这段有点长，最多 4000 个字。");
+        return;
+      }
+      writeSession(accountKey("pa.web.ask.composer", user.user_id), text);
+      setCaptureSubmission({ userId: user.user_id, text });
+      onClose();
+      router.push("/ask");
       return;
     }
     setStage("processing");
@@ -148,10 +155,8 @@ export function CaptureSheet({
     >
       <div className="sheet-panel" role="dialog" aria-modal="true" aria-label="交给助手整理">
         <div className="sheet-handle" />
-        <div className="flex items-center gap-10">
-          <span className="micro grow">
-            {enabled ? "演示模式 · 使用内置示例" : "仅保存在当前设备"}
-          </span>
+        <div className="flex items-center justify-end gap-10">
+          {enabled ? <span className="micro grow">演示模式 · 使用内置示例</span> : null}
           <button type="button" className="icon-button" onClick={onClose} aria-label="关闭" style={{ width: 40, height: 40 }}>
             <X size={18} />
           </button>
@@ -236,9 +241,7 @@ export function CaptureSheet({
                 ? mode === "choose"
                   ? "把消息、会议或待办粘贴进来，助手会帮你理清安排。"
                   : "这里用文字记录，不调用麦克风。"
-                : mode === "choose"
-                  ? "把内容粘贴进来，先保存在当前设备。"
-                  : "这条会先保存在当前设备。"}
+                : "输入或粘贴文字，发送后在「问助手」查看结果。"}
             </p>
 
             {enabled && mode === "choose" ? (
@@ -380,7 +383,7 @@ export function CaptureSheet({
             ) : null}
 
             <PrimaryButton onClick={submit}>
-              {mode === "choose" ? "生成安排草稿" : "保存这条记录"}
+              {!enabled ? "发送给助手" : mode === "choose" ? "生成安排草稿" : "保存这条记录"}
             </PrimaryButton>
 
             {!enabled ? (
@@ -390,11 +393,9 @@ export function CaptureSheet({
               </div>
             ) : null}
 
-            <p className="micro text-center mt-14" style={{ lineHeight: 1.6 }}>
-              {enabled
-                ? "这里只整理你选中的示例。"
-                : "仅保存在当前设备，可随时删除。"}
-            </p>
+            {enabled ? <p className="micro text-center mt-14" style={{ lineHeight: 1.6 }}>
+              这里只整理你选中的示例。
+            </p> : null}
           </>
         ) : null}
 

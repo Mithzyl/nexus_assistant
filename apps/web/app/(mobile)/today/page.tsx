@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, ChevronRight, FileText, MapPin, PenLine, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 
@@ -62,12 +62,12 @@ function reminderNote(item: MatterReminder): string {
   if (item.source === "ios_eventkit" || item.source === "ios_reminders") {
     return item.sync_status === "ios_synced" ? "来自 Apple 日历" : "来自 Apple 日历";
   }
-  if (item.status === "acknowledged") return "应用内提醒 · 已知晓";
+  if (item.status === "acknowledged") return "应用内提醒 · 已确认";
   if (item.status === "cancelled") return "应用内提醒 · 已取消";
-  if (item.status === "due") return "应用内提醒已到点 · 等待你确认知晓";
-  if (item.sync_status === "pending_ios") return "应用内提醒 · 等待同步到 Apple 日历";
-  if (item.sync_status === "ios_synced") return "应用内提醒 · Apple 日历已有";
-  return "提醒已设好 · 本页面保持打开时，到点将在页面内提醒你";
+  if (item.status === "due") return "应用内提醒到点了 · 等你确认";
+  if (item.sync_status === "pending_ios") return "应用内提醒 · Apple 日历待更新";
+  if (item.sync_status === "ios_synced") return "应用内提醒 · Apple 日历已更新";
+  return "提醒设好了 · 页面开着时，到点会在这里提醒你";
 }
 
 function routeState(schedule: TodaySchedule): {
@@ -75,21 +75,21 @@ function routeState(schedule: TodaySchedule): {
   tone: "neutral" | "amber" | "green" | "red";
   detail: string | null;
 } {
-  const message = schedule.route.message || "相关路线尚未核实。";
+  const message = schedule.route.message || "这条路线还没算过时间。";
   if (schedule.route.status === "available") {
     return { label: "路线已核实", tone: "green", detail: null };
   }
   if (schedule.route.status === "unavailable") {
-    return { label: "路线不可用", tone: "red", detail: message };
+    return { label: "路线没取到", tone: "red", detail: message };
   }
-  return { label: "路线未核实", tone: "amber", detail: "尚无与该日程关联的路线结果。" };
+  return { label: "路线还没核实", tone: "amber", detail: "点一下“刷新路线”，看看要多久到。" };
 }
 
 function draftQuestion(draft: TodayDraft): string {
   if (draft.conflict?.has_conflict) {
-    return "需要选择调整方案或明确接受行程风险。";
+    return "先选一个调整方案，或确认按原时间走。";
   }
-  return draft.matter_id ? "需要核对助手整理出的变更。" : "需要核对新事项和安排。";
+  return draft.matter_id ? "看看助手整理了哪些修改。" : "看看整理出的新事项和安排。";
 }
 
 interface TimelineRow {
@@ -128,29 +128,6 @@ export default function TodayPage() {
     [todayData.data],
   );
 
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
-  const notified = useRef(new Set<string>());
-  useEffect(() => {
-    setNotificationPermission("Notification" in window ? Notification.permission : "unsupported");
-  }, []);
-  useEffect(() => {
-    if (!signedIn || notificationPermission !== "granted") return;
-    for (const reminder of dueReminders) {
-      const deliveryKey = `${reminder.reminder_id}:${reminder.trigger_at}`;
-      if (notified.current.has(deliveryKey)) continue;
-      try {
-        const notice = new Notification(`到点提醒 · ${reminder.title}`, {
-          body: `来自「${reminder.matter_title || "事项"}」`, tag: reminder.reminder_id,
-        });
-        notice.onclick = () => { window.focus(); notice.close(); };
-        notified.current.add(deliveryKey);
-      } catch { setNotificationPermission("unsupported"); }
-    }
-  }, [dueReminders, signedIn, notificationPermission]);
-  const enableNotifications = async () => {
-    if ("Notification" in window) setNotificationPermission(await Notification.requestPermission());
-  };
-
   const acknowledge = async (reminder: MatterReminder, complete = false) => {
     setAcknowledgingId(reminder.reminder_id);
     setAcknowledgeError(null);
@@ -160,7 +137,7 @@ export default function TodayPage() {
       todayData.refresh();
     } catch (caught) {
       setAcknowledgeError(
-        caught instanceof Error ? caught.message : "暂时没能更新这条提醒，请稍后再试。",
+        caught instanceof Error ? caught.message : "这条提醒刚才没更新上，再试一次。",
       );
     } finally {
       setAcknowledgingId(null);
@@ -210,12 +187,12 @@ export default function TodayPage() {
 
   const overview = (() => {
     if (todayData.loading && !todayData.data) return "正在同步今天的安排…";
-    if (todayData.error) return "暂时无法同步今天的安排，请稍后再试。";
-    if (!todayData.data) return "今天还没有同步的内容。";
+    if (todayData.error) return "今天的安排暂时没同步上，稍后再试。";
+    if (!todayData.data) return "今天还没有安排。";
     const items =
       deadlines.length + (todayData.data.drafts.length ?? 0) + dueReminders.length;
     if (items > 0) return `先处理 ${items} 项需要确认或跟进的内容。`;
-    if (rows.length === 0) return "今天没有已确定的日程或待处理提醒。";
+    if (rows.length === 0) return "今天暂时没有安排 · 有想做的事可以随时交代给助手";
     return `今天有 ${todayData.data.schedules.length} 项日程${
       todayData.data.reminders.length > 0 ? `、${todayData.data.reminders.length} 个提醒` : ""
     }。`;
@@ -227,7 +204,7 @@ export default function TodayPage() {
     try {
       setSelectedDraft(await getDraft(item.draft_id));
     } catch (caught) {
-      setDraftError(caught instanceof Error ? caught.message : "暂时无法查看这条待确认草稿。");
+      setDraftError(caught instanceof Error ? caught.message : "这条待确认草稿暂时打不开。");
     } finally {
       setOpeningDraftId(null);
     }
@@ -303,20 +280,12 @@ export default function TodayPage() {
       ) : todayData.data ? (
         <>
           <section className="today-reminder-note" aria-label="提醒送达方式">
-            <span className="today-reminder-note__state">
-              <i aria-hidden="true" />
-              {notificationPermission === "granted" ? "系统通知已开启" : "页面内提醒已开启"}
-            </span>
-            {notificationPermission === "default" ? (
-              <button type="button" onClick={() => void enableNotifications()}>开启浏览器通知</button>
-            ) : null}
-            {notificationPermission === "denied" ? (
-              <span className="today-reminder-note__muted">浏览器通知未获允许</span>
-            ) : null}
+            <span>到期提醒会保留在这里。</span>
+            <Link href="/me/notifications">管理浏览器通知</Link>
           </section>
           {dueReminders.length > 0 ? (
             <section style={{ padding: "0 var(--m-gutter)" }}>
-              <SectionHeading title="到点提醒" trailing="需要确认知晓" />
+              <SectionHeading title="到点提醒" trailing="等你确认" />
               <div className="m-stack-10">
                 {dueReminders.map((reminder) => (
                   <div key={reminder.reminder_id} className="deadline-card deadline-card--overdue">
@@ -324,9 +293,9 @@ export default function TodayPage() {
                       <Bell size={15} />
                     </span>
                     <span className="grow">
-                      <span className="deadline-card__title">到点提醒 · {reminder.title}</span>
+                      <span className="deadline-card__title">{reminder.title}</span>
                       <span className="deadline-card__meta">
-                        原定 {dateTime(reminder.trigger_at, todayData.data?.timezone)} 提醒 · 来自「{reminder.matter_title || "所属事项"}」
+                        {dateTime(reminder.trigger_at, todayData.data?.timezone)} · 「{reminder.matter_title || "所属事项"}」
                       </span>
                     </span>
                     <button
@@ -342,7 +311,7 @@ export default function TodayPage() {
                 ))}
               </div>
               <p className="micro" style={{ margin: "8px 0 0" }}>
-                确认后，这条提醒会标记为已知晓。
+                点“知道了”，这条就不再提醒。
               </p>
               {acknowledgeError ? (
                 <p className="danger-text" style={{ margin: "8px 0 0" }} role="alert">
@@ -428,9 +397,9 @@ export default function TodayPage() {
           ) : null}
 
           <section style={{ padding: "0 var(--m-gutter)" }}>
-            <SectionHeading title="今日时间线" trailing="已确定安排" />
+            <SectionHeading title="今日时间线" trailing="按时间排好" />
             {rows.length === 0 ? (
-              <EmptyState title="今天没有安排" body="没有已确定的日程或待处理提醒。" />
+              <EmptyState title="今天暂时没有安排" body="有想做的事，随时交给助手整理。" />
             ) : (
               <div className="m-stack-8">
                 {rows.map((row) => (
@@ -481,8 +450,8 @@ export default function TodayPage() {
                           notice={
                             row.schedule.route.status === "available"
                               ? row.schedule.route.fetched_at
-                                ? `路线结果取得于 ${dateTime(row.schedule.route.fetched_at, todayData.data?.timezone)}`
-                                : "路线结果已更新。"
+                                ? `路线更新于 ${dateTime(row.schedule.route.fetched_at, todayData.data?.timezone)}`
+                                : "路线已刷新。"
                               : row.schedule.route.message || "尚无与该日程关联的路线结果。"
                           }
                           replanHref={
@@ -516,7 +485,7 @@ export default function TodayPage() {
               </div>
             )}
             <p className="micro" style={{ margin: "8px 0 0" }}>
-              提醒已保存；到点后需要你在这里确认。
+              提醒设好了 · 到点后在这里点一下就行。
             </p>
           </section>
 
@@ -555,7 +524,7 @@ export default function TodayPage() {
 
           <section style={{ padding: "0 var(--m-gutter)" }}>
             <div className="notice">
-              组合通勤确认后，首日日程会与固定计划一起保存；后续日期仍可单独调整。
+              通勤确认后，首日日程会和固定计划一起保存；以后每天都能单独调整。
             </div>
           </section>
         </>
@@ -596,8 +565,8 @@ export default function TodayPage() {
       {!signedIn ? (
         <section style={{ padding: "0 var(--m-gutter)" }}>
           <LoginRequired
-            title="登录后同步今日安排"
-            body="登录账号后，今天的日程、提醒和通勤建议会同步到这里；暂存内容会留在当前设备。"
+            title="登录生活助手"
+            body="跨设备同步你的今日安排、待办事项与个人习惯。"
           />
         </section>
       ) : null}
@@ -616,7 +585,7 @@ export default function TodayPage() {
             >
               {selectedRecord.text}
             </p>
-            <div className="notice mt-16">这条内容仅保存在当前设备，不会同步到云端。</div>
+            <div className="notice mt-16">只留在这台设备上，换设备看不到。</div>
             <button
               type="button"
               className="btn btn--danger mt-16"
@@ -631,7 +600,7 @@ export default function TodayPage() {
       <ConfirmDialog
         open={confirmDelete}
         title="删除这条暂存？"
-        body="删除后无法恢复，云端没有这份内容。"
+        body="删除后无法恢复；账号里也没有这份副本。"
         confirmLabel="删除"
         danger
         onCancel={() => setConfirmDelete(false)}

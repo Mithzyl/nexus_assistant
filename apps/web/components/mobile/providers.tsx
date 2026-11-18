@@ -197,6 +197,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Revoke this browser's push capability before leaving the current account.
+    const { disableBrowserPush } = await import("@/lib/mobile/browser-push");
+    try {
+      await disableBrowserPush();
+    } catch {
+      // Push transport failure must not prevent revoking the actual login session.
+      setError("浏览器通知取消结果尚未确认，请在浏览器网站设置中关闭通知。");
+    }
     let revoked = false;
     try {
       const result = await logoutSession();
@@ -836,12 +844,19 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
 
 type ThemeChoice = "system" | "light" | "dark";
 
+interface CaptureSubmission {
+  userId: string;
+  text: string;
+}
+
 interface UIValue {
   theme: ThemeChoice;
   setTheme: (theme: ThemeChoice) => void;
   toast: (message: string) => void;
   openCapture: (preset?: "choose" | "say") => void;
   closeCapture: () => void;
+  captureSubmission: CaptureSubmission | null;
+  setCaptureSubmission: (submission: CaptureSubmission | null) => void;
 }
 
 const UIContext = createContext<UIValue | null>(null);
@@ -859,6 +874,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     open: false,
     preset: "choose",
   });
+  const [captureSubmission, setCaptureSubmission] = useState<CaptureSubmission | null>(null);
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -896,8 +912,8 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ theme, setTheme, toast, openCapture, closeCapture }),
-    [theme, setTheme, toast, openCapture, closeCapture],
+    () => ({ theme, setTheme, toast, openCapture, closeCapture, captureSubmission, setCaptureSubmission }),
+    [theme, setTheme, toast, openCapture, closeCapture, captureSubmission],
   );
 
   return (

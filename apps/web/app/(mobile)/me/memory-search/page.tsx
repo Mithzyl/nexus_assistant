@@ -46,7 +46,7 @@ export default function MemorySearchPage() {
           caught.status === 401
             ? "登录状态已失效，请重新登录。"
             : caught.status >= 500
-              ? "上游记忆服务不可用。这不等于“没有记录”，请稍后再试。"
+              ? "记忆服务暂时连不上；这不代表没有记录，稍后再试。"
               : caught.message,
         );
       } else {
@@ -63,7 +63,7 @@ export default function MemorySearchPage() {
       subtitle="检索当前账号下的个人记忆，待确认内容会单独标记。"
     >
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后检索个人记忆" body="只检索当前账号下的个人记忆。">
+        <EmptyState title="登录生活助手" body="跨设备检索你的个人记忆。">
           <Link href="/login" className="btn btn--primary">登录</Link>
         </EmptyState>
       ) : null}
@@ -101,8 +101,8 @@ export default function MemorySearchPage() {
           {results ? (
             results.items.length === 0 ? (
               <EmptyState
-                title="上游返回了空结果"
-                body="空结果只表示这次检索没有命中；不能据此推断记忆被删除或从未存在。"
+                title="没有搜到相关记忆"
+                body="这次检索没有命中；没搜到不等于记录被删除了。"
               />
             ) : (
               <div className="m-stack-10 mt-14">

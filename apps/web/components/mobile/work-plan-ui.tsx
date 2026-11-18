@@ -62,7 +62,7 @@ export function ConflictSheet({
       {conflict ? (
         <div className="m-stack-12">
           <p className="caption" style={{ margin: 0 }}>
-            影响「{conflict.matterTitle}」。确认后只修改当前设备预览，不会写入云端或 iOS；
+            影响「{conflict.matterTitle}」。确认后只修改当前设备预览，正式日程和 iOS 都不受影响；
             关闭不会提交。
           </p>
           <div className="m-stack-8" role="radiogroup" aria-label="调整方案">
@@ -134,19 +134,19 @@ export function ProgressSheet({
     if (open) setText("");
   }, [open]);
   return (
-    <Sheet title="补充进展" open={open} onClose={onClose}>
+    <Sheet title="改变安排" open={open} onClose={onClose}>
       <div className="m-stack-12">
         <p className="caption" style={{ margin: 0 }}>
           {title} · {note}
         </p>
         <label className="field">
-          <span className="field__label">这次发生了什么</span>
+          <span className="field__label">要改什么</span>
           <textarea
             className="input"
             rows={5}
             value={text}
             onChange={(event) => setText(event.target.value)}
-            placeholder="例如：法务说周四上午发修订版。"
+            placeholder="例如：把下午三点改到四点，地点不变。"
           />
         </label>
         {error ? (
@@ -183,7 +183,7 @@ export function ProgressSheet({
             if (!stayOpenOnSubmit) onClose();
           }}
         >
-          {busy ? "正在交给云端…" : submitLabel}
+          {busy ? "正在处理…" : submitLabel}
         </button>
         <button type="button" className="btn btn--quiet" onClick={onClose} disabled={busy}>
           取消
@@ -265,7 +265,7 @@ export function ScheduleEditSheet({
   onSave,
   heading = "修改预览日程",
   submitLabel = "保存到当前设备预览",
-  note = "保存只改当前设备预览；涉及正式日程或提醒时，仍需云端确认后才生效。这里不会显示“已写入 iPhone”。",
+  note = "保存只改当前设备预览；正式日程和提醒要在“事项”页确认后才生效。",
 }: {
   schedule: WorkSchedule | null;
   open: boolean;

@@ -8,11 +8,13 @@ import { Clock, Trash2 } from "lucide-react";
 import type {
   Advisory,
   CommuteCheck,
+  CommuteDayState,
   CommutePlan,
   CommutePlanDraft,
+  CommutePlanUpdate,
 } from "@/lib/mobile/api";
 import { ApiError, apiRequest } from "@/lib/mobile/api";
-import { formatDateTime, formatServiceDate, formatTime, uuid } from "@/lib/mobile/format";
+import { formatTime, uuid } from "@/lib/mobile/format";
 import {
   CHECK_PHASE_LABEL,
   clearPendingCheck,
@@ -37,6 +39,7 @@ import {
 import { useAuth, useUI } from "@/components/mobile/providers";
 import { AdvisoryCard } from "@/components/mobile/advisory-card";
 import { CommuteForm } from "@/components/mobile/commute-form";
+import { CommuteDayPanel } from "@/components/mobile/commute-day-panel";
 import { HistoryAdvisoryCard } from "@/components/mobile/history-advisory-card";
 import {
   ConfirmDialog,
@@ -53,9 +56,24 @@ const TERMINAL = new Set(["succeeded", "degraded", "failed", "cancelled", "unkno
 const POLL_DELAYS = [1200, 2000, 3000, 5000, 8000, 12000, 15000, 20000, 30000];
 const POLL_DEADLINE_MS = 150_000;
 
-function toDraft(plan: CommutePlan): CommutePlanDraft {
-  const { id: _id, revision: _revision, created_at: _created, updated_at: _updated, matter_id: _matter, first_schedule_id: _schedule, ...draft } = plan;
-  return draft;
+/**
+ * Keep only editable plan fields for the PUT body.
+ *
+ * A long-term update response also carries the already-refreshed `next_day`;
+ * spreading it back into the form would send a read-only field to the server.
+ */
+function toDraft(plan: CommutePlan | CommutePlanUpdate): CommutePlanDraft {
+  const {
+    id: _id,
+    revision: _revision,
+    created_at: _created,
+    updated_at: _updated,
+    matter_id: _matter,
+    first_schedule_id: _schedule,
+    ...draft
+  } = plan as CommutePlan & { next_day?: CommuteDayState | null };
+  const { next_day: _nextDay, ...editable } = draft;
+  return editable;
 }
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
@@ -79,10 +97,6 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
   const plan = useApiResource<CommutePlan>(
     signedIn ? `/api/pa/commute-plans/${planId}` : null,
     { enabled: signedIn },
-  );
-  const analysisTarget = useApiResource<{local_service_date: string; target_arrival_at: string}>(
-    signedIn && plan.data?.enabled ? `/api/pa/commute-plans/${planId}/analysis-target?revision=${plan.data.revision}` : null,
-    { enabled: signedIn && Boolean(plan.data?.enabled) },
   );
   const allPlans = useApiResource<CommutePlan[]>(
     signedIn ? "/api/pa/commute-plans" : null,
@@ -175,7 +189,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       } else if (caught instanceof ApiError && caught.status === 401) {
         setAdviceError("登录状态已失效，请重新登录。");
       } else {
-        setAdviceError(caught instanceof Error ? caught.message : "建议暂时无法读取。");
+        setAdviceError(caught instanceof Error ? caught.message : "建议暂时没读到。");
       }
     } finally {
       if (mounted.current) setAdviceLoading(false);
@@ -202,7 +216,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
           record.error ||
             (record.status === "cancelled"
               ? "这次分析已取消。"
-              : "这次分析失败，没有生成可用建议。"),
+              : "这次没算出新方案。"),
         );
         return;
       }
@@ -217,7 +231,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
           setAdviceError(
             caught instanceof ApiError && caught.status === 401
               ? "登录状态已失效，请重新登录。"
-              : "这次分析已结束，但关联建议读取失败；可以稍后重试。",
+              : "分析做完了，建议还没读出来，稍后再试。",
           );
         }
       } finally {
@@ -405,7 +419,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       clearPendingCheck(accountId, plan.data.id);
       setPending(null);
       setViewMode(null);
-      setMessage("计划已更新，上次分析已作废，现在显示已有建议。");
+      setMessage("计划改过了，上次分析作废，先看已有建议。");
       void loadLatest();
       return;
     }
@@ -479,7 +493,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
           } else if (caught.code === "idempotency_key_reused") {
             clearPendingCheck(accountId, planId);
             setPending(null);
-            setMessage("同一次分析的请求内容发生变化，已作废旧操作；请重新发起。");
+            setMessage("这次和上次分析的内容变了，旧操作已作废，重新发起一次。");
           } else {
             const next: PendingCommuteCheck = {
               ...record,
@@ -496,7 +510,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
             ...record,
             status: "uncertain",
             error:
-              "提交结果暂不确定；重试不会重复提交。",
+              "还没收到结果；再试会沿用同一次提交，不会重复。",
             errorCode: "submission_uncertain",
             updatedAt: new Date().toISOString(),
           };
@@ -535,7 +549,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     if (runtime.data?.route_provider_available === false) {
       setViewMode("check");
       setMessage(
-        "路线服务尚未开通，暂时无法生成新的出发建议；最新天气和历史建议仍可查看。",
+        "路线服务还没开通，暂时算不了新方案；天气和历史方案还能看。",
       );
       return;
     }
@@ -582,7 +596,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
           setHistory(rememberAdvisory(accountId, planId, data));
         }
       } catch {
-        if (mounted.current) setAdviceError("本次分析关联的建议暂时无法读取。");
+        if (mounted.current) setAdviceError("这次分析的建议暂时没读到。");
       } finally {
         if (mounted.current) setAdviceLoading(false);
       }
@@ -613,7 +627,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     setSaving(true);
     setSaveError(null);
     try {
-      const updated = await apiRequest<CommutePlan>(`/api/pa/commute-plans/${planId}`, {
+      const updated = await apiRequest<CommutePlanUpdate>(`/api/pa/commute-plans/${planId}`, {
         method: "PUT",
         headers: { "If-Match": String(plan.data.revision) },
         body: draft,
@@ -624,16 +638,24 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         clearPendingCheck(accountId, planId);
         setPending(null);
         setViewMode(null);
-        setMessage("计划已更新，上次分析已作废。");
+        setMessage("计划改过了，上次分析作废。");
       }
-      toast("通勤计划已保存");
+      // The server already refreshed the next valid day; do not request it again.
+      if (updated.next_day?.applied) {
+        toast("通勤计划已保存，并已更新下一次出发时间");
+      } else if (updated.next_day && updated.next_day.applied === false) {
+        toast("通勤计划已保存；下一次出发时间还没算出来");
+        setMessage("通勤设置已保存；下一次出发时间还没算出来，可以在单日通勤里刷新。");
+      } else {
+        toast("通勤计划已保存");
+      }
       setTab("advice");
       await loadLatest();
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
-        setSaveError("设置已在其他设备修改，请重新加载后再保存。");
+        setSaveError("通勤设置刚在别处改过，重新加载后再保存。");
       } else if (caught instanceof ApiError && caught.status === 428) {
-        setSaveError("缺少版本信息，请刷新页面后重试。");
+        setSaveError("页面信息有点旧，刷新后再试。");
         await plan.reload();
       } else {
         setSaveError(caught instanceof ApiError ? caught.message : "保存未能完成。");
@@ -721,11 +743,11 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         : "正在整理出发时间、路上时间和到达时间。");
   const workerHint =
     runtimeView.kind === "unavailable"
-      ? "后台状态暂时无法读取，任务已保存；可以稍后继续核对。"
+      ? "状态暂时没读到；这次记录已经保存，稍后可以继续看。"
       : runtimeView.kind === "not_seen"
-        ? "后台还没有开始处理，任务已保存；可以稍后继续核对。"
+        ? "还没开始处理；这次记录已经保存，稍后可以继续看。"
         : runtimeView.kind === "stale"
-          ? "后台暂时没有响应，任务已保存；可以稍后继续核对。"
+          ? "暂时没收到响应；这次记录已经保存，稍后可以继续看。"
           : null;
   const lastCheckText = pending?.updatedAt ? formatTime(pending.updatedAt) : null;
   const nextAttemptText = pending?.nextAttemptAt ? formatTime(pending.nextAttemptAt) : null;
@@ -788,7 +810,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
               aria-pressed={tab === "settings"}
               onClick={() => setTab("settings")}
             >
-              设置
+              通勤设置
             </button>
           </div>
 
@@ -796,11 +818,11 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
             <div className="commute-detail">
               <div className="commute-layout">
                 <div className="commute-main">
-                  {adviceLoading ? <LoadingCard label="正在读取建议…" /> : null}
+                  {adviceLoading ? <LoadingCard label="正在读取方案…" /> : null}
 
                   {routeNeedsNotice ? (
                     <div className="notice notice--amber">
-                      路线服务暂时不可用，已有建议仍可查看。
+                      暂时算不了新路线，之前的方案还能看。
                     </div>
                   ) : null}
 
@@ -856,7 +878,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
 
                   {noAdviceResult ? (
                     <div className="card card--amber">
-                      <p className="card-title amber" style={{ fontSize: 15 }}>这次没有生成可用建议</p>
+                      <p className="card-title amber" style={{ fontSize: 15 }}>这次没算出可用方案</p>
                       <p className="caption" style={{ margin: "4px 0 0" }}>可以刷新路线，或查看历史记录。</p>
                       <div className="ask-actions">
                         <button type="button" className="link-button" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
@@ -905,14 +927,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     </div>
                   ) : null}
 
-                  {!currentAdvisory && analysisTarget.data && !active ? (
-                    <p className="micro" style={{ margin: 0 }}>
-                      下次通勤：{formatServiceDate(analysisTarget.data.local_service_date)}，{formatDateTime(analysisTarget.data.target_arrival_at)} 到岗
-                    </p>
-                  ) : null}
-
                   {!advisory && !adviceLoading && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !active && !adviceError && !routeNeedsNotice && historyRows.length === 0 ? (
-                    <EmptyState title="还没有通勤建议" body="刷新路线后，这里会显示出发时间、路线和天气。">
+                    <EmptyState title="还没有出行方案" body="刷新路线后，这里会显示出发时间、路线和天气。">
                       <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
                         {reanalyzeLabel}
                       </button>
@@ -920,7 +936,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   ) : null}
 
                   {!currentAdvisory && !adviceLoading && !active && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !adviceError && historyRows.length > 0 ? (
-                    <EmptyState title="当前没有可用建议" body="刷新路线后，这里会显示最新结果。">
+                    <EmptyState title="当前没有可用方案" body="刷新路线后，这里会显示最新结果。">
                       <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
                         {reanalyzeLabel}
                       </button>
@@ -929,6 +945,14 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                 </div>
 
                 <aside className="commute-side">
+                  {plan.data?.enabled ? (
+                    <CommuteDayPanel
+                      planId={plan.data.id}
+                      plan={plan.data}
+                      onPlanChanged={() => void plan.reload()}
+                    />
+                  ) : null}
+
                   <section className="card commute-config">
                     <div className="commute-config__head">
                       <h2>通勤安排</h2>
@@ -994,7 +1018,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                 </button>
               </div>
               <p className="micro mt-8">
-                删除会停止后续检查；不会删除已经生成的检查记录与建议。
+                删除后不再检查；已有的记录和方案会保留。
               </p>
             </div>
           )}
@@ -1004,7 +1028,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       <ConfirmDialog
         open={confirmDelete}
         title="删除这个通勤计划？"
-        body="删除后不再生成提醒；历史建议会保留。"
+        body="删除后不再提醒；历史方案会保留。"
         confirmLabel="删除计划"
         danger
         busy={deleting}

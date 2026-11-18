@@ -53,7 +53,7 @@ export default function AmbiguityPage() {
           <FileText size={14} /> 查看这条通知的原文
         </Link>
         <p className="micro mt-16">
-          关联只改变“它属于哪件事”，不等于退款完成。到账仍需要明确的回执或银行依据。
+          关联只决定它归到哪件事；是否到账，以回执或银行为准。
         </p>
       </PageShell>
     );
@@ -119,8 +119,8 @@ export default function AmbiguityPage() {
         ))}
       </div>
 
-      <Notice tone="amber" title="确认只关联，不标记到账">
-        这条通知不是到账证明，不会把退款标成完成。相同金额也不自动合并事务。
+      <Notice tone="amber" title="只认领归属">
+        这条通知只用来认领归属；退款是否到账，以回执为准。
       </Notice>
 
       <button
@@ -131,14 +131,14 @@ export default function AmbiguityPage() {
           if (choice) demo.resolveAmbiguity(choice);
         }}
       >
-        确认关联，不标记到账
+        确认关联
       </button>
       <button
         type="button"
         className="btn btn--secondary mt-10"
         onClick={() => router.push("/today")}
       >
-        还不确定，稍后再说
+        稍后再说
       </button>
       <Link href="/matters/evidence/ambiguous" className="link-button mt-6">
         <FileText size={14} /> 先核对这条通知的原文

@@ -45,12 +45,12 @@ export default function CommutePage() {
             className="page-bar__action"
             onClick={() => router.push("/me/commute/new")}
           >
-            新建
+            新建计划
           </button>
         }
       >
         {!signedIn && state !== "loading" ? (
-          <EmptyState title="登录后管理通勤" body="登录账号后，通勤计划与提醒会同步到这里。">
+          <EmptyState title="登录生活助手" body="跨设备同步你的通勤计划与提醒。">
             <Link href="/login" className="btn btn--primary">登录账号</Link>
           </EmptyState>
         ) : null}
@@ -91,7 +91,7 @@ export default function CommutePage() {
                         {plan.name}
                       </span>
                       <span className="caption" style={{ display: "block", marginTop: 2 }}>
-                        {weekdayText(plan.weekdays)} · {plan.arrival_local_time} 到达 ·{" "}
+                        {weekdayText(plan.weekdays)} · {plan.arrival_local_time} 到岗 ·{" "}
                         {plan.transport_mode === "driving" ? "驾车" : plan.transport_mode === "transit" ? "公交" : "步行"}
                       </span>
                       <span className="micro" style={{ display: "block", marginTop: 2 }}>
@@ -126,7 +126,7 @@ export default function CommutePage() {
             </div>
 
             <Notice title="使用提示">
-              支持搜索地点候选、驾车与公交路线；新建计划时请选择具体起点和终点。
+              先选好起点和终点，路线和出发时间交给助手测算。
             </Notice>
           </>
         ) : null}

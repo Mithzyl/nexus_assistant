@@ -15,7 +15,7 @@ export default function EvidencePage({ params }: { params: { id: string } }) {
       <PageShell title="原始依据">
         <EmptyState
           title="没有找到这份依据"
-          body="原始依据属于本地演示数据；正常模式不会展示虚构原文。"
+          body="原始依据来自演示数据，正式模式里不会出现。"
         >
           <Link href="/matters" className="btn btn--secondary">返回事务</Link>
         </EmptyState>
@@ -34,7 +34,7 @@ export default function EvidencePage({ params }: { params: { id: string } }) {
         </pre>
       </div>
       <div className="notice mt-14">
-        这是演示内保存的原文，不代表连接了银行、订单、票务或行程服务。
+        这是演示里保存的原文，并没有连接银行、订单或票务服务。
       </div>
       <Link href="/matters" className="btn btn--secondary mt-14">
         返回刚才的事项

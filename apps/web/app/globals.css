@@ -3150,3 +3150,76 @@ a {
   line-height: 1.45;
 }
 .follow-up-history__row .link-button { font-size: 11.5px; }
+
+/* 事项详情：桌面主栏 + 状态侧栏，窄屏回到单列。 */
+.matter-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+.matter-detail-main,
+.matter-detail-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.matter-side-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.matter-side-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+}
+.matter-side-row > span:first-child { color: var(--m-muted); }
+.matter-side-row > span:last-child { text-align: right; font-weight: 600; }
+
+/* 补充内容：原文与 AI 文字分开显示，采纳后仍保留助手来源。 */
+.supplement-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+.supplement-item { padding: 16px 0; border-top: 0.5px solid var(--m-line); }
+.supplement-item:first-child { border-top: 0; padding-top: 0; }
+.supplement-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.supplement-quote {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--m-mist) 65%, var(--m-card));
+  font-size: 14px;
+  line-height: 1.6;
+}
+.supplement-block {
+  margin-top: 10px;
+  padding-left: 11px;
+  border-left: 3px solid var(--m-fog-soft);
+}
+.supplement-origin { font-size: 11.5px; font-weight: 700; color: var(--m-fog-deep); }
+.supplement-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+
+@media (max-width: 1023px) {
+  .matter-detail-layout { display: flex; flex-direction: column; gap: 14px; }
+  .matter-detail-side { display: none; }
+}
+
+/* 补充文字的纠正与回答：计数、预览和分页读取。 */
+.supplement-relation-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--m-neutral) 60%, var(--m-card));
+}
+.supplement-relation { padding-top: 5px; border-top: 0.5px solid var(--m-line); }
+.supplement-relation:first-of-type { border-top: 0; padding-top: 0; }
+
+/* 纠正/回答对话框里的原内容：过长时在卡片内滚动。 */
+.supplement-reply-context { max-height: 168px; overflow: auto; }

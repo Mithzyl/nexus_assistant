@@ -58,6 +58,12 @@ interface IntakeAnswer {
   pendingContext?: IntakePendingContext | null;
 }
 
+interface IntakeRequestKey {
+  text: string;
+  key: string;
+  continuationRunId: string | null;
+}
+
 /** Turn a server schedule candidate into a continuation message without IDs. */
 function scheduleCandidatePrompt(candidate: IntakeScheduleCandidate): string {
   const when = formatDateTime(candidate.starts_at);
@@ -101,7 +107,7 @@ function StatusCard({
     return (
       <div className="card card--tight">
         <p className="micro" style={{ margin: 0 }}>
-          正在核对此前保存的记录，确认后会显示内容。
+          正在核对刚才的记录，确认后就能看到。
         </p>
         <button type="button" className="link-button mt-6" onClick={onRecheck}>
           重新核对
@@ -114,10 +120,10 @@ function StatusCard({
     return (
       <div className="card card--amber">
         <p className="card-title amber" style={{ fontSize: 15 }}>
-          这条记录暂未确认
+          这条还没确认归属
         </p>
         <p className="caption" style={{ margin: "4px 0 0" }}>
-          暂时无法确认它属于问答，为安全起见先不显示正文。
+          还没能确认它是不是问答，先不显示正文。
         </p>
         <button type="button" className="link-button mt-6" onClick={onRecheck}>
           重新核对
@@ -141,13 +147,13 @@ function StatusCard({
     return (
       <div className="card card--amber">
         <p className="card-title amber" style={{ fontSize: 15 }}>
-          提交结果暂不确定
+          还没收到结果
         </p>
         <p className="caption" style={{ margin: "4px 0 0" }}>
-          网络可能中断；重试不会重复提交。
+          连接中断了；再点一次会在原请求上继续，不会重复提交。
         </p>
         <button type="button" className="link-button mt-6" onClick={onRetry}>
-          重试同一次提交
+          继续这次提交
         </button>
       </div>
     );
@@ -158,7 +164,7 @@ function StatusCard({
       <div className="card card--tight">
         <div className="ask-status">
           <span className="spinner" />
-          {item.phase === "queued" ? "已提交，等待助手开始" : "助手正在处理"}
+          {item.phase === "queued" ? "已提交，助手马上开始" : "助手正在处理"}
         </div>
         <p className="caption" style={{ margin: "6px 0 0" }}>
           回答会保存到账号，离开页面也会继续。
@@ -170,7 +176,7 @@ function StatusCard({
             </button>
           ) : null}
           <button type="button" className="link-button" onClick={onRefresh}>
-            刷新状态
+            刷新进度
           </button>
         </div>
       </div>
@@ -184,7 +190,7 @@ function StatusCard({
           <span className="ask-message__ok" aria-label="直接回答" title="直接回答">
             <CheckCircle2 size={13} />
           </span>
-          <span className="ask-message__time">{formatDateTime(item.completedAt) || "时间未记录"}</span>
+          <span className="ask-message__time">{formatDateTime(item.completedAt) || "时间未知"}</span>
         </div>
         <div className="ask-message__body">
           {item.answer ? (
@@ -192,10 +198,10 @@ function StatusCard({
           ) : (
             <>
               <p className="card-title amber" style={{ fontSize: 15 }}>
-                这次没有可读的回答
+                这次没有回答内容
               </p>
               <p className="caption" style={{ margin: "4px 0 0" }}>
-                可以重新编辑后再发一次。
+                改一下再发一次。
               </p>
             </>
           )}
@@ -218,7 +224,7 @@ function StatusCard({
     return (
       <div className="card ask-message ask-message--failed">
         <div className="ask-message__meta">
-          <span className="ask-message__time">{formatDateTime(item.completedAt) || "时间未记录"}</span>
+          <span className="ask-message__time">{formatDateTime(item.completedAt) || "时间未知"}</span>
         </div>
         <div className="ask-message__body">
           <p className="ask-failure__title">这次没处理完</p>
@@ -252,25 +258,25 @@ function StatusCard({
   return (
     <div className="card card--amber">
       <p className="card-title amber" style={{ fontSize: 15 }}>
-        处理状态暂不确定
+        还在确认结果
       </p>
       <p className="caption" style={{ margin: "4px 0 0" }}>
-        仍在核对结果，可以刷新查看最新状态。
+        结果还在确认，可以刷新看看。
       </p>
       {item.pollingPaused ? (
         <button type="button" className="link-button mt-6" onClick={onContinue}>
-          继续核对
+          继续确认
         </button>
       ) : (
         <button type="button" className="link-button mt-6" onClick={onRefresh}>
-          刷新核对
+          刷新
         </button>
       )}
     </div>
   );
 }
 
-/** Submit one intake flow and restore answers, clarification and execution receipts. */
+/** Restore intake replies and cards, placing clarification choices after their supporting card. */
 export default function AskPage() {
   const { state, user, renewing, renewMessage } = useAuth();
   const ask = useAskStore();
@@ -291,14 +297,11 @@ export default function AskPage() {
   const [continuationRunId, setContinuationRunId] = useState<string | null>(null);
   const [recoveryRunId, setRecoveryRunId] = useState<string | null>(null);
   const [intakeHistoryLoading, setIntakeHistoryLoading] = useState(false);
-  const intakeKey = useRef<{
-    text: string;
-    key: string;
-    continuationRunId: string | null;
-  } | null>(null);
+  const intakeKey = useRef<IntakeRequestKey | null>(null);
   const hydratedAnswerKey = useRef<string | null>(null);
   const intakeHistorySeq = useRef(0);
-  const { toast } = useUI();
+  const { toast, captureSubmission, setCaptureSubmission } = useUI();
+  const handledCapture = useRef<typeof captureSubmission>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -306,6 +309,7 @@ export default function AskPage() {
   const restoredComposerKey = useRef<string | null>(null);
   const intakeAnswerStorageKey = accountKey("pa.web.intakeAnswers", user?.user_id ?? null);
   const composerStorageKey = accountKey("pa.web.ask.composer", user?.user_id ?? null);
+  const intakeRequestStorageKey = accountKey("pa.web.ask.intakeRequest", user?.user_id ?? null);
 
   useEffect(() => {
     restoredComposerKey.current = null;
@@ -372,14 +376,16 @@ export default function AskPage() {
     setOperationFailure(null);
     setContinuationRunId(null);
     setRecoveryRunId(null);
-    intakeKey.current = null;
+    intakeKey.current = state === "signedIn"
+      ? readSession<IntakeRequestKey | null>(intakeRequestStorageKey, null)
+      : null;
     if (state === "signedIn") {
       void refreshServerIntake(controller.signal);
     } else {
       setIntakeHistoryLoading(false);
     }
     return () => controller.abort();
-  }, [refreshServerIntake, state, user?.user_id]);
+  }, [intakeRequestStorageKey, refreshServerIntake, state, user?.user_id]);
 
   useEffect(() => {
     const refresh = () => {
@@ -417,22 +423,24 @@ export default function AskPage() {
 
   const canSend = draft.trim().length > 0 && state === "signedIn" && !processing;
 
-  /** Submit current input once through the streaming intake and preserve missing-information prompts. */
-  const send = async (
+  /** Submit through the existing intake and retain the original draft until a usable result arrives. */
+  const send = useCallback(async (
     text?: string,
     continuationOverride?: string | null,
+    fromCapture = false,
   ) => {
-    const value = (text ?? draft).trim();
+    const original = text ?? draft;
+    const value = original.trim();
     const activeContinuation =
       continuationOverride === undefined ? continuationRunId : continuationOverride;
     if (!value) return;
     if (processing) return;
     if (state !== "signedIn") {
-      setComposerError("登录后才能交给助手，输入已保留。");
+      setComposerError("登录后就能交给助手，内容先留着。");
       return;
     }
     if (value.length > 4000) {
-      setComposerError("这段内容最多 4000 个字符。");
+      setComposerError("这段有点长，最多 4000 个字。");
       return;
     }
     setComposerError(null);
@@ -441,8 +449,15 @@ export default function AskPage() {
     setOperationFailure(null);
     setProcessing(true);
     setLiveTurn({ question: value, answer: "" });
-    setDraft("");
+    setDraft(original);
+    writeSession(composerStorageKey, original);
+    if (fromCapture) {
+      setContinuationRunId(null);
+      setRecoveryRunId(null);
+      setSelectedMemories([]);
+    }
     if (
+      fromCapture ||
       !intakeKey.current ||
       intakeKey.current.text !== value ||
       intakeKey.current.continuationRunId !== activeContinuation
@@ -453,19 +468,35 @@ export default function AskPage() {
         continuationRunId: activeContinuation,
       };
     }
+    const requestKey = intakeKey.current;
+    writeSession(intakeRequestStorageKey, requestKey);
     try {
       const result = await streamIntakeMatter(
         value,
-        intakeKey.current.key,
+        requestKey.key,
         activeContinuation,
-        selectedMemories,
+        fromCapture ? [] : selectedMemories,
         (answer) => setLiveTurn({ question: value, answer }),
       );
+      if (
+        (result.outcome === "answer" && result.answer) ||
+        result.outcome === "needs_clarification" ||
+        (result.outcome === "draft" && result.draft)
+      ) {
+        setDraft((current) => current === original ? "" : current);
+        if (readSession(composerStorageKey, "") === original) {
+          writeSession(composerStorageKey, "");
+        }
+        if (intakeKey.current === requestKey) intakeKey.current = null;
+        if (readSession<IntakeRequestKey | null>(intakeRequestStorageKey, null)?.key === requestKey.key) {
+          writeSession(intakeRequestStorageKey, null);
+        }
+      }
       if (result.outcome === "answer" || result.draft) setSelectedMemories([]);
       if (result.outcome === "answer") {
         if (!result.answer) {
           setOperationFailure(
-            result.message || "助手没有返回可读的回答，输入已经保留。",
+            result.message || "助手这次没答上来，内容还留着。",
           );
           return;
         }
@@ -481,9 +512,6 @@ export default function AskPage() {
             pendingContext: result.pending_context,
           },
         ].slice(-20));
-        setDraft("");
-        writeSession(composerStorageKey, "");
-        intakeKey.current = null;
         setContinuationRunId(null);
         setClarificationContext({});
         setRecoveryRunId(result.local_run_id);
@@ -493,19 +521,16 @@ export default function AskPage() {
       if (result.outcome === "needs_clarification") {
         setClarificationContext(result.pending_context ?? {});
         setSupplementQuestion(
-          result.clarify || result.message || "请补充缺失的信息。",
+          result.clarify || result.message || "再补一点信息就好。",
         );
         setContinuationRunId(result.local_run_id);
         setRecoveryRunId(result.local_run_id);
-        setDraft("");
-        writeSession(composerStorageKey, "");
-        intakeKey.current = null;
         void refreshServerIntake();
         return;
       }
       if (result.outcome === "processing" || result.outcome === "unknown") {
         setOperationFailure(
-          "正在核实结果。输入和恢复入口已保留，不会自动重新创建事项。",
+          "结果还在确认。内容留着，不会重复提交。",
         );
         setRecoveryRunId(result.local_run_id);
         void refreshServerIntake();
@@ -516,20 +541,19 @@ export default function AskPage() {
         setContinuationRunId(null);
         setClarificationContext({});
         setRecoveryRunId(result.local_run_id);
-        toast("已生成待确认变更，尚未写入正式安排");
+        toast("已生成变更草稿，还没写入正式安排");
         void refreshServerIntake();
         return;
       }
       if (!result.draft) {
         setOperationFailure(
-          result.message || "助手没有生成事项草稿，当前输入已保留。",
+          result.message || "这次没整理出草稿，内容还留着。",
         );
         setRecoveryRunId(result.local_run_id);
         void refreshServerIntake();
         return;
       }
     } catch (caught) {
-      setDraft(value);
       if (caught instanceof IntakeStreamError) {
         if (caught.localRunId) setRecoveryRunId(caught.localRunId);
         if (caught.workflowError.outcome_is_known) setComposerError(caught.message);
@@ -544,17 +568,35 @@ export default function AskPage() {
           caught.code.includes("unknown"))
       ) {
         setOperationFailure(
-          "正在核实结果。输入和本次操作标识已保留，可查询原结果或用同一次操作继续。",
+          "结果还在确认。可以点“查看原结果”，或继续这次提问。",
         );
         return;
       }
-      setComposerError(caught instanceof Error ? caught.message : "暂时无法交给助手。");
+      setComposerError(caught instanceof Error ? caught.message : "这次没发出去，稍后再试。");
       void refreshServerIntake();
     } finally {
       setProcessing(false);
       setLiveTurn(null);
     }
-  };
+  }, [
+    composerStorageKey, continuationRunId, draft, intakeRequestStorageKey,
+    processing, refreshServerIntake, selectedMemories, state, toast,
+  ]);
+
+  useEffect(() => {
+    if (!captureSubmission || captureSubmission === handledCapture.current || processing || state === "loading") {
+      return;
+    }
+    handledCapture.current = captureSubmission;
+    setCaptureSubmission(null);
+    if (captureSubmission.userId !== user?.user_id) return;
+    if (state !== "signedIn") {
+      setDraft(captureSubmission.text);
+      setComposerError("暂时无法确认登录状态，原文已保留。");
+      return;
+    }
+    void send(captureSubmission.text, null, true);
+  }, [captureSubmission, processing, send, setCaptureSubmission, state, user?.user_id]);
 
   const recoverResult = async () => {
     setOperationFailure(null);
@@ -566,7 +608,7 @@ export default function AskPage() {
           );
       if (!result) {
         setOperationFailure(
-          "暂时没有找到这次结果。可以保留原输入继续原来的处理。",
+          "还没找到这次的结果，原内容还留着。",
         );
         return;
       }
@@ -578,21 +620,21 @@ export default function AskPage() {
         toast("已读取待确认结果");
       } else if (result.outcome === "needs_clarification") {
         setClarificationContext(result.pending_context ?? {});
-        setSupplementQuestion(result.clarify || "请补充缺失的信息。");
+        setSupplementQuestion(result.clarify || "再补一点信息就好。");
         setContinuationRunId(result.local_run_id);
       } else if (result.outcome === "answer") {
         setContinuationRunId(null);
         setClarificationContext({});
         toast("回答已恢复到历史");
       } else if (result.outcome === "processing" || result.outcome === "unknown") {
-        setOperationFailure("仍在核实这次结果，请稍后再次查询。");
+        setOperationFailure("结果还在确认，稍后再看看。");
       } else {
-        setOperationFailure("这次操作没有形成可继续的结果，输入已保留。");
+        setOperationFailure("这次没有可继续的结果，内容还在。");
       }
       await refreshServerIntake();
     } catch (caught) {
       setOperationFailure(
-        caught instanceof Error ? caught.message : "暂时无法查询原结果。",
+        caught instanceof Error ? caught.message : "暂时查不到原结果。",
       );
     }
   };
@@ -604,7 +646,7 @@ export default function AskPage() {
       setCopiedId(item.id);
       window.setTimeout(() => setCopiedId(null), 1600);
     } catch {
-      setComposerError("复制失败，可以长按选择回答文字。");
+      setComposerError("复制没成功，可以长按选中文字。");
     }
   };
 
@@ -654,15 +696,15 @@ export default function AskPage() {
         {state === "anonymous" ? (
           <div style={{ marginBottom: 16 }}>
             <LoginRequired
-              title="登录后向助手提问"
-              body="登录账号后，问答与处理结果会同步到账号；暂存内容仍留在当前设备。"
+              title="登录生活助手"
+              body="跨设备同步你的问答与处理结果。"
             />
           </div>
         ) : null}
 
         {renewMessage ? (
           <p className="micro" style={{ marginBottom: 12 }}>
-            {renewing ? "正在延长登录…" : renewMessage}
+            {renewing ? "正在续期…" : renewMessage}
           </p>
         ) : null}
 
@@ -687,7 +729,7 @@ export default function AskPage() {
               有 {pendingDrafts.length} 条待确认变更
             </p>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              已从账号同步，重新打开页面也不会重复出现。
+              从账号同步，重新打开也不会重复出现。
             </p>
             <div className="m-stack-8 mt-10">
               {pendingDrafts.slice(0, 3).map((draftItem) => (
@@ -728,7 +770,7 @@ export default function AskPage() {
             const inactivePreview = serverItem && item.confirm_status === "unconfirmed" && lifecycle && lifecycle !== "active";
             const isFailure = outcome === "failed" || outcome === "unknown";
             const historyNote = confirmed
-              ? lifecycle === "archived" ? `所属事项「${item.target_title}」现已归档收起`
+              ? lifecycle === "archived" ? `所属事项「${item.target_title}」现已归档`
                 : lifecycle === "deleted" ? "所属事项后来已被删除，相关安排不再保留"
                 : lifecycle === "source_revoked" ? "相关资料来源已取消授权，当前不再展示详情"
                 : `已更新至「${item.target_title ?? "事项"}」`
@@ -757,7 +799,7 @@ export default function AskPage() {
                       <p className="ask-failure__title">{isFollowUp ? "这次跟进没处理完" : "这次没处理完"}</p>
                       <p className="ask-failure__body">
                         {isFollowUp
-                          ? "这次跟进没能跑完，内容已经保存。可以稍后再核对。"
+                          ? "这次跟进没跑完，内容已经存好，晚点再看看。"
                           : `你刚才那条「${question}」我收到了，但这次没能跑完。内容我先存着。`}
                       </p>
                       <div className="ask-failure__actions">
@@ -773,9 +815,9 @@ export default function AskPage() {
                         </button>
                         <details className="ask-stored">
                           <summary>查看已存内容</summary>
-                          <p>原始问题已保留，可以重新编辑后再发一次。</p>
-                          {serverItem && item.error?.error_code ? (
-                            <p>错误码：{item.error.error_code}</p>
+                          <p>原话还留着，可以改了再发。</p>
+                          {serverItem && item.error?.details_reference_id ? (
+                            <p>问题编号：{item.error.details_reference_id}</p>
                           ) : null}
                         </details>
                       </div>
@@ -784,8 +826,8 @@ export default function AskPage() {
 
                   {answer ? <Markdown source={answer} /> : null}
                   {clarify ? <p className="body-text" style={{ margin: 0 }}>{clarify}</p> : null}
-                  {outcome === "needs_clarification" && !hasContinuation && serverRunId && pendingContext?.choices?.length ? <div className="chip-row mt-8">{pendingContext.choices.map((choice) => <button type="button" className="chip" key={choice} disabled={processing} onClick={() => void send(choice, serverRunId)}>{choice}</button>)}</div> : null}
                   {serverRunId && pendingContext ? <ApiOperationCard context={pendingContext} /> : null}
+                  {outcome === "needs_clarification" && !hasContinuation && serverRunId && pendingContext?.choices?.length ? <div className="chip-row mt-8">{pendingContext.choices.map((choice) => <button type="button" className="chip" key={choice} disabled={processing} onClick={() => void send(choice, serverRunId)}>{choice}</button>)}</div> : null}
                   {outcome === "processing" && !answer ? (
                     <p className="ask-message__note">还在处理中，可以稍后刷新。</p>
                   ) : null}
@@ -797,7 +839,7 @@ export default function AskPage() {
                     </div>
                   ) : null}
                   {!answer && !clarify && !historyNote && !isFailure && outcome !== "processing" ? (
-                    <p className="ask-message__note">这次没有可继续的回答。</p>
+                    <p className="ask-message__note">这次没有后续内容了。</p>
                   ) : null}
 
                   {serverRunId && serverItem && item.status !== "pending" && item.status !== "running" ? (
@@ -851,7 +893,7 @@ export default function AskPage() {
                         </span>
                         <span className="choice-card__detail">
                           {hasContinuation
-                            ? "已继续处理，这条候选不能再次提交。"
+                            ? "已经接着处理了，这条选项不用再点。"
                             : "选好目标后，助手会继续处理。"}
                         </span>
                       </span>
@@ -862,7 +904,7 @@ export default function AskPage() {
             </div>
             );
           })}
-          {intakeHistoryLoading ? <LoadingCard label="正在同步统一输入历史…" /> : null}
+          {intakeHistoryLoading ? <LoadingCard label="正在同步历史…" /> : null}
         </section>
       ) : null}
 
@@ -936,7 +978,7 @@ export default function AskPage() {
                   {concealed
                     ? item.classification === "pending"
                       ? "正在核对此前保存的记录…"
-                      : "这条暂存暂不显示内容"
+                      : "这条暂存还没有内容"
                     : item.question}
                 </div>
                 <div className="mt-10">

@@ -172,6 +172,58 @@ export type CommutePlanDraft = Omit<
   "id" | "revision" | "created_at" | "updated_at" | "matter_id" | "first_schedule_id"
 >;
 
+/** Long-term update returns the plan plus the already-refreshed next valid day. */
+export interface CommutePlanUpdate extends CommutePlan {
+  next_day: CommuteDayState | null;
+}
+
+export type CommuteDayStatus = "upcoming" | "past" | "inactive" | "ineligible";
+
+/**
+ * One commute date as the server reports it.
+ *
+ * `version` is the matter version and `revision` is the plan revision; both are
+ * required when changing the day. Times are UTC instants and must be formatted
+ * in `timezone` before display.
+ */
+export interface CommuteDayState {
+  plan_id: string;
+  matter_id?: string | null;
+  version?: number | null;
+  revision: number;
+  service_date: string;
+  timezone: string;
+  status: CommuteDayStatus;
+  target_arrival_at: string;
+  arrival_local_time: string;
+  schedule?: MatterSchedule | null;
+  route?: RouteEstimate | null;
+  applied?: boolean | null;
+  replayed?: boolean | null;
+  change_id?: string | null;
+  conflict?: MatterConflict | null;
+}
+
+/** Read-only lookup of one local service date. */
+export interface CommuteDayQuery {
+  service_date: string;
+}
+
+/** Change the arrival time of one day; the server recomputes the whole window. */
+export interface CommuteDayChange {
+  service_date: string;
+  arrival_local_time: string;
+  expected_plan_revision: number;
+  expected_matter_version: number;
+  idempotency_key: string;
+}
+
+/** Recompute and persist one future day without changing the long-term plan. */
+export interface CommuteDayRefresh {
+  service_date: string;
+  idempotency_key: string;
+}
+
 export type CheckStatus =
   | "queued"
   | "running"
@@ -550,6 +602,8 @@ export interface MatterReminder {
   acknowledged_at: string | null;
   cancelled_at: string | null;
   deleted_at?: string | null;
+  /** Relative reminder offset from the linked schedule, in seconds (negative = before). */
+  schedule_offset_seconds?: number | null;
 }
 
 export interface MatterDetail extends MatterSummary {
@@ -557,6 +611,102 @@ export interface MatterDetail extends MatterSummary {
   todos: MatterTodo[];
   progress: MatterProgress[];
   reminders: MatterReminder[];
+  /** Plan id for commute-managed records; never replace it with the matter id. */
+  commute_plan_id?: string | null;
+}
+
+/** Reminder tied to one schedule with a signed offset in seconds. */
+export interface ScheduleRelativeReminder {
+  schedule_id?: string | null;
+  offset_seconds: number;
+}
+
+export interface TodoCreateInput {
+  idempotency_key: string;
+  title: string;
+  matter_id?: string | null;
+  /** Required when `matter_id` points at an existing matter. */
+  expected_matter_version?: number | null;
+  due_at?: string | null;
+  status?: MatterTodoStatus;
+  reminder_at?: string | null;
+  schedule_reminder?: ScheduleRelativeReminder | null;
+}
+
+export interface TodoPatchInput {
+  idempotency_key: string;
+  expected_matter_version: number;
+  title?: string | null;
+  due_at?: string | null;
+  status?: MatterTodoStatus | null;
+  reminder_at?: string | null;
+  schedule_reminder?: ScheduleRelativeReminder | null;
+}
+
+/** Receipt for one independent todo create/update. */
+export interface TodoOperation {
+  applied: boolean;
+  replayed: boolean;
+  change_id: string | null;
+  matter: MatterSummary;
+  todo: MatterTodo;
+  reminders: MatterReminder[];
+}
+
+export interface TodoListResponse {
+  items: MatterTodo[];
+}
+
+export interface ScheduleCreateInput {
+  idempotency_key: string;
+  title: string;
+  starts_at: string;
+  ends_at?: string | null;
+  matter_id?: string | null;
+  expected_matter_version?: number | null;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinate_system?: "gcj02" | "wgs84" | "unknown";
+  location_city?: string | null;
+  location_address?: string | null;
+  location_source?: string | null;
+  location_external_id?: string | null;
+  reminder_at?: string | null;
+  reminder_offset_seconds?: number | null;
+}
+
+export interface SchedulePatchInput {
+  idempotency_key: string;
+  expected_matter_version: number;
+  title?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinate_system?: "gcj02" | "wgs84" | "unknown";
+  location_city?: string | null;
+  location_address?: string | null;
+  location_source?: string | null;
+  location_external_id?: string | null;
+  reminder_at?: string | null;
+  reminder_offset_seconds?: number | null;
+}
+
+/** Receipt for one independent schedule create/update/cancel. */
+export interface ScheduleOperation {
+  applied: boolean;
+  replayed: boolean;
+  change_id: string | null;
+  matter: MatterSummary | null;
+  schedule: MatterSchedule | null;
+  reminders: MatterReminder[];
+  conflict?: MatterConflict | null;
+}
+
+export interface ScheduleListResponse {
+  items: MatterSchedule[];
 }
 
 export interface TodayRoute {
@@ -567,7 +717,7 @@ export interface TodayRoute {
   duration_seconds: number | null;
   mode: "driving" | "walking" | "transit" | null;
   fetched_at: string | null;
-  origin_basis: "user_confirmed" | "previous_schedule" | null;
+  origin_basis: "user_confirmed" | "previous_schedule" | "memory" | null;
 }
 
 export interface TodaySchedule extends MatterSchedule {
@@ -877,10 +1027,12 @@ export type IntakeSource = "chat" | "follow_up";
 export interface FollowUpReference {
   name: string;
   operation_id: string;
-  path_parameters: Record<string, unknown>;
-  query_parameters: Record<string, unknown>;
-  result_pointer: string;
-  match: Record<string, string | number | boolean>;
+  path_parameters?: Record<string, unknown>;
+  query_parameters?: Record<string, unknown>;
+  /** JSON body for read operations such as the commute-day query; may be null. */
+  body?: Record<string, unknown> | null;
+  result_pointer?: string;
+  match?: Record<string, string | number | boolean>;
 }
 
 export interface FollowUpTrigger {
@@ -1044,7 +1196,7 @@ export interface RouteEstimate {
   reason_code: string | null;
   timing_basis: string | null;
   accuracy_notice: string | null;
-  origin_basis: "user_confirmed" | "previous_schedule";
+  origin_basis: "user_confirmed" | "previous_schedule" | "memory";
   origin_schedule_id: string | null;
   schedule_id: string | null;
   origin?: RouteEndpoint | null;
@@ -1091,7 +1243,7 @@ export interface ScheduledRoute {
   fare_cny: number | null;
   fare_kind: string | null;
   fare_notice: string | null;
-  origin_basis: "user_confirmed" | "previous_schedule" | null;
+  origin_basis: "user_confirmed" | "previous_schedule" | "memory" | null;
   origin_schedule_id: string | null;
   fetched_at: string | null;
   requested_depart_at: string | null;
@@ -1220,6 +1372,104 @@ export interface RevertResponse {
   matter: MatterSummary;
   change_id: string;
   reverted_at: string;
+}
+
+/** One stored text from a matter supplement; authorship is always server-assigned. */
+export type SupplementOrigin = "user" | "assistant";
+export type SupplementPurpose =
+  | "original"
+  | "user_revision"
+  | "summary"
+  | "suggestion"
+  | "question";
+export type SupplementAiStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "no_supplement"
+  | "failed"
+  | "unknown";
+export type SupplementClassification = "unknown" | "explanation" | "progress" | "mixed";
+/** Explicit user intent for a linked text; older links may have no type. */
+export type SupplementRelationType = "correction" | "answer";
+/** `related` filters legacy links that were saved without an explicit type. */
+export type SupplementRelationFilter = SupplementRelationType | "related";
+
+/**
+ * One linked text returned on its own or as a relation preview.
+ *
+ * A relation record is never expanded recursively: to see links of a linked
+ * answer, query it with its own supplement and text ids.
+ */
+export interface SupplementRelatedText {
+  text_id: string;
+  supplement_id: string;
+  origin: SupplementOrigin;
+  purpose: SupplementPurpose;
+  text: string;
+  parent_text_id: string | null;
+  relation_type: SupplementRelationType | null;
+  author_user_id: string | null;
+  source_run_id: string | null;
+  accepted_at: string | null;
+  accepted_by_user_id: string | null;
+  created_at: string;
+}
+
+/**
+ * One stored text with direct corrections and answers.
+ *
+ * Previews hold at most five items each; the count fields are the real totals.
+ * `has_answers` only means an answer was received, not that it was accepted,
+ * verified or that the question is resolved.
+ */
+export interface MatterSupplementText extends SupplementRelatedText {
+  corrections: SupplementRelatedText[];
+  answers: SupplementRelatedText[];
+  untyped_relations: SupplementRelatedText[];
+  correction_count: number;
+  answer_count: number;
+  untyped_relation_count: number;
+  has_corrections: boolean;
+  has_answers: boolean;
+  relations_truncated: boolean;
+}
+
+/** One page of relations for a single text, newest first. */
+export interface SupplementRelationsPage {
+  text_id: string;
+  relation_type: SupplementRelationFilter | null;
+  records: SupplementRelatedText[];
+  has_more: boolean;
+  next_before_id: string | null;
+}
+
+/**
+ * One saved supplement and its asynchronous AI result.
+ *
+ * `saved` only describes the user's original text; `ai_status` is separate and
+ * may still be running, empty, failed or unknown after the save succeeded.
+ */
+export interface MatterSupplement {
+  supplement_id: string;
+  matter_id: string;
+  saved: boolean;
+  replayed: boolean;
+  ai_status: SupplementAiStatus;
+  classification: SupplementClassification;
+  analysis_attempt: number;
+  local_run_id: string | null;
+  error_code: string | null;
+  texts: MatterSupplementText[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplementCreateInput {
+  text: string;
+  idempotency_key: string;
+  parent_text_id?: string | null;
+  relation_type?: SupplementRelationType | null;
 }
 
 /** Fields accepted by the email registration endpoint. */

@@ -8,7 +8,7 @@ import { MemoryManagement } from "@/components/mobile/memory-management";
 import { useDemo } from "@/components/mobile/providers";
 import { ConfirmDialog, PageShell, SwitchRow } from "@/components/mobile/ui";
 
-/** Keep demo memories separate from authenticated Nexus management. */
+/** Keep demo memories separate from authenticated Assistant-owned memory management. */
 export default function MemoriesPage() {
   const demo = useDemo();
   const [editing, setEditing] = useState<string | null>(null);
@@ -20,7 +20,7 @@ export default function MemoriesPage() {
   return (
     <PageShell
       title="个人记忆"
-      subtitle="管理个人记忆和 Assistant 用户指令。"
+      subtitle="管理个人记忆和助手的使用偏好。"
       action={
         <Link href={demo.enabled ? "/me/lesson" : "#new-memory"} className="page-bar__action">
           记一条
@@ -41,7 +41,7 @@ export default function MemoriesPage() {
               </p>
             </div>
             <p className="caption" style={{ margin: "6px 0 0" }}>
-              停用后仍保留原记录，但不再用于出门清单等本地建议。修改只影响这次演示会话。
+              停用后记录还在，只是不再用于准备清单；修改只影响这次演示。
             </p>
           </div>
 
@@ -141,7 +141,7 @@ export default function MemoriesPage() {
           </div>
 
           <p className="micro mt-14" style={{ lineHeight: 1.7 }}>
-            演示模式 · 这些经验和修改只保存在当前页面，刷新后恢复。
+            演示模式：经验和修改只留在当前页，刷新后恢复。
           </p>
         </>
       )}

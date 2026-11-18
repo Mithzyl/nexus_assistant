@@ -7,13 +7,15 @@ import { useAuth, useUI } from "@/components/mobile/providers";
 import { EmptyState, ErrorCard, LoadingCard, LoginRequired, ScreenHeader } from "@/components/mobile/ui";
 import { useMatters } from "@/lib/mobile/use-matters";
 import type { MatterSummary } from "@/lib/mobile/api";
+import { matterProgressText } from "@/lib/mobile/matter-draft.mjs";
 
+/** Open a matter with user-facing progress, including older structured-operation records. */
 function MatterCard({ matter }: { matter: MatterSummary }) {
   return (
     <Link href={`/matters/${matter.matter_id}`} className="card matter-card">
       <span className="card-title" style={{ display: "block" }}>{matter.title}</span>
       <span className="matter-card__progress">
-        {matter.latest_progress || "还没有进展记录。"}
+        {matterProgressText(matter.latest_progress, matter.title) || "还没有进展记录。"}
       </span>
       <span className="matter-card__next">
         <ArrowDownRight size={13} />
@@ -33,7 +35,7 @@ export default function MattersPage() {
   const groups: Array<{ status: "active" | "waiting" | "archived"; label: string }> = [
     { status: "active", label: "正在推进" },
     { status: "waiting", label: "等待外部反馈" },
-    { status: "archived", label: "已完成／归档" },
+    { status: "archived", label: "已归档" },
   ];
 
   return (
@@ -106,7 +108,7 @@ export default function MattersPage() {
                   <span className="micro">{rows.length}</span>
                 </div>
                 {rows.length === 0 ? (
-                  <p className="micro matter-group__empty" style={{ padding: "0 var(--m-gutter)" }}>这一组暂无事项。</p>
+                  <p className="micro matter-group__empty" style={{ padding: "0 var(--m-gutter)" }}>这一组还没有事项。</p>
                 ) : (
                   <div className="m-stack-12" style={{ padding: "0 var(--m-gutter)" }}>
                     {rows.map((matter) => <MatterCard key={matter.matter_id} matter={matter} />)}

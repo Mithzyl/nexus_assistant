@@ -84,12 +84,12 @@ export function TodayCommuteCard() {
         </div>
 
         {state === "loading" ? (
-          <p className="today-commute__body">正在同步账号状态…</p>
+          <p className="today-commute__body">正在同步…</p>
         ) : null}
 
         {!signedIn && state !== "loading" ? (
           <>
-            <p className="today-commute__title">登录后查看通勤建议</p>
+            <p className="today-commute__title">登录后查看出行方案</p>
             <p className="today-commute__body">登录账号后，这里会显示常用路线与出发建议。</p>
             <Link href="/login" className="btn btn--primary btn--small mt-10">登录账号</Link>
           </>
@@ -152,13 +152,13 @@ export function TodayCommuteCard() {
                   <CloudSun size={12} strokeWidth={1.5} aria-hidden="true" />
                   <span>{weatherText(current)}</span>
                 </p>
-                <p className="today-commute__note">按常规路况估算。</p>
+                <p className="today-commute__note">按常规路况估算的。</p>
                 <div className="today-commute__foot">
                   <Link href={`/me/commute/${plan.id}`} className="today-commute__link">
                     查看通勤详情
                   </Link>
                   <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
-                    设置
+                    调整计划
                   </Link>
                 </div>
               </>
@@ -168,7 +168,7 @@ export function TodayCommuteCard() {
               <>
                 <div className="today-commute__state-row">
                   <p className="today-commute__title">
-                    {applicability.label === "已过期" ? "当前建议已过期" : "当前建议对应旧设置"}
+                    {applicability.label === "已过期" ? "方案已过期" : "方案对应旧设置"}
                   </p>
                   <span className="today-commute__state">{applicability.label}</span>
                 </div>
@@ -181,7 +181,7 @@ export function TodayCommuteCard() {
                     刷新路线
                   </Link>
                   <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
-                    设置
+                    调整计划
                   </Link>
                 </div>
               </>
@@ -189,14 +189,14 @@ export function TodayCommuteCard() {
 
             {!advisory.loading && !current && !applicability && noAdvisory ? (
               <>
-                <p className="today-commute__title">今天还没有通勤建议</p>
+                <p className="today-commute__title">今天还没有出行方案</p>
                 <p className="today-commute__body">刷新路线后，这里会显示建议出发时间。</p>
                 <div className="today-commute__foot">
                   <Link href={`/me/commute/${plan.id}`} className="today-commute__link">
                     刷新路线
                   </Link>
                   <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
-                    设置
+                    调整计划
                   </Link>
                 </div>
               </>
@@ -211,7 +211,7 @@ export function TodayCommuteCard() {
                     查看通勤详情
                   </Link>
                   <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
-                    设置
+                    调整计划
                   </Link>
                 </div>
               </>

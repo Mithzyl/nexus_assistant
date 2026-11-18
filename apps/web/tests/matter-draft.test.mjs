@@ -14,8 +14,23 @@ import {
   optionConsequences,
   selectedCancelScheduleIds,
   summarizeMatterChange,
+  matterProgressText,
+  reminderDisplayTitle,
   todayChangeSummary,
 } from "../lib/mobile/matter-draft.mjs";
+
+test("schedule-only reminders and legacy progress use actual business objects", () => {
+  assert.equal(reminderDisplayTitle("提醒：讨论"), "提醒：讨论");
+  assert.equal(reminderDisplayTitle("讨论"), "提醒：讨论");
+  assert.equal(matterProgressText("结构化业务请求", "讨论"), "已保存安排：讨论");
+  assert.equal(matterProgressText("用户补充的原文", "讨论"), "用户补充的原文");
+  const summary = summarizeMatterChange({change_type: "create", before: {}, after: {
+    schedule: {title: "讨论", starts_at: "2030-11-10T01:00:00Z"}, reminder_ids: ["reminder-1"],
+    reminders: [{schedule_id: "schedule-1", todo_id: null}], todos: [],
+  }});
+  assert.match(summary, /日程提醒/);
+  assert.doesNotMatch(summary, /待办/);
+});
 
 test("direct schedule draft does not require a matter title", () => {
   const kind = classifyMatterDraft({

@@ -46,7 +46,7 @@ export default function LessonPage() {
             <p className="caption" style={{ margin: "6px 0 0" }}>
               {saved.demo
                 ? "可以在“个人记忆”里编辑或停用；所有改动只存在于当前演示会话。"
-                : "云端目前没有记忆写入功能，所以这句话不会同步到 AI 平台，也不会进入助手记忆。"}
+                : "这句话只留在这里，不会写进助手记忆。"}
             </p>
           </div>
           <div className="mt-14" style={{ display: "grid", gap: 8 }}>

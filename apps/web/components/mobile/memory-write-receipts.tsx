@@ -43,7 +43,7 @@ export function MemoryWriteReceipts({ runId }: { runId: string }) {
         if (alive) setRows(page.items);
       })
       .catch(() => {
-        if (alive) setError("记忆状态暂时无法读取。");
+        if (alive) setError("记忆状态暂时没读到。");
       });
     return () => {
       alive = false;

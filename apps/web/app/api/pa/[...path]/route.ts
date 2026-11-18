@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ALLOWED_ROOTS = new Set([
+  "browser-notifications",
   "asks",
   "memory",
   "data-sources",
@@ -23,7 +24,10 @@ const ALLOWED_ROOTS = new Set([
   "checks",
   "advisories",
   "commute",
+  "places",
   "matters",
+  "todos",
+  "schedules",
   "follow-ups",
   "today",
   "reminders",
@@ -41,6 +45,7 @@ const FORWARDED_HEADERS = [
 
 const SEGMENT = /^[A-Za-z0-9._~-]{1,128}$/;
 
+/** Forward authorized calls, rejecting URL query strings on sensitive place lookup routes. */
 async function proxy(request: NextRequest, segments: string[]) {
   const crossSite = sameOriginFailure(request);
   if (crossSite) return crossSite;
@@ -50,6 +55,12 @@ async function proxy(request: NextRequest, segments: string[]) {
   }
   if (segments.some((segment) => !SEGMENT.test(segment) || segment === "." || segment === "..")) {
     return errorResponse(400, "invalid_request", "请求路径无效。");
+  }
+
+  const placeLookup = segments[0] === "places" ||
+    (segments[0] === "commute" && segments[1] === "places");
+  if (placeLookup && request.nextUrl.search) {
+    return errorResponse(422, "unexpected_query_parameters", "地点查询参数必须放在 JSON 请求体中。");
   }
 
   const token = readToken();

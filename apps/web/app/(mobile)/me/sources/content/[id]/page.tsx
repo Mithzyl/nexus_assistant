@@ -32,11 +32,11 @@ export default function ContentDetailPage({ params }: { params: { id: string } }
   const data = item.data;
 
   return (
-    <PageShell title="云端内容" subtitle={data ? `${KIND_LABEL[data.kind]} · ${data.source_display_name}` : undefined}>
+    <PageShell title="已同步内容" subtitle={data ? `${KIND_LABEL[data.kind]} · ${data.source_display_name}` : undefined}>
       {item.loading ? <LoadingCard label="正在读取内容…" /> : null}
       {item.error ? <ErrorCard message={errorText(item.error)} onRetry={item.reload} /> : null}
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后才能查看云端内容" body="内容副本属于云端上的账号。">
+        <EmptyState title="登录后查看已同步内容" body="这些内容属于你的账号。">
           <Link href="/login" className="btn btn--primary">登录</Link>
         </EmptyState>
       ) : null}
@@ -74,12 +74,12 @@ export default function ContentDetailPage({ params }: { params: { id: string } }
             </div>
           ) : (
             <Notice>
-              正文为空。可能是字段未授权，也可能这条记录本身没有正文；两种情况不能互相推断。
+              这条没有正文：可能没同步正文，也可能原文就没有。
             </Notice>
           )}
 
           <p className="micro mt-14" style={{ lineHeight: 1.7 }}>
-            这是云端上保存的副本。这里不能编辑设备上的原始记录，也不会写回系统日历、提醒事项或备忘录。
+            这是同步过来的副本；要修改请回到手机上的原始记录。
           </p>
           <Link href="/me/sources" className="btn btn--secondary mt-14">
             返回内容来源

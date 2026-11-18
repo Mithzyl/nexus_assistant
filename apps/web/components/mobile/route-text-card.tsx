@@ -144,6 +144,7 @@ export function RouteTextCard({
   const missingOrigin =
     !originLabel ||
     originLabel === "出发地待补充" ||
+    originLabel === "还没填出发地" ||
     originLabel === "出发地未提供";
   if (missingOrigin && (state === "unverified" || state === "unavailable")) {
     return (
@@ -167,7 +168,7 @@ export function RouteTextCard({
         <div className="grow">
           <p className="route-text-card__eyebrow">路线</p>
           <p className="route-text-card__title">
-            {originLabel || "出发地待补充"} <span aria-hidden="true">→</span>{" "}
+            {originLabel || "还没填出发地"} <span aria-hidden="true">→</span>{" "}
             {destinationLabel || "目的地待确认"}
           </p>
         </div>
@@ -180,9 +181,9 @@ export function RouteTextCard({
         <span>
           {arrivalAt
             ? `${arrivalLabel} ${formatDateTime(arrivalAt)}`
-            : `${arrivalLabel}时间待补充`}
+            : `${arrivalLabel}时间未定`}
         </span>
-        <span>{durationSeconds !== null && durationSeconds !== undefined ? formatDuration(durationSeconds) : "时间待补充"}</span>
+        <span>{durationSeconds !== null && durationSeconds !== undefined ? formatDuration(durationSeconds) : "路程耗时未记录"}</span>
         {mode !== "transit" &&
         distanceMeters !== null &&
         distanceMeters !== undefined ? (
@@ -226,7 +227,7 @@ export function RouteTextCard({
           {timingNotice ? <p>{timingNotice}</p> : null}
           {accuracyNotice ? <p>{accuracyNotice}</p> : null}
           {state === "verified" ? (
-            <p>路线结果仅供参考。</p>
+            <p>出发前可以再刷新一次。</p>
           ) : null}
           {state === "verified" && notice ? <p>{notice}</p> : null}
         </details>
@@ -234,7 +235,7 @@ export function RouteTextCard({
       {state !== "verified" && notice ? (
         <p className="route-text-card__notice">{notice}</p>
       ) : null}
-      {(!originLabel || originLabel === "出发地待补充") &&
+      {(!originLabel || originLabel === "还没填出发地") &&
       (state === "unverified" || state === "unavailable") ? (
         <p className="route-text-card__notice">
           补上出发地后，就能算出出门时间和到达时间。
@@ -274,7 +275,7 @@ export function RouteTextCard({
             <Copy size={13} /> {copied ? "已复制地址" : "复制地址"}
           </button>
         ) : (
-          <span className="micro"><MapPin size={12} /> 地点尚未确认，暂不能打开地图</span>
+          <span className="micro"><MapPin size={12} /> 地点还没确认；确认后可以打开地图</span>
         )}
       </div>
     </section>

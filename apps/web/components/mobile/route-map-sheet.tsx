@@ -106,7 +106,7 @@ export function RouteMapSheet({
         setError(
           caught instanceof Error
             ? caught.message
-            : "暂时无法读取云端保存的路线。",
+            : "暂时读不到已保存的路线。",
         );
       })
       .finally(() => {
@@ -162,7 +162,7 @@ export function RouteMapSheet({
   return (
     <Sheet title={title} open={open} onClose={onClose}>
       <div className="route-map-sheet">
-        {loading ? <LoadingCard label="正在读取云端保存的路线…" /> : null}
+        {loading ? <LoadingCard label="正在读取已保存的路线…" /> : null}
         {error ? (
           <div className="notice notice--red" role="alert">
             <strong>路线图暂时无法读取</strong>
@@ -172,7 +172,7 @@ export function RouteMapSheet({
               className="link-button"
               onClick={() => setReloadKey((current) => current + 1)}
             >
-              <RefreshCw size={13} /> 重新读取云端路线
+              <RefreshCw size={13} /> 重新读取路线
             </button>
           </div>
         ) : null}
@@ -208,7 +208,7 @@ export function RouteMapSheet({
               </p>
               {mode === "transit" ? (
                 <p>
-                  公交步行段与乘车段的分段线条需要云端保留对应形状后才能显示。
+                  公交步行段与乘车段的分段线条，要等账号里保存了对应形状才能显示。
                 </p>
               ) : null}
             </div>
@@ -226,7 +226,7 @@ export function RouteMapSheet({
           <>
             <div className="route-map-sheet__source" role="status">
               <Info size={15} aria-hidden="true" />
-              地图使用云端保存的真实路线形状，不在浏览器再次查询或计算路线。
+              地图显示的是已保存的真实路线形状，不会在浏览器里重新查询。
             </div>
             <div className="route-map-sheet__legend" aria-label="路线线条说明">
               {hasDriving ? (

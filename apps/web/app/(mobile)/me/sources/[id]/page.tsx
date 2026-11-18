@@ -90,7 +90,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
       );
       source.setData(updated);
     } catch (caught) {
-      setActionError(caught instanceof ApiError ? caught.message : "字段授权未能更新。");
+      setActionError(caught instanceof ApiError ? caught.message : "可同步的信息没能更新。");
     } finally {
       setFieldSaving(null);
     }
@@ -110,7 +110,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
         source.setData(
           source.data ? { ...source.data, item_count: 0, last_sync_at: null } : source.data,
         );
-        setActionError(`已删除 ${result.deleted} 条已上传副本，来源与授权保留。`);
+        setActionError(`已删除 ${result.deleted} 条副本；来源和授权保留。`);
       } else if (confirm === "source") {
         await apiRequest<void>(`/api/pa/data-sources/${params.id}`, { method: "DELETE" });
         router.replace("/me/sources");
@@ -169,7 +169,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
             />
             <hr className="divider" />
             <SwitchRow
-              title="允许云端助手读取"
+              title="允许助手读取"
               detail="关闭后助手工具不再读取该来源；你仍可在这里查询已有副本。"
               checked={data.assistant_enabled}
               busy={saving === "assistant"}
@@ -187,10 +187,10 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
 
           <div className="card mt-14">
             <p className="card-title" style={{ fontSize: 15 }}>
-              允许上传的字段
+              允许同步的信息
             </p>
             <p className="caption" style={{ margin: "4px 0 10px" }}>
-              修改会作用于这个来源之后的上传；撤权不会删除设备上的原始数据，云端会清理不再允许的副本字段。
+              修改只影响之后的同步；手机上原来的内容不会被改动。
             </p>
             <div style={{ display: "grid", gap: 4 }}>
               {FIELDS[data.source_type].map((field) => {
@@ -217,37 +217,36 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
 
           <div className="card mt-14">
             <p className="card-title" style={{ fontSize: 15 }}>
-              范围 / scope
+              可查看的范围
             </p>
             <p className="caption" style={{ margin: "4px 0 10px" }}>
-              浏览器无法枚举你设备上的日历、提醒列表或笔记本，因此这里只能查看已授权的范围；
-              收窄或恢复范围需要在具备原生选择的客户端完成。
+              这里只显示你已经授权的范围；要调整，请在手机上操作。
             </p>
             {data.scope_keys.length === 0 ? (
               <p className="caption" style={{ margin: 0 }}>
-                没有列出范围；来源仍可能在等待首次上传。
+                还没设置范围；上传后可以在这里查看。
               </p>
             ) : (
               <p className="caption" style={{ margin: 0 }}>
-                当前已授权 {data.scope_keys.length} 个范围。具体范围由快捷指令或原生客户端选择，网页不显示内部范围标识。
+                当前已授权 {data.scope_keys.length} 个范围。具体范围在手机上选择，这里只显示数量。
               </p>
             )}
           </div>
 
           <Notice tone="amber" title="删除分两层">
-            删除已上传副本会保留来源和授权，之后仍可重新同步；删除来源会连同全部副本一起移除。两者都不会影响设备上的原始数据。
+            删除副本会保留来源和授权，之后仍可重新同步；删除来源会连同全部副本一起移除。两者都不会影响设备上的原始数据。
           </Notice>
 
           <div className="mt-14" style={{ display: "grid", gap: 10 }}>
             <Link href="/me/sources" className="btn btn--secondary">
-              去云端内容里查看
+              去已同步内容里查看
             </Link>
             <button
               type="button"
               className="btn btn--secondary"
               onClick={() => setConfirm("items")}
             >
-              删除已上传副本
+              删除副本
             </button>
             <button
               type="button"
@@ -262,10 +261,10 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
 
       <ConfirmDialog
         open={confirm !== null}
-        title={confirm === "items" ? "删除已上传副本？" : "删除整个来源？"}
+        title={confirm === "items" ? "删除副本？" : "删除整个来源？"}
         body={
           confirm === "items"
-            ? "只删除云端上已上传的副本；来源登记与授权保留，之后仍可重新上传。不会影响设备上的原始数据。"
+            ? "只删除账号里的副本；授权保留，之后还能再传。手机上的内容不受影响。"
             : "删除来源与它的全部副本，之后需要重新登记来源并上传。不会影响设备上的原始数据。"
         }
         confirmLabel={confirm === "items" ? "删除副本" : "删除来源"}

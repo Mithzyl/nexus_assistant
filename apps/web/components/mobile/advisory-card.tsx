@@ -57,7 +57,7 @@ export function AdvisoryCard({
     baseBuffer > 0 &&
     weatherExtra > 0 &&
     Math.abs(baseBuffer + weatherExtra - bufferSeconds) <= 90
-      ? `含日常 ${minuteLabel(baseBuffer)}、雨天 ${minuteLabel(weatherExtra)}`
+      ? `日常 ${minuteLabel(baseBuffer)} + 雨天 ${minuteLabel(weatherExtra)}`
       : null;
 
   const weatherBits: string[] = [];
@@ -71,7 +71,7 @@ export function AdvisoryCard({
   ) {
     weatherBits.push(`降雨概率 ${Math.round(weather.precipitation_probability_max * 100)}%`);
   }
-  const weatherText = weatherBits.length > 0 ? weatherBits.join(" · ") : "天气数据暂缺";
+  const weatherText = weatherBits.length > 0 ? weatherBits.join(" · ") : "暂无天气";
 
   const resultBits: string[] = [];
   if (eta !== null) resultBits.push(`车程${formatDuration(eta)}`);
@@ -80,8 +80,8 @@ export function AdvisoryCard({
   const weatherBufferFits = weatherExtra > 0 && bufferSeconds >= weatherExtra;
   const note =
     weatherBufferFits
-      ? `按常规路况估算，已包含 ${minuteLabel(weatherExtra) ?? "部分"}雨天缓冲。`
-      : "按常规路况估算。";
+      ? `按常规路况估算，已经为你多留了 ${minuteLabel(weatherExtra) ?? "一会儿"}。`
+      : "按常规路况估算，出发前会再核对一次。";
 
   return (
     <>

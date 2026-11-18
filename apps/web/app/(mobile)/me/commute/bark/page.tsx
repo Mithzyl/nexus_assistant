@@ -157,7 +157,7 @@ export default function BarkPage() {
             ) : null}
             {data.last_test_at ? (
               <p className="micro" style={{ margin: "6px 0 0" }}>
-                上次测试：{data.last_test_status || "未知"} · {formatDateTime(data.last_test_at)}
+                上次测试：{data.last_test_status ? ({ ok: "已发送", sent: "已发送", success: "已发送", failed: "没发出去", error: "没发出去" } as Record<string, string>)[data.last_test_status] ?? "已记录" : "还没测过"} · {formatDateTime(data.last_test_at)}
               </p>
             ) : null}
           </div>
@@ -202,7 +202,7 @@ export default function BarkPage() {
                   ? "Bark 已接受这次请求"
                   : testResult.status === "failed"
                     ? "测试发送失败"
-                    : "测试结果暂不确定"}
+                    : "还没收到测试结果"}
               </p>
               <p className="caption" style={{ margin: "4px 0 0" }}>
                 {testResult.status === "accepted"

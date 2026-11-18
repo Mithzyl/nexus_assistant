@@ -211,6 +211,16 @@ function matterSummary(matter) {
   return `${matter.title || "事项"}${matter.next_step ? ` · 下一步：${matter.next_step}` : ""}`;
 }
 
+/** Keep saved titles intact when a backend-generated reminder already has its display prefix. */
+export function reminderDisplayTitle(title) {
+  return /^提醒[：:]/u.test(title || "") ? title : `提醒：${title || "未命名提醒"}`;
+}
+
+/** Present the legacy internal placeholder without rewriting stored user or business history. */
+export function matterProgressText(text, title) {
+  return text === "结构化业务请求" ? `已保存安排：${title || "事项"}` : text;
+}
+
 /** Describe the recorded result using only fields present in the change. */
 export function summarizeMatterChange(change) {
   if (!change) return "事项有变更";
@@ -283,7 +293,12 @@ export function summarizeMatterChange(change) {
     lines.push(`完成 ${after.completed_todo_ids.length} 项待办`);
   }
   if (before.reminder_ids?.length || after.reminder_ids?.length) {
-    lines.push("提醒随待办时间一并更新");
+    const reminders = after.reminders || [];
+    const scheduleReminder = reminders.some(item => item.schedule_id && !item.todo_id)
+      || (after.schedule && !(after.todos || []).length && !reminders.some(item => item.todo_id));
+    const todoReminder = reminders.some(item => item.todo_id);
+    lines.push(scheduleReminder && !todoReminder ? "日程提醒已保存"
+      : todoReminder && !scheduleReminder ? "待办提醒已保存" : "关联提醒已更新");
   }
   if (lines.length === 0) {
     if (change.change_type === "create") lines.push("创建事项和已确认安排");

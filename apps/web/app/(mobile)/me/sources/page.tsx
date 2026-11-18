@@ -70,7 +70,7 @@ export default function SourcesPage() {
     <div style={{ paddingBottom: 24 }}>
       <PageShell
         title="内容来源"
-        subtitle="只读取已同步到云端的副本；浏览器不能读取系统日历或提醒事项。"
+        subtitle="这里显示已经同步到账号的内容；新内容从手机上传。"
         action={
           <button
             type="button"
@@ -83,8 +83,8 @@ export default function SourcesPage() {
       >
         {!signedIn && state !== "loading" ? (
           <EmptyState
-            title="登录后查看通勤计划内容来源"
-            body="登录账号后可以查看内容来源与同步状态。"
+            title="登录生活助手"
+            body="跨设备查看内容来源与同步状态。"
           >
             <Link href="/login" className="btn btn--primary">
               登录账号
@@ -124,7 +124,7 @@ export default function SourcesPage() {
                 {!sources.loading && !sources.error && sources.data?.length === 0 ? (
                   <EmptyState
                     title="还没有内容来源"
-                    body="iPhone 上的日历、提醒事项和笔记只有在你主动选择并上传后才会出现在这里。浏览器只能读取已有副本。"
+                    body="日历、提醒事项和笔记会在你主动上传后出现在这里。"
                   >
                     <Link href="/me/sources/import" className="btn btn--secondary">
                       导入一条文本笔记
@@ -162,7 +162,7 @@ export default function SourcesPage() {
                         {source.assistant_enabled ? "助手可读" : "助手不可读"}
                       </Pill>
                       <span className="grow" />
-                      <span className="micro">{source.upload_fields.length} 个字段</span>
+                      <span className="micro">{source.upload_fields.length} 项可同步信息</span>
                     </span>
                     {source.last_error_code ? (
                       <span className="micro red" style={{ display: "block", marginTop: 8 }}>
@@ -173,7 +173,7 @@ export default function SourcesPage() {
                 ))}
                 {signedIn && (sources.data?.length ?? 0) > 0 ? (
                   <p className="micro" style={{ lineHeight: 1.6 }}>
-                    停止同步只停止后续上传，不删除已有副本；助手授权只决定云端助手能否读取，不影响你在这里查看。
+                    停止同步只是不再上传新内容；已有副本和这里的查看不受影响。
                   </p>
                 ) : null}
               </div>
@@ -256,7 +256,7 @@ export default function SourcesPage() {
                   ))}
                 </div>
                 <p className="micro mt-12" style={{ lineHeight: 1.6 }}>
-                  搜索只覆盖当前账号、当前有效范围、未删除且字段仍获授权的副本。未出现的结果不代表被删除。
+                  搜索范围是本账号已授权的内容；没搜到不代表已被删除。
                 </p>
               </div>
             )}

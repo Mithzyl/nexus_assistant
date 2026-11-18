@@ -57,7 +57,7 @@ export default function ImportNotePage() {
     try {
       const text = await file.text();
       if (text.length > MAX_BODY) {
-        setError("文件内容超过 100000 个字符，云端不接受更大的正文。");
+        setError("内容太长，最多 100000 个字。");
         return;
       }
       const heading = /^#\s+(.+)$/m.exec(text);
@@ -124,7 +124,7 @@ export default function ImportNotePage() {
         throw new ApiError(
           409,
           "sync_disabled",
-          "这个来源已停止上传。请先在来源详情里重新开启“继续上传”。",
+          "这个来源已停止上传，先在来源详情里点“继续上传”。",
           true,
         );
       }
@@ -167,10 +167,10 @@ export default function ImportNotePage() {
   return (
     <PageShell
       title="导入笔记"
-      subtitle="只支持纯文本与 Markdown；确认后才会写入云端。"
+      subtitle="支持纯文本与 Markdown；确认后才保存到账号。"
     >
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后导入笔记" body="登录账号后可以导入笔记。">
+        <EmptyState title="登录生活助手" body="跨设备保存你的笔记。">
           <Link href="/login" className="btn btn--primary">
             登录账号
           </Link>
@@ -183,7 +183,7 @@ export default function ImportNotePage() {
             <div className="card card--green">
               <p className="card-title green" style={{ fontSize: 16 }}>
                 {result.created > 0
-                  ? "已保存到云端"
+                  ? "已保存"
                   : result.updated > 0
                     ? "已更新已有副本"
                     : "内容已存在，没有新增副本"}
@@ -199,10 +199,10 @@ export default function ImportNotePage() {
                   href={sourceId ? `/me/sources/${sourceId}` : "/me/sources"}
                   className="btn btn--secondary"
                 >
-                  查看来源与字段授权
+                  查看来源与授权
                 </Link>
                 <Link href="/me/sources" className="btn btn--secondary">
-                  去云端内容搜索
+                  去已同步内容里搜索
                 </Link>
                 <button
                   type="button"
@@ -288,7 +288,7 @@ export default function ImportNotePage() {
 
               <div className="mt-14">
                 <PrimaryButton onClick={() => void submit()} busy={busy} disabled={busy}>
-                  {busy ? "正在写入云端…" : "确认导入"}
+                  {busy ? "正在保存…" : "确认导入"}
                 </PrimaryButton>
               </div>
               <div className="mt-10">
@@ -305,7 +305,7 @@ export default function ImportNotePage() {
           </Notice>
           <p className="micro mt-12" style={{ lineHeight: 1.7 }}>
             导入后会创建一个独立的“浏览器导入笔记”来源（范围键以当前设备安装 ID 区分），
-            不会与 iPhone 上传的日历、提醒或笔记混在一起。默认助手不可读，可在来源详情里单独授权。
+            导入的笔记单独存放；是否让助手读取，可以在来源详情里授权。
           </p>
         </>
       ) : null}

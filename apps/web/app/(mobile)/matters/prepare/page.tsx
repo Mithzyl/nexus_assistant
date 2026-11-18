@@ -109,12 +109,12 @@ export default function PreparePage() {
         </Link>
       </div>
 
-      <p className="micro mt-8">由你手动记录体验，不会判断你是否已经观影。</p>
+      <p className="micro mt-8">体验由你手动记录，助手不会替你判断。</p>
 
       {prepared === items.length ? (
         <div className="notice notice--green mt-12">
           <strong>清单已完成</strong>
-          <p style={{ margin: "4px 0 0" }}>勾选只记录在本地，需要你自己带好东西。</p>
+          <p style={{ margin: "4px 0 0" }}>勾选只记在本机；东西还是要自己带好。</p>
         </div>
       ) : null}
     </PageShell>

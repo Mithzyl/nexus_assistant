@@ -30,10 +30,10 @@ export default function LabPage() {
   };
 
   return (
-    <PageShell title="实验室" subtitle="概念预览与旧版演示，不进入正式时间线" fallbackHref="/me">
+    <PageShell title="实验室" subtitle="概念预览与旧版演示，独立于正式数据" fallbackHref="/me">
       <div className="m-stack-18" style={{ padding: "0 var(--m-gutter)" }}>
         <Notice title="概念预览" tone="amber">
-          这里的内容只在本机演示，不会同步到账号，也不会进入正式的今天或事项。
+          实验室内容只在本机演示，和正式数据分开。
         </Notice>
 
         <section>
@@ -41,7 +41,7 @@ export default function LabPage() {
           <div className="card">
             <p className="card-title" style={{ fontSize: 16 }}>事项、日程与冲突调整</p>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              用本机示例试试分组、详情、补充进展和冲突调整；正式事项请回到“事项”页。
+              用本机示例试试分组、详情、补充内容和冲突调整；正式事项请回到“事项”页。
             </p>
             <div className="m-stack-8 mt-12">
               <button type="button" className="btn btn--primary" onClick={() => {
@@ -66,7 +66,7 @@ export default function LabPage() {
             <p className="micro" style={{ margin: "10px 0 0" }}>
               {demo.enabled
                 ? `本机预览有 ${plan.matters.length} 条记录。删除或停止后，重置可恢复示例。`
-                : "开启预览后会生成三条本机示例；不会同步到账号。"}
+                : "开启后会生成三条本机示例，只留在这台设备。"}
             </p>
           </div>
         </section>
@@ -86,7 +86,7 @@ export default function LabPage() {
             ))}
           </div>
           <p className="micro" style={{ margin: "8px 0 0" }}>
-            这些示例只在这里出现，不会混入正式事项。
+            示例只在这里出现，和正式事项分开。
           </p>
         </section>
 

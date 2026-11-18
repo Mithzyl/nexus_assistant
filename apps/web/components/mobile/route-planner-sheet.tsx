@@ -15,21 +15,21 @@ import { Sheet } from "./ui";
 /** Translate server route reasons into user-facing recovery guidance. */
 function routeUnavailableMessage(reasonCode: string | null): string {
   if (reasonCode === "coordinate_system_mismatch") {
-    return "起点和目的地的坐标来源不兼容，请重新确认地点。";
+    return "起点和目的地的位置对不上，重新选一下地点。";
   }
   if (reasonCode === "transit_city_required") {
-    return "公交路线需要明确城市，请补充城市后再测算。";
+    return "公交路线要知道城市，补一下城市再算。";
   }
   if (reasonCode === "amap_timeout") {
-    return "路线服务响应超时，请稍后重试。";
+    return "路线查得有点慢，稍后再试。";
   }
   if (reasonCode === "amap_rate_limited") {
-    return "路线查询次数暂时达到服务限制，请稍后再试。";
+    return "今天查得有点频繁，稍后再试。";
   }
   if (reasonCode === "route_provider_unavailable") {
-    return "路线服务当前不可用，请稍后重试。";
+    return "路线暂时用不了，稍后再试。";
   }
-  return "路线服务暂时无法返回结果，请稍后重试。";
+  return "暂时没查到路线，稍后再试。";
 }
 
 /** Choose one origin explicitly, then request one server-side route estimate. */
@@ -105,12 +105,12 @@ export function RoutePlannerSheet({
       if (requestId !== searchRequestId.current) return;
       setCandidates(result.candidates);
       if (result.candidates.length === 0) {
-        setError("没有找到候选，请补充城市或更详细的地址。");
+        setError("没找到，补一下城市或更具体的地址。");
       }
     } catch (caught) {
       if (requestId !== searchRequestId.current) return;
       setCandidates([]);
-      setError(caught instanceof Error ? caught.message : "起点查询失败。");
+      setError(caught instanceof Error ? caught.message : "这次没查到起点。");
     } finally {
       if (requestId === searchRequestId.current) setBusy(null);
     }
@@ -118,7 +118,7 @@ export function RoutePlannerSheet({
 
   const estimate = async () => {
     if (!schedule || !hasDestinationCoordinates) {
-      setError("目的地还没有确认坐标，请先在日程中确认地点。");
+      setError("目的地还没有准确定位，先在日程里确认地点。");
       return;
     }
     if (originMode === "previous" && !originScheduleId) {
@@ -169,13 +169,13 @@ export function RoutePlannerSheet({
         (originMode === "previous" &&
           result.origin_schedule_id !== originScheduleId)
       ) {
-        setError("云端返回的路线关联与当前日程或起点不一致，请刷新后重试。");
+        setError("路线和这条日程没对上，刷新后再试。");
         return;
       }
       await onEstimated(schedule.schedule_id, result);
       onClose();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "路线测算失败。");
+      setError(caught instanceof Error ? caught.message : "这次没算出路线。");
     } finally {
       setBusy(null);
     }
@@ -338,7 +338,7 @@ export function RoutePlannerSheet({
 
           {!hasDestinationCoordinates ? (
             <div className="notice notice--amber">
-              目的地还没有确认坐标，请先返回日程编辑并确认地点。
+              目的地还没有准确定位，回日程里确认地点再算。
             </div>
           ) : null}
           {error ? <p className="danger-text">{error}</p> : null}
@@ -348,11 +348,11 @@ export function RoutePlannerSheet({
             onClick={() => void estimate()}
             disabled={busy !== null || !hasDestinationCoordinates}
           >
-            {busy === "estimate" ? "正在测算…" : "确认起点并测算路线"}
+            {busy === "estimate" ? "正在测算…" : "测算路线"}
           </button>
           <p className="micro" style={{ margin: 0 }}>
             <MapPin size={12} style={{ display: "inline", verticalAlign: "-2px" }} />{" "}
-            只有你选定的起点会发送给云端路线服务，不会自动联系外部地图。
+            只拿你选的起点去查路线，不会读手机定位。
           </p>
         </div>
       ) : null}
