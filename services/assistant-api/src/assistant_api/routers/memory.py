@@ -109,12 +109,19 @@ async def mutate_business_memory(payload: AgentMemoryCommand, request: Request, 
 
 @router.get('/operations/{operation_id}')
 async def memory_operation(operation_id: str, db: DatabaseSession, user: CurrentUser):
-    """Expose only the owner's persisted deferred result, without encrypted request contents."""
+    """Return the owned write receipt and whether its applied revision can still be undone."""
     from sqlalchemy import select
-    from assistant_api.models import MemoryOperation
+    from assistant_api.models import MemoryEntry, MemoryOperation
     from assistant_api.core.errors import NotFoundError
     row=await db.scalar(select(MemoryOperation).where(MemoryOperation.operation_id==operation_id,
         MemoryOperation.user_id==user.user_id))
     if row is None:
         raise NotFoundError('memory_operation_not_found','未找到记忆处理记录。')
-    return {'operation_id':row.operation_id,'status':row.status,'result':row.result_json,'error_code':row.error_code}
+    result = row.result_json
+    can_undo = False
+    if row.status == 'succeeded' and result and result.get('entry_id') and result.get('applied_version', 0) > 1:
+        version = await db.scalar(select(MemoryEntry.entry_version).where(
+            MemoryEntry.entry_id == result['entry_id'], MemoryEntry.user_id == user.user_id))
+        can_undo = version == result['applied_version']
+    return {'operation_id':row.operation_id,'status':row.status,'result':result,
+            'error_code':row.error_code,'can_undo':can_undo}

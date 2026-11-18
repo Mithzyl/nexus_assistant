@@ -24,7 +24,7 @@ from assistant_api.services.api_operations import OperationCatalog, OperationDec
 
 
 def response_for(row: NexusRun) -> dict:
-    """Return the durable public result without dispatching any operation on reads."""
+    """Project the durable result and the IDs of actual memory writes recorded for this chat."""
     if (row.context_json or {}).get('caller_processed'):
         from assistant_api.services.agent_responses import final_projection
         flow = row.context_json['api_flow']
@@ -41,6 +41,17 @@ def response_for(row: NexusRun) -> dict:
                 result.update(outcome='failed', error={'code': 'final_output_invalid', 'message': '最终结果格式无效。', 'retryable': False})
         elif row.status in {'failed', 'cancelled', 'unknown'}:
             result['outcome'] = row.status
+        memory_operation_ids = dict.fromkeys(
+            receipt['data']['operation_id']
+            for receipt in flow.get('receipts', [])
+            if receipt.get('operation_id') in {'save_business_memory_fact', 'mutate_business_memory'}
+            and receipt.get('status') == 'succeeded'
+            and isinstance(receipt.get('data'), dict)
+            and isinstance(receipt['data'].get('operation_id'), str)
+            and receipt['data']['operation_id']
+        )
+        if memory_operation_ids:
+            result['pending_context']['memory_operation_ids'] = list(memory_operation_ids)
         return result
     resolution = copy.deepcopy((row.context_json or {}).get('unified_intake_result') or {})
     # Old pending calls remain read-only history; opening a page cannot dispatch them.

@@ -169,7 +169,8 @@ class MemoryStore:
             'status':entry.status, 'applied_version':entry.entry_version}
 
     async def mutate_application_memory(self, user_id, command):
-        """Commit one encrypted request/result atomically; identical keys replay and changed requests conflict."""
+        """Commit the change and its receipt together, returning the operation ID for chat writes."""
+        local_run_id = (command.get('_source') or {}).get('local_run_id')
         async with self.factory() as db, db.begin():
             await self.lock_scope(db,user_id)
             existing = await db.scalar(select(MemoryOperation).where(MemoryOperation.user_id==user_id,
@@ -181,12 +182,18 @@ class MemoryStore:
                 if result and result.get('entry_id') and existing.status=='succeeded':
                     entry = await db.get(MemoryEntry,result['entry_id'])
                     result.update(version=entry.entry_version,entry_version=entry.entry_version,status=entry.status)
+                    if local_run_id:
+                        result['operation_id'] = existing.operation_id
                 return result
             result = await self.apply(db,user_id,command)
-            db.add(MemoryOperation(user_id=user_id,key=command['key'],status='succeeded',
-                request_body=self.encrypt(user_id,command),result_json=result,completed_at=datetime.now(UTC)))
+            operation = MemoryOperation(user_id=user_id,key=command['key'],status='succeeded',
+                local_run_id=local_run_id, request_body=self.encrypt(user_id,command),
+                result_json=result,completed_at=datetime.now(UTC))
+            db.add(operation)
+            if local_run_id:
+                await db.flush()
+                return {**result, 'operation_id': operation.operation_id}
             return result
-
 
 
 async def agent_command(db, store, user, local_run_id, value, *, key):
