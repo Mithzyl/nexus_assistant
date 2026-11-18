@@ -533,7 +533,7 @@ export default function TodayPage() {
       <section style={{ padding: "0 var(--m-gutter)" }}>
         <SectionHeading title="最近整理" trailing="本机暂存" />
         {records.length === 0 ? (
-          <EmptyState title="还没有暂存内容" body="交给助手整理或随手记一条，内容会出现在这里。" />
+          <EmptyState title="还没有暂存内容" body="随手记的发送结果可以在「问助手」查看。" />
         ) : (
           <div className="list-card">
             {records.slice(0, 5).map((record, index) => (
