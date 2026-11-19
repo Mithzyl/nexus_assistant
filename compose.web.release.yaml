@@ -1,0 +1,24 @@
+services:
+  web:
+    image: ${ASSISTANT_WEB_RELEASE_IMAGE:?}
+    build: {context: ., dockerfile: apps/web/Dockerfile}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    environment:
+      PA_API_URL: ${ASSISTANT_WEB_API_URL:?}
+    tmpfs:
+      - /tmp
+      - /app/apps/web/.next/cache:uid=1000,gid=1000,mode=0700
+    ports:
+      - "127.0.0.1:${ASSISTANT_WEB_RELEASE_PORT:-3001}:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://127.0.0.1:3000/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
