@@ -12,7 +12,7 @@ from starlette.requests import Request
 SAFE_CODES = frozenset({
     'invalid_request', 'internal_error', 'not_found', 'method_not_allowed', 'http_error',
     'unauthenticated', 'registration_disabled', 'invalid_invite_code', 'recommendation_changed',
-    'conflict_detected', 'idempotency_key_reused', 'nexus_timeout', 'nexus_unavailable',
+    'conflict_detected', 'commute_location_incomplete', 'idempotency_key_reused', 'nexus_timeout', 'nexus_unavailable',
     'nexus_protocol_error', 'nexus_application_unauthenticated', 'nexus_permission_denied',
     'nexus_resource_not_found', 'nexus_conflict', 'nexus_invalid_request', 'rate_limited',
     'recommendation_not_found', 'recommendation_target_not_found',

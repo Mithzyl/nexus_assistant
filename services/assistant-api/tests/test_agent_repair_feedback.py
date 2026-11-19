@@ -4,6 +4,7 @@ Run: .venv/bin/python -m pytest tests/test_agent_repair_feedback.py
 Only this file's callback, transaction and lost-response scenarios are exercised.
 """
 import json
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import httpx
@@ -11,9 +12,13 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import func, select
 
+from assistant_api.commute.providers.mock import MockEtaProvider, MockPlaceProvider
 from assistant_api.main import create_app
-from assistant_api.models import Matter, MatterDraft, MatterTodo, NexusRun, ScheduleEvent
-from assistant_api.services import agent_responses
+from assistant_api.models import (
+    CommuteInstance, CommutePlan, Matter, MatterDraft, MatterTodo, NexusRun,
+    ScheduleEvent, ScheduleRouteResult,
+)
+from assistant_api.services import agent_responses, commute_lifecycle
 from assistant_api.services.api_operations import OperationCatalog
 from assistant_api.services.operation_intake import workflow_configuration
 from conftest import FakeNexus, auth, build_settings, login, seed_user, tool_auth
@@ -59,6 +64,81 @@ def proposed(operation, body, **fields):
     """Keep complete model-authored arguments and summary in each callback proposal."""
     return {'decision': 'call', 'call': {'operation_id': operation, 'body': body,
         'summary': '按用户请求保存，冲突时不擅自修改其他安排', **fields}}
+
+
+async def test_commute_refresh_without_first_schedule_reports_prewrite_location_failure(repair_app):
+    """Use a scheduled standalone plan, and deliver real success and pre-write failure to one Agent."""
+    h = repair_app
+    target = date(2030, 11, 4)
+    evening = datetime(2030, 11, 3, 14, tzinfo=UTC)
+    runtime = h.app.state.commute_runtime
+    runtime.now = lambda: evening
+    runtime.eta = MockEtaProvider(now=runtime.now)
+    runtime.eta.provider = 'amap'
+    runtime.places = MockPlaceProvider()
+    h.app.state.settings.commute_auto_ai_enabled = True
+    config = {
+        'effective_from': target.isoformat(), 'timezone': 'Asia/Shanghai', 'weekdays': [1],
+        'arrival_local_time': '09:00', 'check_local_time': '07:30', 'transport_mode': 'transit',
+        'buffer_minutes': 10, 'notify_enabled': False,
+        'origin': {'label': '起点', 'latitude': 31.22, 'longitude': 121.44},
+        'destination': {'label': '终点', 'latitude': 31.23, 'longitude': 121.47},
+    }
+    plans = []
+    for name in ('旧计划地点缺损', '单独保存的通勤计划'):
+        response = await h.client.post('/api/v1/commute-plans', headers=auth(h.token), json={**config, 'name': name})
+        assert response.status_code == 201, response.text
+        plan = response.json()
+        assert plan['matter_id'] is None and plan['first_schedule_id'] is None
+        plans.append(plan['id'])
+    invalid_id, valid_id = plans
+    async with h.app.state.session_factory() as db:
+        invalid = await db.get(CommutePlan, invalid_id)
+        invalid.origin_latitude = 91
+        run = await db.get(NexusRun, h.local_id)
+        run.context_json = {**run.context_json, 'api_flow': {
+            **run.context_json['api_flow'], 'offered_operations': ['refresh_commute_day'],
+        }}
+        await db.commit()
+    await commute_lifecycle.materialize_follow_up_rules(h.app, now=evening)
+
+    def refresh(plan_id):
+        """Provide exactly one date and owned plan for the actual callback dispatcher."""
+        return proposed('refresh_commute_day', {'service_date': target.isoformat(), 'idempotency_key': 'model-refresh'},
+                        path_parameters={'plan_id': plan_id})
+
+    direct = await h.client.post(f'/api/v1/commute-plans/{invalid_id}/days/refresh',
+        headers=auth(h.token), json=refresh(invalid_id)['call']['body'])
+    assert direct.status_code == 422, direct.text
+    assert direct.json()['error']['details'] == {
+        'fields': ['origin.latitude'], 'formal_write_status': 'not_applied',
+    }
+    failed = await deliver(h, refresh(invalid_id), 'missing-commute-location')
+    assert failed['execution_status'] == 'failed' and failed['disposition'] == 'continue', failed
+    assert failed['error']['code'] == 'commute_location_incomplete' and failed['result'] is None
+    assert '未写入' in failed['error']['message']
+    async with h.app.state.session_factory() as db:
+        for table in (MatterDraft, ScheduleEvent, ScheduleRouteResult, CommuteInstance):
+            assert await db.scalar(select(func.count()).select_from(table)) == 0
+
+    finished = await deliver(h, refresh(valid_id), 'save-standalone-commute')
+    assert finished['execution_status'] == 'succeeded', finished
+    saved = finished['result']['data']
+    assert saved['applied'] and saved['service_date'] == target.isoformat()
+    assert saved['schedule']['location'] == '终点'
+    assert saved['schedule']['location_city'] == '上海'
+    assert saved['schedule']['starts_at'] == '2030-11-04T00:20:00Z'
+    assert saved['route']['target_arrival_at'] == '2030-11-04T01:00:00Z'
+    assert saved['route']['origin']['latitude'] == 31.22
+    assert saved['route']['origin']['city'] == '上海'
+    assert saved['route']['destination']['longitude'] == 121.47
+    assert await deliver(h, refresh(valid_id), 'save-standalone-commute') == finished
+    async with h.app.state.session_factory() as db:
+        plan = await db.get(CommutePlan, valid_id)
+        assert plan.first_schedule_id is None and plan.revision == 1 and plan.arrival_local_time == '09:00'
+        assert (await db.scalars(select(CommuteInstance))).one().local_service_date == target
+        assert (await db.scalars(select(ScheduleRouteResult))).one().schedule_id == saved['schedule']['schedule_id']
+        assert (await db.scalars(select(ScheduleEvent))).one().source_external_id == f'commute:{valid_id}:{target}'
 
 
 @pytest.mark.parametrize(('value', 'hint'), [

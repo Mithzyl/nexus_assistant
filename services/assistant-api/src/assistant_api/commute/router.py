@@ -542,7 +542,7 @@ async def update_commute_day(plan_id:str,payload:CommuteDayChange,db:DatabaseSes
 
 @router.post('/commute-plans/{plan_id}/days/refresh',operation_id='refresh_commute_day',response_model=CommuteDayState,
     summary='立即获取指定日期通勤时间并保存，支持前晚22点更新',
-    description='service_date与idempotency_key都放JSON body，路径只填plan_id。先读取get_commute_day；仅upcoming调用。重新请求路线并保存同一日程和路线，不更改到达目标、长期配置或待办。无需等当天早晨，前晚22点可测算明天；明确日期，不能默认为今天。返回真实出发时间。已有同一天安排保持ID，重复键复用结果；status=past时应询问用户或后台安静结束。',
+    description='service_date与idempotency_key都放JSON body，路径只填plan_id。先读取get_commute_day；仅upcoming调用。按通勤计划的起终点、交通方式和该日到达时间重测，保存日程与路线；目标日无日程时可直接生成，首日日程可缺省。已有同一天安排保持ID，重复键复用结果。必要地点缺失时返回422 commute_location_incomplete，指明无效字段及未写入。前晚22点可测算明天，明确日期；status=past时应询问用户或后台安静结束。',
     openapi_extra={'x-assistant':{'effect':'write','keywords':['明天通勤','前晚22点','更新通勤时间','获取通勤时间']}})
 async def refresh_commute_day(plan_id:str,payload:CommuteDayRefresh,db:DatabaseSession,runtime:CommuteRuntimeDependency,settings:SettingsDependency,user:CurrentUser):
     """Remeasure and save an effective future day without changing its requested arrival."""

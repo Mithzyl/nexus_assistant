@@ -201,3 +201,7 @@ Apple WeatherKit/Maps/APNs 凭证不是启动前置。缺失能力按 unavailabl
 单日修改、立即刷新接口及AI说明见[日程与待办独立操作及AI验收](../backend-integration/28-日程与待办独立操作及AI验收.md)的“三个问题修复与22:00通勤更新”。上线该版前需执行现有迁移命令`python scripts/migrate_sqlite.py upgrade --database <SQLite URL>`，新增0023可空当天覆盖字段。原先隔离验收阶段未迁移原库；2026-11-03经用户授权已完成原库备份及0021/0022/0023升级，当前运行状态见上述验收文档末尾。
 
 统一后台入口为`python -m assistant_api.background scheduler`和`python -m assistant_api.background worker`。启用现有`ASSISTANT_COMMUTE_AUTO_AI_ENABLED`后，scheduler提前建立前晚当地22:00和当天检查时间的持久跟进，由worker通过同一AI/业务接口刷新。通知由现有Assistant跟进消息返回；实际设备推送送达需另行验证，不把模型结果当送达记录。
+
+自动跟进通过 `POST /api/v1/commute-plans/{plan_id}/days/refresh` 刷新指定日期。后端以已存计划的起终点和交通方式测算，目标到达时间优先采用当天覆盖值。缺少首日日程时可按计划生成目标日期的通勤实例、日程和路线。已有目标日程继续使用原编号。公交所需城市可从已存坐标查询。
+
+必要地点无法确认时，刷新在建立草稿前返回 HTTP 422，错误码为 `commute_location_incomplete`。响应中的 `details.fields` 指明需核对的地点字段，`details.formal_write_status` 为 `not_applied`。Assistant 将明确未写入的原因返回给原 Agent，供其解释或向用户询问。

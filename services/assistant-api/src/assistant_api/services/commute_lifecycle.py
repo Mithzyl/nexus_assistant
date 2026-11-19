@@ -1,11 +1,15 @@
 """Lifecycle operations for linked commute records; all writes remain account scoped."""
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
+from pydantic import ValidationError
 from sqlalchemy import select
 from assistant_api.models import CommutePlan, MatterDraft, ScheduleEvent
-from assistant_api.core.errors import ConflictError, InvalidRequestError
-from assistant_api.services import commute_estimate, schedule_routes
+from assistant_api.core.errors import AssistantError, ConflictError, InvalidRequestError
+from assistant_api.services import commute_estimate, place_queries, schedule_routes
+from assistant_api.commute.schemas import CommuteLocation
 from assistant_api.commute.services.plans import _cancel_stale_work
+
+COMMUTE_LOCATION_INCOMPLETE = 'commute_location_incomplete'
 
 async def active_plans(db, user, matter_id):
     return list(await db.scalars(select(CommutePlan).where(
@@ -21,8 +25,42 @@ async def stop_plans(db, user, matter_id):
         ids.append(plan.plan_id)
     return ids
 
+def plan_location(plan: CommutePlan, endpoint: str) -> CommuteLocation:
+    """Validate persisted coordinates and labels, including rows created before current input validation."""
+    try:
+        return CommuteLocation.model_validate({
+            field: getattr(plan, f'{endpoint}_{field}') for field in ('label', 'latitude', 'longitude')
+        })
+    except ValidationError as exc:
+        label = '起点' if endpoint == 'origin' else '终点'
+        raise AssistantError(
+            COMMUTE_LOCATION_INCOMPLETE,
+            f'通勤计划的{label}名称或坐标缺失或无效。请核对计划地点，本次未写入日程或路线。',
+            422,
+            {'fields': [f'{endpoint}.{issue["loc"][0]}' for issue in exc.errors(include_input=False)],
+             'formal_write_status': 'not_applied'},
+        ) from exc
+
+
+async def transit_city(runtime, point: CommuteLocation, endpoint: str) -> str:
+    """Resolve the actual transit city from saved coordinates before creating a draft."""
+    result = await place_queries.map_pick_place(runtime, latitude=point.latitude, longitude=point.longitude,
+                                              coordinate_system='gcj02')
+    city = (result.get('location') or {}).get('city')
+    if city and city.strip():
+        return city.strip()
+    label = '起点' if endpoint == 'origin' else '终点'
+    raise AssistantError(
+        COMMUTE_LOCATION_INCOMPLETE,
+        f'无法确认通勤计划{label}的公交城市。请核对计划地点后再测算，本次未写入日程或路线。',
+        422,
+        {'fields': [f'{endpoint}.city'], 'formal_write_status': 'not_applied',
+         'reason_code': result.get('reason_code') or 'transit_city_required'},
+    )
+
+
 async def revision_draft(db, runtime, settings, user, run, parsed, text, *, origin_key=None, allow_create=False):
-    """Prepare a server-measured day edit for both the legacy planner and public business command."""
+    """Measure the saved plan and use a matching calendar record only for optional place metadata."""
     from assistant_api.services import matters
     from assistant_api.commute.services.plans import get_plan
     from assistant_api.services.commute_day_commands import day_schedule
@@ -47,9 +85,28 @@ async def revision_draft(db, runtime, settings, user, run, parsed, text, *, orig
     schedule = await day_schedule(db, user, plan, day)
     if schedule is None and not allow_create:
         raise InvalidRequestError('commute_schedule_ambiguous', '目标日期没有通勤日程，请先读取当天安排。')
-    basis = schedule or await db.get(ScheduleEvent, plan.first_schedule_id)
-    if not basis or basis.user_id != user.user_id:
-        raise ConflictError('commute_basis_missing', '通勤计划缺少原地点依据。')
+    origin = plan_location(plan, 'origin')
+    destination = plan_location(plan, 'destination')
+    basis = schedule
+    if basis is None and plan.first_schedule_id:
+        basis = await db.get(ScheduleEvent, plan.first_schedule_id)
+    proposed = {
+        'title': schedule.title if schedule else plan.name,
+        'location': destination.label, 'latitude': destination.latitude, 'longitude': destination.longitude,
+        'coordinate_system': 'gcj02',
+    }
+    if (basis and basis.user_id == user.user_id and basis.matter_id == plan.matter_id
+            and basis.deleted_at is None and basis.coordinate_system == 'gcj02'
+            and (basis.latitude, basis.longitude) == (destination.latitude, destination.longitude)):
+        for field in ('location_city', 'location_address', 'location_source', 'location_external_id'):
+            proposed[field] = getattr(basis, field)
+    origin_city = None
+    destination_city = proposed.get('location_city')
+    if plan.transport_mode == 'transit' and runtime.eta.provider == 'amap':
+        origin_city = await transit_city(runtime, origin, 'origin')
+        if not destination_city or not destination_city.strip():
+            destination_city = await transit_city(runtime, destination, 'destination')
+            proposed['location_city'] = destination_city
     draft = MatterDraft(user_id=user.user_id, matter_id=target.matter_id,
         ai_run_id=run.local_run_id if run else None, origin_key=origin_key,
         kind='update', status='preview', version=1, base_matter_version=target.version,
@@ -63,10 +120,10 @@ async def revision_draft(db, runtime, settings, user, run, parsed, text, *, orig
                 'set_override':request.get('set_override',True),'new_day':schedule is None}})
     draft.payload_json = schedule_routes._jsonable(draft.payload_json)
     db.add(draft); await db.commit()
-    route = await commute_estimate.estimate(runtime, origin=(plan.origin_latitude,plan.origin_longitude),
-        destination=(plan.destination_latitude,plan.destination_longitude), mode=plan.transport_mode,
+    route = await commute_estimate.estimate(runtime, origin=(origin.latitude,origin.longitude),
+        destination=(destination.latitude,destination.longitude), mode=plan.transport_mode,
         depart_at=arrival-timedelta(hours=1), arrive_by=arrival,
-        origin_city=basis.location_city, destination_city=basis.location_city,
+        origin_city=origin_city, destination_city=destination_city,
         origin_coordinate_system='gcj02',destination_coordinate_system='gcj02',
         schedule_id=schedule.schedule_id if schedule else None)
     if route['status'] != 'available':
@@ -74,9 +131,7 @@ async def revision_draft(db, runtime, settings, user, run, parsed, text, *, orig
         await db.commit()
         raise ConflictError('commute_route_unavailable', '这次未取得通勤测算结果，请稍后再试。')
     end=arrival-timedelta(minutes=plan.buffer_minutes);start=end-timedelta(seconds=route['duration_seconds'])
-    proposed={k:v for k,v in matters._serialize_schedule(basis).items() if k in ['title','location','latitude','longitude','coordinate_system','location_city','location_address','location_source','location_external_id']}
     if schedule: proposed['schedule_id']=schedule.schedule_id
-    else: proposed['title']=plan.name
     proposed.update(starts_at=start.isoformat(),ends_at=end.isoformat())
     revision={**draft.payload_json['commute_revision'],'status':'ready','route':schedule_routes._jsonable(route),
         'schedule':proposed,'target_arrival_at':arrival.isoformat(),'buffer_minutes':plan.buffer_minutes,

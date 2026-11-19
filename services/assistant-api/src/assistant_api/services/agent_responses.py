@@ -342,6 +342,12 @@ async def process_response(db, app, payload):
             error.get('message') or '索引参数无效，请按已发布uri修正；没有执行业务操作。',
             code=error.get('code')))
     details = error.get('details') or {}
+    if (operation.operation_id in {'refresh_commute_day', 'update_commute_day'}
+            and business['http_status'] == 422 and error.get('code') == 'commute_location_incomplete'
+            and isinstance(details, dict) and details.get('formal_write_status') == 'not_applied'):
+        # Location validation runs before the handler creates a draft or writes the target day.
+        return await finish(db, root, receipt, flow, outcome(identity, 'failed',
+            error['message'], code=error['code']))
     if (business['http_status'] == 409 and error.get('code') == 'conflict_detected'
             and isinstance(details, dict) and details.get('formal_write_status') == 'not_applied'
             and (operation.path == '/api/v1/schedules'
