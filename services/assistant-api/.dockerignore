@@ -4,6 +4,9 @@
 !docker-constraints.txt
 !src/
 !src/**
+!scripts/
+!scripts/run_backend.py
+!scripts/migrate_sqlite.py
 **/__pycache__/
 **/*.pyc
 **/*.egg-info/

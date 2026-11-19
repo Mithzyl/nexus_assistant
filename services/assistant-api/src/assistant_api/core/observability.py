@@ -1,6 +1,8 @@
 """Emit versioned operational events from allowlisted metadata only."""
 from datetime import UTC, datetime
 import json
+import os
+from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
@@ -22,11 +24,24 @@ def emit_event(event: str, *, level='info', now=None, **fields) -> None:
     """Write one stable JSON line to the existing service log stream; never attach exceptions."""
     record = {'schema_version':1, 'timestamp':(now or datetime.now(UTC)).isoformat(),
               'service':'assistant', 'event':event, 'level':level, **fields}
+    line = json.dumps(record, ensure_ascii=False, separators=(',',':'))
     try:
-        print(json.dumps(record, ensure_ascii=False, separators=(',',':')), flush=True)
+        print(line, flush=True)
     except OSError:
         # A closed log stream must not turn an already saved request into a client failure.
-        return
+        pass
+    directory = os.environ.get('ASSISTANT_OPERATIONS_SPOOL')
+    if directory:
+        # A single append syscall preserves record boundaries across supervisor children.
+        try:
+            path = Path(directory) / (datetime.now(UTC).strftime('%Y-%m-%d')+'.jsonl')
+            fd = os.open(path,os.O_WRONLY|os.O_APPEND|os.O_CREAT|os.O_NOFOLLOW,0o600)
+            try:
+                os.write(fd,(line+'\n').encode())
+            finally:
+                os.close(fd)
+        except OSError:
+            return
 
 
 def safe_error_code(code):

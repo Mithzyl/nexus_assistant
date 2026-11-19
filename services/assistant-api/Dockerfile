@@ -4,6 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /opt/assistant-api
 COPY pyproject.toml docker-constraints.txt ./
 COPY src ./src
+COPY scripts/run_backend.py scripts/migrate_sqlite.py ./scripts/
 RUN python -m pip install --no-cache-dir --constraint docker-constraints.txt .
 
 # The development service source, config, key and SQLite are bind-mounted by

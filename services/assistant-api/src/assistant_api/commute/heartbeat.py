@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from assistant_api.models import CommuteCheck, NotificationOutbox, ServiceHeartbeat
@@ -64,7 +65,24 @@ async def record_heartbeat(
     current_check_id: str | None = None,
     now: datetime | None = None,
 ) -> None:
+    """Record liveness atomically when the task poll and heartbeat loop start together."""
     now = now or datetime.now(UTC)
+    if db.get_bind().dialect.name == "sqlite":
+        values = {
+            "instance_id": instance_id, "last_seen_at": now,
+            "current_check_id": current_check_id, "updated_at": now,
+        }
+        await db.execute(
+            sqlite_insert(ServiceHeartbeat)
+            .values(component=component, created_at=now, **values)
+            .on_conflict_do_update(
+                index_elements=[ServiceHeartbeat.component],
+                set_=values,
+                where=ServiceHeartbeat.last_seen_at <= now,
+            )
+        )
+        await db.commit()
+        return
     row = await db.get(ServiceHeartbeat, component)
     if row is None:
         db.add(ServiceHeartbeat(

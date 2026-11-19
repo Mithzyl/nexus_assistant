@@ -1,0 +1,54 @@
+services:
+  backend:
+    image: ${ASSISTANT_RELEASE_IMAGE:?Set candidate image tag}
+    build: .
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 120s
+    read_only: true
+    user: "${ASSISTANT_UID:?}:${ASSISTANT_GID:?}"
+    command: ["python","scripts/run_backend.py","--env-file","/run/assistant-config/runtime.env","--bind-host","0.0.0.0","--nexus-loopback-host","host.docker.internal"]
+    environment:
+      ASSISTANT_OPERATIONS_SPOOL: /var/log/assistant-events
+    ports:
+      - "127.0.0.1:${ASSISTANT_RELEASE_PORT:-8010}:8010"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    tmpfs: [/tmp]
+    volumes:
+      - {type: bind, source: "${ASSISTANT_RELEASE_CONFIG:?}", target: /run/assistant-config/runtime.env, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${ASSISTANT_RELEASE_MEMORY_KEY:?}", target: /run/assistant-config/memory.key, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${ASSISTANT_RELEASE_DATA:?}", target: /var/lib/assistant, bind: {create_host_path: false}}
+      - {type: bind, source: "${ASSISTANT_RELEASE_SPOOL:?}", target: /var/log/assistant-events, bind: {create_host_path: false}}
+    healthcheck:
+      test: ["CMD","python","-c","import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health',timeout=3).close()"]
+      interval: 15s
+      timeout: 4s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
+  collector:
+    image: ${ASSISTANT_RELEASE_IMAGE:?Set candidate image tag}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    stop_grace_period: 50s
+    user: "${ASSISTANT_UID:?}:${ASSISTANT_GID:?}"
+    command: ["python","-m","assistant_api.operations_collector","--spool","/var/log/assistant-events","--store","/var/lib/assistant-operations"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    tmpfs: [/tmp]
+    volumes:
+      - {type: bind, source: "${ASSISTANT_RELEASE_SPOOL:?}", target: /var/log/assistant-events, bind: {create_host_path: false}}
+      - {type: bind, source: "${ASSISTANT_RELEASE_OPERATIONS:?}", target: /var/lib/assistant-operations, bind: {create_host_path: false}}
+    healthcheck:
+      test: ["CMD","python","-m","assistant_api.operations_collector","--spool","/var/log/assistant-events","--store","/var/lib/assistant-operations","--healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 45s
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}

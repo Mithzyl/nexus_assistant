@@ -1,0 +1,5 @@
+services:
+  collector:
+    command: ["python","-m","assistant_api.operations_collector","--spool","/var/log/assistant-events","--store","/var/lib/assistant-operations","--nexus-url","${ASSISTANT_SUMMARY_NEXUS_URL:?}","--ai-key-file","/run/assistant-summary/nexus.key","--ai-user-id","${ASSISTANT_SUMMARY_USER_ID:?}","--provider","${ASSISTANT_SUMMARY_PROVIDER:-opencode}","--model","${ASSISTANT_SUMMARY_MODEL:-glm-5.3-flash}"]
+    volumes:
+      - {type: bind, source: "${ASSISTANT_SUMMARY_KEY_FILE:?}", target: /run/assistant-summary/nexus.key, read_only: true, bind: {create_host_path: false}}

@@ -141,13 +141,42 @@ cp .env.example .env          # 仅在 .env 不存在的新环境执行，再填
 - `operations_snapshot`：记录各任务的状态计数、已可执行任务最老等待时间、运行超时或过期租约、近 24 小时失败；区分等待用户、等待延迟重试和实际积压。另记录两个后台心跳、到期未派发及未处理业务变更、SQLite 可读性、迁移版本、大小、所在磁盘余量和主要业务表计数。数据库不可读时队列状态返回 `null`，不显示成空队列。已确认的 SQLite 异常不输出数据库路径或原始错误消息。
 - `background_tick_failure` / `monitor_process_exit`：记录后台循环或监测进程故障的类别，不写异常正文。JSON 事件都带 `schema_version`。不输出正文、SQL 参数、密钥、地址查询参数、用户身份或记录正文。请求编号用于定位一次 HTTP 请求，当前未做跨 Nexus 的请求关联或供应商费用采集。
 
-日志写入现有标准输出：原生运行使用统一入口的服务日志；Compose 使用既有容器日志和轮转。不另外生成无轮转的业务数据文件。采集时仅选择 `service=assistant`、`schema_version=1` 的 JSON 行，再按 `category`、`event`、`route`、`alerts[].code` 聚合后交给 AI；不要直接上传混合日志文件或 SQLite 数据库。独立查看一条快照（从本目录运行，沿用已授权的配置）：
+日志继续写入标准输出。设置 `ASSISTANT_OPERATIONS_SPOOL` 后，Assistant 还会把同一批结构化事件按 UTC 日期追加到受保护的 JSON Lines 中转目录。直接查看一条快照可从本目录运行：
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m assistant_api.operations_monitor --once
 ```
 
-轮询间隔由 `ASSISTANT_MONITOR_INTERVAL_SECONDS` 控制（默认 60 秒）；队列和派发等待的告警阈值为 `ASSISTANT_MONITOR_QUEUE_STALL_SECONDS`（默认 180 秒）；有租约的执行超过实际租约即告警，无租约执行按更新超过 15 分钟判断。数据库采样只验证可读性及必要迁移，不用测试写入验证可写，也不等同于备份可恢复。目标环境的日志收集、通知路由和备份恢复演练仍是部署条件。
+快照默认每 60 秒产生一次，由 `ASSISTANT_MONITOR_INTERVAL_SECONDS` 控制。队列和派发等待阈值默认 180 秒，由 `ASSISTANT_MONITOR_QUEUE_STALL_SECONDS` 控制。有租约的执行超过实际租约即记为超时，无租约执行按超过 15 分钟未更新判断。数据库快照检查可读性和必要迁移。数据库写入、备份恢复和目标环境依赖需要分别验证。
+
+### 采集、告警与 AI 摘要
+
+采集器每 5 秒读取中转目录，按文件保存读取位置，将允许的字段写入独立的 `operations.sqlite3`。生产配置每 15 分钟聚合一次，用于统计接口状态、路由延迟、队列、数据库和故障类别。每日中转文件和事件明细保留约 14 天，聚合、摘要及告警历史保留 30 天。迟到的事件会更新聚合。如果已经保存 AI 摘要，状态改为 `saved_stale`，供读取者知道原摘要早于最新数据。
+
+| 告警类别 | 开启条件 |
+| --- | --- |
+| 接口失败 | 一个路由在最近 5 分钟内有至少 3 次 HTTP 5xx |
+| 队列积压或超时 | 连续两份可比较的快照报告同一问题。执行结果未知等队列失败立即记录 |
+| 数据库异常 | 最新快照报告数据库不可用、必要迁移缺失或磁盘空间不足等 |
+| 监测中断 | 超过 3 分钟未采到快照。已有队列和数据库告警保持开启，等待恢复后的快照 |
+
+`alert_state` 保存当前告警，`alert_history` 保存开启及恢复。告警通知暂缓。用只读 SQLite 连接查询告警和摘要：
+
+```sql
+SELECT key, opened FROM alert_state ORDER BY opened DESC;
+SELECT start, end, ai_state, ai_summary, ai_error FROM windows ORDER BY start DESC LIMIT 10;
+```
+
+AI 摘要默认关闭。可选的 `compose.summary.yaml` 需要 Nexus 的用户 API 身份验证已启用，并提供专用于运维的用户编号和具有执行权限的 API 密钥文件。配置 `ASSISTANT_SUMMARY_NEXUS_URL`、`ASSISTANT_SUMMARY_USER_ID`、`ASSISTANT_SUMMARY_KEY_FILE`，可选覆盖 `ASSISTANT_SUMMARY_PROVIDER` 和 `ASSISTANT_SUMMARY_MODEL`。地址须从采集器容器可达。采集器只发送窗口聚合，保存摘要正文及处理状态。授权失败、限流、响应格式错误和传输结果未知分别记录。已尝试的窗口保留其结果，不自动再次请求模型。AI 摘要的开关独立于业务的自动通勤 AI 开关。
+
+### Docker 发布准备
+
+`compose.release.yaml` 从发布镜像运行 Assistant API、scheduler、worker 和监测进程，另起采集器容器。镜像不挂载开发源代码。Web 分支的 `compose.web.release.yaml` 使用独立 Next.js 运行镜像。若共用一个 Compose 项目名，Web 可配置 `ASSISTANT_WEB_API_URL=http://backend:8010`。两个宿主端口默认只开放在回环地址，由现有 HTTPS 反向代理提供入口。
+
+1. 为发布镜像设定明确标签。后端构建使用 `docker compose -p superapp-release -f compose.release.yaml build backend`。在 Web 工作树用相同项目名和 `-f compose.web.release.yaml build web` 构建页面镜像。
+2. 将现有运行配置和原记忆密钥放在权限受限的宿主路径，通过 `ASSISTANT_RELEASE_CONFIG`、`ASSISTANT_RELEASE_MEMORY_KEY` 只读挂载。配置文件的记忆密钥路径设为 `/run/assistant-config/memory.key`，数据库地址指向 `/var/lib/assistant/` 下已存在的数据库。设置 `ASSISTANT_RELEASE_DATA`、`ASSISTANT_RELEASE_SPOOL`、`ASSISTANT_RELEASE_OPERATIONS` 为三个独立目录，以及镜像运行者可读取配置和写入这些目录的 `ASSISTANT_UID`、`ASSISTANT_GID`。保留现有注册策略和账号。若启用邀请注册，使用现有受保护配置的 `ASSISTANT_REGISTER_INVITE_CODE`。
+3. 切换前在线备份现有数据库，在副本演练迁移与恢复。对正式库执行迁移或切换时，先停下原写入者，避免多个 scheduler/worker 同时消费同一份数据。新版使用镜像内的 `scripts/migrate_sqlite.py upgrade --database <容器内 SQLite 地址>` 对已有库做增量迁移，随后用 `status` 核对。保留原配置、记忆密钥和回退镜像。回退数据库前先核对新版期间产生的数据。
+4. 使用 `config --quiet` 检查部署清单，再按后端及采集器、Web 的顺序执行 `up -d --no-build --wait`。验证 Web 到 API、两个后台心跳、数据库采样、采集器写入，以及现有账号和邀请策略。还需核对 Assistant 到真实 Nexus 的连接、Nexus 返回工具调用的 Assistant 入口、模型以及地图和天气。业务自动 AI 建议先保留关闭，在隔离数据验证后再决定是否开启正式环境的 `ASSISTANT_COMMUTE_AUTO_AI_ENABLED`。
 
 ## 独立 stub 开发环境（兼容入口）
 
