@@ -50,7 +50,9 @@ async function proxy(request: NextRequest, segments: string[]) {
   const crossSite = sameOriginFailure(request);
   if (crossSite) return crossSite;
 
-  if (segments.length === 0 || !ALLOWED_ROOTS.has(segments[0])) {
+  const nextActionEndpoint = segments[0] === "next-actions" && segments.length === 2 &&
+    request.method === "POST" && (segments[1] === "query" || segments[1] === "commands");
+  if (!nextActionEndpoint && (segments.length === 0 || !ALLOWED_ROOTS.has(segments[0]))) {
     return errorResponse(404, "not_found", "请求的接口不存在。");
   }
   if (segments.some((segment) => !SEGMENT.test(segment) || segment === "." || segment === "..")) {

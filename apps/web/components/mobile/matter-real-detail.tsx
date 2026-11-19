@@ -835,7 +835,7 @@ export function MatterRealDetail({ id }: { id: string }) {
             ) : (
               <div className="m-stack-10">
                 {matter.schedules.map((schedule) => (
-                  <div key={schedule.schedule_id} className="schedule-block">
+                  <div key={schedule.schedule_id} id={`schedule-${schedule.schedule_id}`} className="schedule-block">
                     <p className="card-title" style={{ fontSize: 15 }}>{schedule.title}</p>
                     <p className="caption" style={{ margin: "2px 0 0" }}>
                       {formatDateTime(schedule.starts_at)}
@@ -974,13 +974,14 @@ export function MatterRealDetail({ id }: { id: string }) {
             ) : (
               <div className="m-stack-10">
                 {matter.todos.map((todo) => (
-                  <TodoRow
-                    key={todo.todo_id}
-                    todo={todo}
-                    busy={busy === `todo-${todo.todo_id}`}
-                    onToggle={() => void toggleTodo(todo)}
-                    onEditTime={() => void openTodoDraft(todo)}
-                  />
+                  <div key={todo.todo_id} id={`todo-${todo.todo_id}`}>
+                    <TodoRow
+                      todo={todo}
+                      busy={busy === `todo-${todo.todo_id}`}
+                      onToggle={() => void toggleTodo(todo)}
+                      onEditTime={() => void openTodoDraft(todo)}
+                    />
+                  </div>
                 ))}
               </div>
             )}

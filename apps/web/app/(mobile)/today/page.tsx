@@ -7,6 +7,8 @@ import { Bell, CalendarClock, ChevronRight, FileText, MapPin, PenLine, RefreshCw
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
 import { RouteMapSheet } from "@/components/mobile/route-map-sheet";
 import { RouteTextCard } from "@/components/mobile/route-text-card";
+import { TodayNextActions } from "@/components/mobile/today-next-actions";
+import type { TodayAction } from "@/lib/mobile/next-actions-api";
 import { TodayCommuteCard } from "@/components/mobile/commute-card";
 import { useAuth, useLocalRecords, useUI, type LocalRecord } from "@/components/mobile/providers";
 import {
@@ -28,7 +30,7 @@ import type {
 } from "@/lib/mobile/api";
 import { formatServiceDate, relativeTime, timezoneLabel } from "@/lib/mobile/format";
 import { deadlineTiming, todayChangeSummary } from "@/lib/mobile/matter-draft.mjs";
-import { confirmSummary, acknowledgeReminder, completeMatterTodo, getDraft } from "@/lib/mobile/matters-api";
+import { confirmSummary, acknowledgeReminder, completeMatterTodo, getDraft, createMatterEditDraft, newOperationKey, requestTodayRefresh } from "@/lib/mobile/matters-api";
 import { useToday } from "@/lib/mobile/use-today";
 
 function localDay(): string {
@@ -210,10 +212,19 @@ export default function TodayPage() {
     }
   };
 
+  /** Reuse the original record draft and the existing edit/confirmation sheet for rescheduling. */
+  const openSuggestedEdit = async (item: TodayAction) => {
+    if (!item.matter_id) return;
+    setSelectedDraft(await createMatterEditDraft(item.matter_id, {
+      idempotency_key: newOperationKey("web-next-reschedule"),
+      ...(item.kind === "todo" ? { todo_id: item.record_id } : { schedule_id: item.record_id }),
+    }));
+  };
+
   const onDraftConfirmed = (response: DraftConfirmResponse) => {
     setSelectedDraft(null);
     toast(confirmSummary(response));
-    todayData.refresh();
+    requestTodayRefresh();
   };
 
   const displayDate = formatServiceDate(todayData.data?.date);
@@ -236,7 +247,7 @@ export default function TodayPage() {
           <button
             type="button"
             className="link-button mt-6"
-            onClick={todayData.refresh}
+            onClick={requestTodayRefresh}
             disabled={todayData.loading}
           >
             <RefreshCw size={13} /> {todayData.loading ? "正在刷新…" : "刷新"}
@@ -267,6 +278,7 @@ export default function TodayPage() {
         </button>
       </div>
 
+      {signedIn ? <TodayNextActions onReschedule={openSuggestedEdit} /> : null}
       {signedIn ? <TodayCommuteCard /> : null}
 
       {!signedIn ? null : todayData.loading && !todayData.data ? (
@@ -403,7 +415,7 @@ export default function TodayPage() {
             ) : (
               <div className="m-stack-8">
                 {rows.map((row) => (
-                  <div key={row.id} className="card card--tight timeline-link">
+                  <div key={row.id} id={row.schedule ? `schedule-${row.schedule.schedule_id}` : undefined} className="card card--tight timeline-link">
                     <span className="timeline-time">{time(row.at, todayData.data?.timezone)}</span>
                     <span className="timeline-dot" aria-hidden="true" />
                     <span className="grow">
