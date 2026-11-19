@@ -13,6 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from assistant_api.commute.schemas import UtcDateTime, CommutePlanRead
+from assistant_api.commute.providers.base import TransportMode
 from assistant_api.commute.timeutil import ensure_aware
 
 from assistant_api.schemas.places import (
@@ -86,12 +87,62 @@ class ScheduleRelativeReminder(BaseModel):
     offset_seconds: int = Field(ge=-31536000, le=31536000)
 
 
-class TodoPayload(BaseModel):
-    """Independent todo fields, with an optional explicitly requested schedule-relative reminder."""
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"not": {
-        "required": ["reminder_at", "schedule_reminder"],
-        "properties": {"reminder_at": {"type": "string"}, "schedule_reminder": {"type": "object"}},
-    }})
+class TodoPlace(BaseModel):
+    """A confirmed label or address, optionally located in an explicitly named coordinate system."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"oneOf": [
+        {"properties": {key: {"type": "null"} for key in ("latitude", "longitude", "coordinate_system")}},
+        {"required": ["latitude", "longitude", "coordinate_system"],
+         "properties": {"latitude": {"type": "number"}, "longitude": {"type": "number"},
+                        "coordinate_system": {"type": "string"}}},
+    ]})
+    label: str = Field(min_length=1, max_length=255)
+    address: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=64)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    coordinate_system: Literal["gcj02", "wgs84", "bd09"] | None = None
+
+    @model_validator(mode="after")
+    def check_coordinates(self):
+        """Reject partial coordinates, unspecified systems and empty names."""
+        if not self.label.strip() or len({self.latitude is None, self.longitude is None,
+                                          self.coordinate_system is None}) != 1:
+            raise ValueError("地点需要名称；经度、纬度、坐标系必须一起提供。")
+        return self
+
+
+class TodoScheduleDue(ScheduleRelativeReminder):
+    """Keep a deadline bound to a meeting start instead of freezing a model-computed timestamp."""
+    schedule_id: str | None = Field(default=None, min_length=1, max_length=36,
+        description="真实日程 ID；仅组合草稿明确引用本次一并保存的日程时可省略。原日程必须属于同一账号和事项。")
+    offset_seconds: int = Field(ge=-31536000, le=31536000, strict=True,
+        description="相对日程开始时间的有符号秒数，例如会前30分钟传 -1800。日程改期由后端重算。")
+
+
+TODO_MEMORY_FIELDS = {"due_at", "reminder_at", "priority", "estimated_duration_minutes", "available_after", "place", "schedule_due"}
+TODO_TIMING_SCHEMA = {"allOf": [
+    {"not": {"required": [absolute, relative],
+             "properties": {absolute: {"type": "string"}, relative: {"type": "object"}}}}
+    for absolute, relative in (("due_at", "schedule_due"), ("reminder_at", "schedule_reminder"))
+]}
+
+
+class TodoPlanningFields(BaseModel):
+    """Optional inputs for ranking, estimating available time and tracking explicit deadlines."""
+    priority: Literal["low", "normal", "high", "urgent"] | None = Field(default=None,
+        description="明确优先级：low/normal/high/urgent；未提供时未知，不替用户猜。")
+    estimated_duration_minutes: int | None = Field(default=None, ge=1, le=1440, strict=True,
+        description="预计处理耗时，单位分钟，不含路程；未知则省略。")
+    available_after: datetime | None = Field(default=None,
+        description="最早可执行时刻，建议传带时区偏移的 ISO 8601 时间；不是提醒或截止。")
+    place: TodoPlace | None = Field(default=None, description="已确认地点，仅在 JSON 体中提供；不可猜测坐标。")
+    schedule_due: TodoScheduleDue | None = Field(default=None,
+        description="仅用户明确希望截止随日程变更时提供；与绝对 due_at 二选一，不创建提醒。")
+
+
+class TodoPayload(TodoPlanningFields):
+    """Independent todo fields plus optional, explicitly chosen deadline and reminder dependencies."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra=TODO_TIMING_SCHEMA)
 
     todo_id: str | None = None
     title: str = Field(min_length=1, max_length=255)
@@ -102,9 +153,10 @@ class TodoPayload(BaseModel):
 
     @model_validator(mode="after")
     def validate_reminder_timing(self):
-        """An absolute time and a relative schedule dependency are alternative reminder definitions."""
-        if self.reminder_at is not None and self.schedule_reminder is not None:
-            raise ValueError("绝对提醒时间和日程相对提醒只能选择一个。")
+        """Require one timing mode for each independent clock."""
+        if (self.reminder_at is not None and self.schedule_reminder is not None
+                or self.due_at is not None and self.schedule_due is not None):
+            raise ValueError("截止和提醒各自只能选择绝对时间或相对日程的一种。")
         return self
 
 
@@ -135,7 +187,7 @@ class NewTodoPayload(TodoPayload):
 class MemoryTodoInput(NewTodoPayload, MemoryInputOptions):
     """Accept per-field todo memory choices separately from ordinary parameters."""
     model_config = ConfigDict(extra='forbid', json_schema_extra={'allOf': [
-        TodoPayload.model_config['json_schema_extra'], *memory_source_constraints({'due_at', 'reminder_at'})]})
+        TodoPayload.model_config['json_schema_extra'], *memory_source_constraints(TODO_MEMORY_FIELDS)]})
 
 
 class MemoryScheduleInput(NewSchedulePayload, MemoryInputOptions):
@@ -178,7 +230,11 @@ class StructuredDraftRequest(DraftPayload):
         return self
 
 
-class TodoRead(BaseModel):
+class TodoRead(TodoPlanningFields):
+    """Return optional stored inputs and the actual calculated deadline."""
+    available_after: UtcDateTime | None = None
+    schedule_due: TodoScheduleDue | None = Field(default=None,
+        description="已保存的截止依赖；due_at 同时返回当前计算值，原日程取消时该计算值为空。")
     todo_id: str
     title: str
     status: TodoStatus
@@ -221,7 +277,7 @@ class TodayRouteRead(BaseModel):
     message: str | None = None
     advisory_id: str | None = None
     duration_seconds: int | None = None
-    mode: Literal["driving", "walking", "transit"] | None = None
+    mode: TransportMode | None = None
     fetched_at: UtcDateTime | None = None
     origin_basis: Literal["user_confirmed", "previous_schedule"] | None = None
 
@@ -639,20 +695,28 @@ class TodayRead(BaseModel):
 
 
 class EstimateRequest(BaseModel):
-    """Estimate from one known origin and at least one explicit journey time."""
+    """Estimate from explicit or source-validated selected endpoints and one supplied journey time."""
     model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
         {"oneOf": [
             {"required": ["origin"], "properties": {"origin": {"type": "object"}, "origin_schedule_id": {"type": "null"}}},
             {"required": ["origin_schedule_id"], "properties": {"origin_schedule_id": {"type": "string"}, "origin": {"type": "null"}}},
+            {'required':['memory_defaults'],'properties':{'origin':{'type':'null'},'origin_schedule_id':{'type':'null'},
+                'memory_defaults':{'type':'object','required':['origin']}}},
         ]},
         {"anyOf": [{"required": [key], "properties": {key: {"type": "string"}}} for key in ("depart_at", "arrive_by")]},
+        {'anyOf':[{'required':['destination'],'properties':{'destination':{'type':'object'}}},
+            {'required':['memory_defaults'],'properties':{'memory_defaults':{'type':'object','required':['destination']}}}]},
         {"if": {"required": ["origin_basis"], "properties": {"origin_basis": {"const": "previous_schedule"}}}, "then": {"required": ["origin_schedule_id"], "properties": {"origin_schedule_id": {"type": "string"}}}},
+        *memory_source_constraints({'origin','destination','mode'}),
     ]})
 
     origin: Coordinate | None = None
     origin_schedule_id: str | None = Field(default=None, min_length=8, max_length=36)
-    destination: Coordinate
-    mode: Literal["driving", "walking", "transit"] = "driving"
+    destination: Coordinate | None = None
+    mode: TransportMode = Field(default="driving", description="driving驾车、walking步行、transit公交/地铁、bicycling自行车、electrobike电动车。按route_capabilities.supported_modes选择；每段遵守用户指定方式，不支持或无路线时明确告知，不擅自替换。")
+    use_preferences: bool = Field(default=True, description="允许应用本次memory_defaults选择，无需用途开关或角色绑定；false本次不使用记忆。")
+    memory_defaults: dict[str, MemorySelection] = Field(default_factory=dict, max_length=3,
+        description='从本任务已检索的记忆中选择origin/destination/mode，提供编号、版本、原文、拟采用值和理由。采用记忆时省略对应普通字段（包括null），两处同时提交将拒绝；origin记忆也不能同时传origin_schedule_id。不要把常用地点当当前位置；不确定用ask_user。')
     depart_at: datetime | None = None
     arrive_by: datetime | None = None
     schedule_id: str | None = Field(default=None, min_length=8, max_length=36)
@@ -660,11 +724,15 @@ class EstimateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _one_time(self) -> "EstimateRequest":
-        """Validate origin exclusivity and required time inputs for route estimation."""
+        """Require actual or explicitly selected endpoints, leaving source validation to the service."""
+        if set(self.memory_defaults)-{'origin','destination','mode'}:
+            raise ValueError('路线只支持起终点和交通方式的记忆应用。')
         if self.origin is not None and self.origin_schedule_id is not None:
             raise ValueError("origin 和 origin_schedule_id 只能提供一个。")
-        if self.origin is None and self.origin_schedule_id is None:
+        if self.origin is None and self.origin_schedule_id is None and not (self.use_preferences and 'origin' in self.memory_defaults):
             raise ValueError("origin 或 origin_schedule_id 必须提供一个。")
+        if self.destination is None and not (self.use_preferences and 'destination' in self.memory_defaults):
+            raise ValueError('需要明确目的地，或选择本次使用的目的地记忆。')
         if (
             self.origin_basis == "previous_schedule"
             and self.origin_schedule_id is None
@@ -683,12 +751,12 @@ class RoutePointRead(BaseModel):
 class RouteEndpointRead(RoutePointRead):
     coordinate_system: CoordinateSystem
     city: str | None = None
-    basis: Literal["user_confirmed", "previous_schedule", "destination_schedule"]
+    basis: Literal["user_confirmed", "previous_schedule", "destination_schedule", "memory"]
     schedule_id: str | None = None
 
 
 class RouteSegmentRead(BaseModel):
-    kind: Literal["driving", "walking", "transit"]
+    kind: TransportMode
     label: str | None = None
     coordinate_system: CoordinateSystem
     points: list[RoutePointRead] = Field(min_length=2)
@@ -700,9 +768,10 @@ class RouteShapeRead(BaseModel):
 
 
 class EstimateResponse(BaseModel):
+    preference_application: dict | None = None
     status: Literal["available", "unavailable"]
     provider: str
-    mode: Literal["driving", "walking", "transit"]
+    mode: TransportMode
     duration_seconds: int | None = None
     distance_meters: int | None = None
     walking_distance_meters: int | None = None
@@ -718,7 +787,7 @@ class EstimateResponse(BaseModel):
     reason_code: str | None = None
     timing_basis: str | None = None
     accuracy_notice: str | None = None
-    origin_basis: Literal["user_confirmed", "previous_schedule"] = "user_confirmed"
+    origin_basis: Literal["user_confirmed", "previous_schedule", "memory"] = "user_confirmed"
     origin_schedule_id: str | None = None
     schedule_id: str | None = None
     origin: RouteEndpointRead | None = None
@@ -786,7 +855,7 @@ class ScheduledRouteRead(BaseModel):
     message: str | None = None
     schedule_id: str
     provider: str | None = None
-    mode: Literal["driving", "walking", "transit"] | None = None
+    mode: TransportMode | None = None
     duration_seconds: int | None = None
     distance_meters: int | None = None
     walking_distance_meters: int | None = None
@@ -890,15 +959,20 @@ class TodoCreateRequest(RecordCreationTarget, MemoryTodoInput):
     """Create a todo without requiring any schedule; explicit relative reminders name a real schedule."""
     model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [
         TodoPayload.model_config["json_schema_extra"], _CREATE_TARGET_SCHEMA,
-        {"properties": {"schedule_reminder": {"anyOf": [{"type": "null"}, {"type": "object", "required": ["schedule_id"], "properties": {"schedule_id": {"type": "string"}}}]}}},
-        *memory_source_constraints({'due_at', 'reminder_at'}),
+        {"properties": {field: {"anyOf": [{"type": "null"}, {"type": "object", "required": ["schedule_id"],
+            "properties": {"schedule_id": {"type": "string"}}}]} for field in ("schedule_reminder", "schedule_due")}},
+        {"if": {"required": ["schedule_due"], "properties": {"schedule_due": {"type": "object"}}},
+         "then": {"required": ["matter_id", "expected_matter_version"],
+                  "properties": {"matter_id": {"type": "string"}, "expected_matter_version": {"type": "integer"}}}},
+        *memory_source_constraints(TODO_MEMORY_FIELDS),
     ]})
 
     @model_validator(mode="after")
     def validate_relative_schedule(self):
         """Independent creation cannot refer to an imaginary same-request calendar record."""
-        if self.schedule_reminder and (not self.schedule_reminder.schedule_id or not self.matter_id):
-            raise ValueError("独立待办的相对提醒需要已有日程ID及所属事项。")
+        if any(relation and (not relation.schedule_id or not self.matter_id)
+               for relation in (self.schedule_reminder, self.schedule_due)):
+            raise ValueError("独立待办的相对截止或提醒需要已有日程ID及所属事项。")
         return self
 
 
@@ -926,9 +1000,9 @@ class ScheduleCreateRequest(RecordCreationTarget, NewSchedulePayload):
         return self
 
 
-class TodoPatchRequest(MemoryInputOptions):
+class TodoPatchRequest(TodoPlanningFields, MemoryInputOptions):
     """Patch specified todo fields while keeping its identity and all unrelated calendar records."""
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [{"properties": {key: {"not": {"type": "null"}} for key in ("title", "status")}}, *memory_source_constraints({"due_at", "reminder_at"})]})
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"allOf": [{"properties": {key: {"not": {"type": "null"}} for key in ("title", "status")}}, TODO_TIMING_SCHEMA, *memory_source_constraints(TODO_MEMORY_FIELDS)]})
     idempotency_key: str = Field(min_length=8, max_length=128)
     expected_matter_version: int = Field(ge=1)
     title: str | None = Field(default=None, min_length=1, max_length=255)
@@ -936,6 +1010,16 @@ class TodoPatchRequest(MemoryInputOptions):
     reminder_at: datetime | None = None
     schedule_reminder: ScheduleRelativeReminder | None = None
     status: TodoStatus | None = None
+
+    @model_validator(mode="after")
+    def validate_patch_timing(self):
+        """Reject ambiguous explicit inputs before preparing an edit draft."""
+        if (self.due_at is not None and self.schedule_due is not None
+                or self.reminder_at is not None and self.schedule_reminder is not None):
+            raise ValueError("截止和提醒各自只能选择绝对时间或相对日程的一种。")
+        if self.schedule_due is not None and not self.schedule_due.schedule_id:
+            raise ValueError("修改原待办的相对截止需要真实日程ID。")
+        return self
 
 
 class SchedulePatchRequest(MemoryInputOptions):

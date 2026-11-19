@@ -24,6 +24,7 @@ from assistant_api.commute.services.push import (
     expire_abandoned_deliveries,
 )
 from assistant_api.core.config import Settings, get_settings
+from assistant_api.core.observability import emit_event
 from assistant_api.infrastructure.database import create_engine_and_factory
 from assistant_api.models import Base
 
@@ -64,7 +65,7 @@ async def worker_tick(
             await execute_check(db, runtime, check_id=check.check_id, worker_id=worker_id)
         except Exception:  # noqa: BLE001 - expired lease allows recovery
             await db.rollback()
-            logger.exception("commute check %s failed", check.check_id)
+            emit_event('background_tick_failure',level='error',category='queue_failure',component='commute_check')
         finally:
             if active_state is not None:
                 active_state["job"] = None
@@ -87,7 +88,7 @@ async def worker_tick(
             )
         except Exception:  # noqa: BLE001 - lease expiry gives bounded recovery
             await db.rollback()
-            logger.exception("commute outbox %s failed", outbox.outbox_id)
+            emit_event('background_tick_failure',level='error',category='queue_failure',component='commute_notification')
         finally:
             if active_state is not None:
                 active_state["job"] = None

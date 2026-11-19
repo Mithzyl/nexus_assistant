@@ -417,7 +417,8 @@ def build_facts(
 def render_template(facts: AdviceFacts) -> AdviceText:
     """Produce a safe fallback whose numbers are the only numbers allowed later."""
 
-    mode = "驾车" if facts.transport_mode == "driving" else "步行"
+    from assistant_api.commute.providers.base import TRANSPORT_LABELS
+    mode = TRANSPORT_LABELS[facts.transport_mode]
     if not facts.eta_available and not facts.weather_available:
         return AdviceText(
             title="通勤建议暂不可用",

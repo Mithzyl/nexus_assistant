@@ -102,6 +102,7 @@ class MockEtaProvider:
 
     provider = "mock"
     available = True
+    supported_modes = ("driving", "walking", "transit", "bicycling", "electrobike")
 
     def __init__(
         self,

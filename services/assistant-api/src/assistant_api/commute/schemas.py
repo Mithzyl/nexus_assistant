@@ -27,6 +27,7 @@ from assistant_api.commute.timeutil import (
     validate_timezone,
     validate_weekdays,
 )
+from assistant_api.commute.providers.base import TransportMode
 
 UtcDateTime = Annotated[
     datetime,
@@ -40,7 +41,6 @@ UtcDateTime = Annotated[
     ),
 ]
 
-TransportMode = Literal["driving", "walking", "transit"]
 CheckStatus = Literal["queued", "running", "succeeded", "degraded", "failed", "cancelled", "unknown"]
 # Phase is the current step, status is the task outcome. They are orthogonal:
 # a running task has a non-terminal phase; a terminal phase ("done"/"failed"/

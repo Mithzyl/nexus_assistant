@@ -30,3 +30,61 @@ async def save_todo(db, user: User, *, matter_id: str, values: dict, position: i
         raise ConflictError('todo_changed', '该待办已被修改，请重新读取。')
     await db.refresh(existing)
     return existing
+
+
+def planning_snapshot(todo):
+    """Expose stored planning inputs without silently inventing values for legacy todos."""
+    return {**{field: getattr(todo, field) for field in PLANNING_FIELDS},
+            'schedule_due': ({'schedule_id': todo.due_schedule_id, 'offset_seconds': todo.due_schedule_offset_seconds}
+                             if todo.due_schedule_id else None)}
+
+
+PLANNING_FIELDS = ('priority', 'estimated_duration_minutes', 'available_after', 'place')
+
+
+async def deadline_values(db, user, *, item, existing, matter_id, timezone, current_schedule):
+    """Resolve a same-matter native schedule deadline inside the caller's write transaction."""
+    from sqlalchemy import select
+    from assistant_api.models import ScheduleEvent
+    from assistant_api.services.matter_conflicts import can_edit_schedule
+    from assistant_api.services.reminder_records import absolute_time
+    from assistant_api.commute.timeutil import ensure_aware
+    from datetime import timedelta
+
+    previous = planning_snapshot(existing) if existing else {}
+    result = {field: item.get(field, previous.get(field)) for field in PLANNING_FIELDS}
+    result['available_after'] = absolute_time(result['available_after'], timezone)
+    absolute = absolute_time(item.get('due_at'), timezone)
+    relation = item.get('schedule_due')
+    if 'schedule_due' not in item and existing and ('due_at' not in item or absolute == (ensure_aware(existing.due_at) if existing.due_at else None)):
+        # Older draft clients may round-trip the calculated timestamp without knowing the dependency.
+        relation = previous.get('schedule_due')
+        if relation:
+            absolute = None
+    if relation is None:
+        return {**result, 'due_at': absolute if 'due_at' in item else None if 'schedule_due' in item
+                else existing.due_at if existing else None, 'due_schedule_id': None, 'due_schedule_offset_seconds': None}
+    if absolute is not None:
+        raise InvalidRequestError('deadline_timing_conflict', '绝对截止和相对截止只能选一种。')
+    schedule_id = relation.get('schedule_id') or (current_schedule.schedule_id if current_schedule else None)
+    if not schedule_id:
+        raise InvalidRequestError('deadline_schedule_required', '请指定截止所依据的日程。')
+    schedule = await db.scalar(select(ScheduleEvent).where(
+        ScheduleEvent.schedule_id == schedule_id, ScheduleEvent.user_id == user.user_id,
+        ScheduleEvent.matter_id == matter_id, ScheduleEvent.deleted_at.is_(None)))
+    if schedule is None or not can_edit_schedule(schedule.source, schedule.data_source_id):
+        raise InvalidRequestError('deadline_schedule_invalid', '相对截止只支持同一事项中由 Assistant 管理的日程。')
+    offset = relation['offset_seconds']
+    unchanged = previous.get('schedule_due') == {'schedule_id': schedule_id, 'offset_seconds': offset}
+    if schedule.status != 'scheduled' and not unchanged:
+        raise InvalidRequestError('deadline_schedule_inactive', '不能将截止时间绑定到已取消的日程。')
+    return {**result, 'due_at': ensure_aware(schedule.starts_at) + timedelta(seconds=offset)
+            if schedule.status == 'scheduled' else None, 'due_schedule_id': schedule_id,
+            'due_schedule_offset_seconds': offset}
+
+
+def refresh_deadline(todo, schedule, *, cancelled=False):
+    """Recalculate only an explicitly bound deadline without changing either reminder mode."""
+    from datetime import timedelta
+    from assistant_api.commute.timeutil import ensure_aware
+    todo.due_at = None if cancelled else ensure_aware(schedule.starts_at) + timedelta(seconds=todo.due_schedule_offset_seconds)

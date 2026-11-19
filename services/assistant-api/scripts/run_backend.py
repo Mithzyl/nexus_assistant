@@ -3,7 +3,7 @@
 Usage from this service directory:
   .venv/bin/python scripts/run_backend.py --env-file /absolute/path/to/.env
 The runner does not migrate or initialize storage. It retains configured provider
-and automation flags and stops the group if any owned child exits.
+and automation flags. Core process exits stop the group; the monitor restarts independently.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    """Supervise all three processes, optionally translating host loopback for a Docker network."""
+    """Supervise API, scheduler, worker and read-only monitoring under one lifecycle."""
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--env-file',type=Path,required=True)
     parser.add_argument('--bind-host',choices=['127.0.0.1','0.0.0.0'],default='127.0.0.1')
@@ -46,16 +46,19 @@ def main():
     sys.path.insert(0,str(ROOT/'src'))
     from assistant_api.core.config import get_settings
     from assistant_api.commute.runtime import validate_commute_configuration
+    from assistant_api.core.observability import emit_event
     validate_commute_configuration(get_settings())
     with socket.socket() as probe:
         probe.bind((args.bind_host,8010))
     env=dict(os.environ,PYTHONPATH=str(ROOT/'src'))
     commands={
-        'api':['uvicorn','assistant_api.main:app','--host',args.bind_host,'--port','8010'],
+        'api':['uvicorn','assistant_api.main:app','--host',args.bind_host,'--port','8010','--no-access-log'],
         'scheduler':['assistant_api.background','scheduler'],
         'worker':['assistant_api.background','worker'],
     }
     children={};stopping=False
+    monitor = None
+    monitor_retry_at = 0.0
     def stop(*_args):
         """Request graceful termination of this runner's own children only."""
         nonlocal stopping
@@ -69,8 +72,20 @@ def main():
             print(f'{name} started pid={children[name].pid}',flush=True)
         print(f'backend source={ROOT} config={config}',flush=True)
         while not stopping:
+            if monitor is not None and monitor.poll() is not None:
+                emit_event('monitor_process_exit',level='error',category='monitor_failure',exit_code=monitor.returncode)
+                children.pop('monitor',None)
+                monitor = None
+                monitor_retry_at = time.monotonic()+15
+            if monitor is None and time.monotonic()>=monitor_retry_at:
+                try:
+                    monitor = subprocess.Popen([sys.executable,'-m','assistant_api.operations_monitor'],cwd=ROOT,env=env)
+                    children['monitor'] = monitor
+                except OSError:
+                    emit_event('monitor_process_exit',level='error',category='monitor_failure',error_code='spawn_failed')
+                    monitor_retry_at = time.monotonic()+15
             for name,child in children.items():
-                if child.poll() is not None:
+                if name != 'monitor' and child.poll() is not None:
                     print(f'{name} exited; stopping backend group',flush=True)
                     code=1;stopping=True;break
             time.sleep(.5)

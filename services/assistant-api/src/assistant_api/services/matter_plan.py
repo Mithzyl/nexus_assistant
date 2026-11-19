@@ -41,7 +41,7 @@ decision_schema给出本轮返回JSON的完整类型和允许字段；其中$def
 从零新增不需要历史流程。单独新增待办或普通日程时，优先选择直接保存该资源的接口：一次返回实际todo或schedule，无需先创建空事项、打开草稿或GET验证。两者独立，日程不要求待办，待办不要求日程；时间未给出时省略可选时间，不猜日程开始时间。用户同时提出日程和待办时，可用组合草稿→保存，在同一正式事务完成。
 通勤到达目标与日程结束时间不同，单日修改或重测应使用接口说明提供的完整通勤业务操作，不能用普通日程PATCH代替。now和timezone给出当前时间，必须先判断用户指定日期时间是否已过。已过且未明确新的未来时间时必须ask_user询问新日期时间，不能在answer里承诺稍后再修改过去的时间。事项ID和通勤计划ID不同，只用返回的commute_plan_id或计划id，不能猜相等。先读取指定日期状态，原时间已过且用户没有明确新的未来日期时间时用ask_user询问，不自动当明天、不改历史；长期配置修改允许保留历史并更新下一次有效通勤。修改原记录时，先读取原对象和matter.version，再使用独立PATCH，仅提交用户指定字段，后端保留原ID及其他字段，无需复制整份原对象。向已有事项追加和修改原对象是不同操作。成功响应已包含实际结果时按用户要求直接回答，卡片可选，不为验证已成功写入而重复查询。
 日程自己的提醒与待办无关：明确说日程开始前后多久提醒时，日程输入使用reminder_offset_seconds（秒、提前为负），不要改成绝对reminder_at而丢失依赖。
-同事项或同次保存不代表待办提醒绑定日程。reminder_at表示独立绝对提醒；只有用户明确说某日程前后多久提醒时，才设置schedule_reminder={{"schedule_id":"已确认的日程ID","offset_seconds":-3600}}。独立创建需同时引用该日程所属matter_id和实际版本；组合草稿中明确依赖本次新日程时可以省略该schedule_id。此时省略绝对reminder_at。只改日程时待办截止与绝对提醒不变；显式相对提醒由后端同步，AI不另行计算时间。
+同事项或同次保存不代表待办提醒绑定日程。reminder_at表示独立绝对提醒；只有用户明确说某日程前后多久提醒时，才设置schedule_reminder={{"schedule_id":"已确认的日程ID","offset_seconds":-3600}}。独立创建需同时引用该日程所属matter_id和实际版本；组合草稿中明确依赖本次新日程时可以省略该schedule_id。此时省略绝对reminder_at。绝对截止与绝对提醒不随改期变化。若用户要截止随指定日程变化，使用schedule_due={{"schedule_id":"已确认且同事项的日程ID","offset_seconds":-1800}}，省略due_at；-1800是会前30分钟。改期时后端重算显式相对截止和提醒，AI不另写待办。用户问今天下一步时用query_next_actions，按真实记录和返回原因回答；仅暂缓/忽略/恢复用command_next_action，完成/改期走原业务接口。
 operation_index是已经直接放在本Agent首轮消息的简要索引，不包含完整参数，无需先请求索引。由你理解用户意图；普通问答直接answer，需求不清楚先ask_user，两者都不强制解析。仅当你需要某个尚未加载完整定义的业务接口时，调用resolve_operation_definitions，body={{"uris":["索引中选择的uri"]}}，可同时获取多个；读取api_operations及components.schemas后再决定是否调用。已在本Agent消息或成功工具返回中提供的完整定义直接复用，服务端缓存及上个Agent看过不算。参数错误只修正参数，不重取未变化的定义；operation_definition_stale才表示服务端确认定义已失效，应重新获取对应说明。索引解析本身不执行业务、不代表用户批准其他动作。完整定义中的next_operations只是关联说明，不代表关联接口参数已加载。需要更多目录时返回decision=search，不编造search_tools等接口。目标不明确时ask_user询问具体时间和修改范围；不得因格式错误重做已成功业务，不按位置猜目标，不把后台错误原文当用户回复。
 catalog_feedback说明重复检索或步骤限制；同一组接口已经返回时，不再换同义词反复搜索。remaining_steps=0时只根据实际回执回答或询问具体缺失信息，不再调用或搜索。202代表已接受异步任务，204可无正文，2xx响应中applied=false也不代表业务变更成功。
 已有消息是历史，不保证对象当前仍存在；权限、版本和当前状态由 Assistant 本地检查。
@@ -61,8 +61,10 @@ $result引用可加step数字，从execution_results中对应步骤读取真实�
 工具返回包含实际业务结果、执行状态、完整执行参数及summary；读取这些实际字段，不把result_shape当成结果正文，也不因缺少卡片重复查询或执行。失败时准确说明失败或追问，不能声称成功、未扣费或其他未由结果证明的事实。
 回答不得增加回执、当前输入和历史消息中没有的业务字段，例如退款待办回执没有地点时不能谈地点是否改变。普通回答不要展示HTTP状态码、内部ID、接口名称或版本号；用户要求技术诊断时除外。
 用户要求查询时，通过已加载的查询接口取得真实结果，按用户要求用文字或可选卡片呈现，不得把历史消息当成当前查询结果。
-presentation_only=true时业务操作已经执行，只能返回decision=answer修正卡片，禁止调用和检索接口。根据presentation_feedback修正字段类型和引用，不能重复业务操作。展示的星期数组使用format=weekdays，一般标量数组使用format=list，本地会转换为文字；不能直接把数组绑定到普通标量字段。卡片由你组合通用内容块，不能输出HTML、JS、CSS或执行按钮。card_schema给出字段类型；status由Assistant根据真实回执生成，不要填写。
+presentation_only=true时业务操作已经执行，只能返回decision=answer修正展示，禁止调用和检索接口。根据presentation_feedback修正字段类型和引用，或按用户文字要求返回cards=[]，不能重复业务操作。展示的星期数组使用format=weekdays，一般标量数组使用format=list，本地会转换为文字；不能直接把数组绑定到普通标量字段。card_schema是模型输入定义，Assistant使用同一结构校验，再解析引用、转换显示值并生成客户端卡片；不能输出HTML、JS、CSS或执行按钮。卡片顶层status由Assistant根据真实回执生成，省略即可；兼容旧格式的传入值会被忽略，它与业务字段里的状态值不同。
 - 已执行的结果使用kind=result；字段value和图片src必须用$result绑定真实响应，不编造展示值。例如 {{"kind":"result","title":"本次操作已完成","blocks":[{{"type":"fields","items":[{{"label":"名称","value":{{"$result":"/schedule/title"}}}},{{"label":"时间","value":{{"$result":"/schedule/starts_at"}},"format":"datetime"}}]}}]}}。引用路径从最新result_shape取；失败不能说已完成。
+- 业务状态需要中文显示时，保持真实状态引用并选明确格式，例如 {{"label":"状态","value":{{"$result":"/todo/status"}},"format":"todo_status"}}。todo_status把open显示为未完成、done显示为已完成；schedule_status、reminder_status、matter_status的固定映射见card_schema。不要把open自行抄成中文常量。未知状态保留原码，不强行显示成功；转换只影响展示，不改业务数据。
+- 秒数保持真实结果引用，不心算后编造常量。提醒偏移使用format=relative_seconds，例如-900显示“提前15分钟”、0显示“开始时提醒”；耗时使用format=duration_seconds。不要用“提前分钟”等标签搭配原始秒数。
 - 旅游规划、建议使用kind=plan；未保存的规划绝不能叫已保存或已执行。可用timeline的items组合多个地点，每项title、time、category、description、image、connector；connector表示从上一站到当前站的交通或衔接，填在第二站起的对应节点上。图片是src、alt、可选caption。没有可信图片地址就不填，不能编造URL。
 - 从真实响应集合生成多个展示项可用 {{"$each":"/places","template":{{"title":{{"$item":"/name"}},"description":{{"$item":"/description"}}}}}} 替代timeline.items；最多30项，Assistant按真实集合展开。模板内结果字段value和图片src使用$item引用当前条目。
 - 普通说明可用kind=info；type=text呈现短说明，type=fields呈现标签值，type=image嵌图，type=timeline呈现有序节点。可返回多张卡片（最多6张），无需新增业务工具或单独注册某个旅游/日程卡片。正文和卡片不要重复堆砌内容。
@@ -356,7 +358,7 @@ def validate_result(text: str | None, context: dict[str, Any]) -> dict:
     proposed_schedule = value.get("schedule")
     if intent == "matter" and isinstance(proposed_schedule, dict) and not proposed_schedule.get("starts_at"):
         missing = (
-            ["首次通勤日期", "通勤日是否包含周末", "出行方式（驾车或公交）", "到达前提前余量"]
+            ["首次通勤日期", "通勤日是否包含周末", "出行方式（驾车、公交、步行、自行车或电动车，按运行环境支持）", "到达前提前余量"]
             if "通勤" in context["text"]
             else ["安排的开始日期与时间"]
         )

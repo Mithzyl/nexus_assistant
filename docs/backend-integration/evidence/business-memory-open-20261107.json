@@ -1,0 +1,311 @@
+{
+  "model_calls": 0,
+  "upstream": "real local Nexus HTTP API",
+  "assistant": "real ASGI routes, isolated SQLite",
+  "current_input": "请记住：带母亲出门时尽量少走路，她不喜欢坐地铁。我的望远镜每次使用前需要校准。",
+  "steps": [
+    {
+      "label": "无分类保存原话",
+      "method": "POST",
+      "path": "/api/v1/business-memory/facts",
+      "input": {
+        "source_quote": "带母亲出门时尽量少走路，她不喜欢坐地铁",
+        "tags": [
+          "陪同家人"
+        ]
+      },
+      "http_status": 200,
+      "output": {
+        "entry_id": "ed549119-fa75-41bb-9454-4b1381d0e651",
+        "version": 1,
+        "status": "active",
+        "applied_version": 1,
+        "source": {
+          "kind": "user_message",
+          "local_run_id": "b0cc54c0-5a65-4df0-a5c3-0d600e0ba4b3",
+          "quote": "带母亲出门时尽量少走路，她不喜欢坐地铁"
+        },
+        "category": null,
+        "tags": [
+          "陪同家人"
+        ],
+        "duplicate_check_complete": true
+      }
+    },
+    {
+      "label": "新领域保存原话",
+      "method": "POST",
+      "path": "/api/v1/business-memory/facts",
+      "input": {
+        "source_quote": "我的望远镜每次使用前需要校准",
+        "category": "天文设备维护",
+        "tags": [
+          "校准"
+        ]
+      },
+      "http_status": 200,
+      "output": {
+        "entry_id": "b966d563-680f-4f78-8065-82f9e4d559bc",
+        "version": 1,
+        "status": "active",
+        "applied_version": 1,
+        "source": {
+          "kind": "user_message",
+          "local_run_id": "b0cc54c0-5a65-4df0-a5c3-0d600e0ba4b3",
+          "quote": "我的望远镜每次使用前需要校准"
+        },
+        "category": "天文设备维护",
+        "tags": [
+          "校准"
+        ],
+        "duplicate_check_complete": true
+      }
+    },
+    {
+      "label": "开放任务不排除其他类别",
+      "method": "POST",
+      "path": "/api/v1/business-memory/query",
+      "input": {
+        "purpose": "陪母亲出行",
+        "categories": [
+          "travel_policy"
+        ],
+        "limit": 10
+      },
+      "http_status": 200,
+      "output": {
+        "status": "available",
+        "items": [
+          {
+            "entry_id": "b966d563-680f-4f78-8065-82f9e4d559bc",
+            "version": 1,
+            "text": "我的望远镜每次使用前需要校准",
+            "typed_data": null,
+            "business": {
+              "category": "天文设备维护",
+              "tags": [
+                "校准"
+              ]
+            },
+            "match": {
+              "matched_queries": [],
+              "matched_tags": []
+            },
+            "source": {
+              "kind": "nexus_memory",
+              "entry_id": "b966d563-680f-4f78-8065-82f9e4d559bc",
+              "version": 1
+            }
+          },
+          {
+            "entry_id": "ed549119-fa75-41bb-9454-4b1381d0e651",
+            "version": 1,
+            "text": "带母亲出门时尽量少走路，她不喜欢坐地铁",
+            "typed_data": null,
+            "business": {
+              "category": null,
+              "tags": [
+                "陪同家人"
+              ]
+            },
+            "match": {
+              "matched_queries": [],
+              "matched_tags": []
+            },
+            "source": {
+              "kind": "nexus_memory",
+              "entry_id": "ed549119-fa75-41bb-9454-4b1381d0e651",
+              "version": 1
+            }
+          }
+        ],
+        "next_offset": null,
+        "scanned": 2,
+        "truncated": false,
+        "retrieval_method": "browse",
+        "match_status": "matched",
+        "coverage": {
+          "state": "complete",
+          "start_offset": 0,
+          "upstream_exhausted": true,
+          "reason": "end",
+          "continuation_supported": true
+        },
+        "next_steps": []
+      }
+    },
+    {
+      "label": "不同表述提供候选关键词",
+      "method": "POST",
+      "path": "/api/v1/business-memory/query",
+      "input": {
+        "query": "公共交通偏好",
+        "queries": [
+          "地铁",
+          "母亲"
+        ],
+        "purpose": "路线安排",
+        "limit": 5
+      },
+      "http_status": 200,
+      "output": {
+        "status": "available",
+        "items": [
+          {
+            "entry_id": "ed549119-fa75-41bb-9454-4b1381d0e651",
+            "version": 1,
+            "text": "带母亲出门时尽量少走路，她不喜欢坐地铁",
+            "typed_data": null,
+            "business": {
+              "category": null,
+              "tags": [
+                "陪同家人"
+              ]
+            },
+            "match": {
+              "matched_queries": [
+                "地铁",
+                "母亲"
+              ],
+              "matched_tags": []
+            },
+            "source": {
+              "kind": "nexus_memory",
+              "entry_id": "ed549119-fa75-41bb-9454-4b1381d0e651",
+              "version": 1
+            }
+          }
+        ],
+        "next_offset": null,
+        "scanned": 2,
+        "truncated": false,
+        "retrieval_method": "lexical",
+        "match_status": "matched",
+        "coverage": {
+          "state": "complete",
+          "start_offset": 0,
+          "upstream_exhausted": true,
+          "reason": "end",
+          "continuation_supported": true
+        },
+        "next_steps": []
+      }
+    },
+    {
+      "label": "按原文浏览未分类内容",
+      "method": "POST",
+      "path": "/api/v1/business-memory/query",
+      "input": {
+        "mode": "browse",
+        "limit": 10
+      },
+      "http_status": 200,
+      "output": {
+        "status": "available",
+        "items": [
+          {
+            "entry_id": "b966d563-680f-4f78-8065-82f9e4d559bc",
+            "version": 1,
+            "text": "我的望远镜每次使用前需要校准",
+            "typed_data": null,
+            "business": {
+              "category": "天文设备维护",
+              "tags": [
+                "校准"
+              ]
+            },
+            "match": {
+              "matched_queries": [],
+              "matched_tags": []
+            },
+            "source": {
+              "kind": "nexus_memory",
+              "entry_id": "b966d563-680f-4f78-8065-82f9e4d559bc",
+              "version": 1
+            }
+          },
+          {
+            "entry_id": "ed549119-fa75-41bb-9454-4b1381d0e651",
+            "version": 1,
+            "text": "带母亲出门时尽量少走路，她不喜欢坐地铁",
+            "typed_data": null,
+            "business": {
+              "category": null,
+              "tags": [
+                "陪同家人"
+              ]
+            },
+            "match": {
+              "matched_queries": [],
+              "matched_tags": []
+            },
+            "source": {
+              "kind": "nexus_memory",
+              "entry_id": "ed549119-fa75-41bb-9454-4b1381d0e651",
+              "version": 1
+            }
+          }
+        ],
+        "next_offset": null,
+        "scanned": 2,
+        "truncated": false,
+        "retrieval_method": "browse",
+        "match_status": "matched",
+        "coverage": {
+          "state": "complete",
+          "start_offset": 0,
+          "upstream_exhausted": true,
+          "reason": "end",
+          "continuation_supported": true
+        },
+        "next_steps": []
+      }
+    },
+    {
+      "label": "未匹配不能断言没有记忆",
+      "method": "POST",
+      "path": "/api/v1/business-memory/query",
+      "input": {
+        "query": "火星采矿"
+      },
+      "http_status": 200,
+      "output": {
+        "status": "available",
+        "items": [],
+        "next_offset": null,
+        "scanned": 2,
+        "truncated": false,
+        "retrieval_method": "lexical",
+        "match_status": "no_match",
+        "coverage": {
+          "state": "complete",
+          "start_offset": 0,
+          "upstream_exhausted": true,
+          "reason": "end",
+          "continuation_supported": true
+        },
+        "next_steps": [
+          "try_alternative_queries",
+          "browse"
+        ]
+      }
+    }
+  ],
+  "synthetic_external_user_id": "f6771c9a-71bb-462e-b9a9-cc333b9de49d",
+  "owned_history_source_validation": "passed",
+  "result": "passed",
+  "real_model_selection": "not_executed",
+  "normal_assistant_reload": {
+    "old_pid": 86550,
+    "new_pid": 59497,
+    "port": 8010,
+    "health_http_status": 200,
+    "open_memory_schema_loaded": true,
+    "env_file": "/Users/mith/Desktop/superapp-next-worktrees/backend/services/assistant-api/.env",
+    "database": "/Users/mith/Desktop/superapp-next-worktrees/backend/services/assistant-api/data/local-development.db",
+    "automatic_ai_enabled": false,
+    "nexus_restarted": false,
+    "workers_started": false,
+    "model_calls": 0
+  }
+}

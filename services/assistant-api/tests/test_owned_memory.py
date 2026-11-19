@@ -13,6 +13,7 @@ from uuid import uuid4
 import httpx
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 
 from assistant_api.main import create_app
 from assistant_api.core.config import Settings
@@ -77,7 +78,6 @@ async def test_local_crud_versions_owner_and_ciphertext(owned):
     assert '工作日通勤我偏好骑行。'.encode() not in (h.path/'memory.db').read_bytes()
 
 
-
 async def test_replay_parameter_conflict_and_concurrent_version(owned):
     """The same request writes once, changed parameters fail, and only one revision update wins."""
     h = owned
@@ -93,7 +93,6 @@ async def test_replay_parameter_conflict_and_concurrent_version(owned):
         for text in ['常用地点是东工坊。','常用地点是西工坊。']))
     assert sorted(reply.status_code for reply in replies)==[200,409]
     assert not h.calls
-
 
 
 async def test_agent_source_deferred_and_cross_business_recall(owned):
@@ -144,7 +143,6 @@ async def test_agent_source_deferred_and_cross_business_recall(owned):
     assert not h.calls
 
 
-
 async def test_mixed_digit_chinese_recall_and_disabled_management(owned):
     """Mixed numeral/CJK input still recalls places; disabled auto-use does not disable owner CRUD."""
     h=owned
@@ -160,6 +158,128 @@ async def test_mixed_digit_chinese_recall_and_disabled_management(owned):
     assert (await command(h,action='save',text='关闭自动应用后仍可本人保存。')).status_code==200
     assert not h.calls
 
+
+async def test_model_body_dispatches_shared_memory_and_schedule(owned):
+    """The real callback parser dispatches local CRUD and source-checked schedule creation using actual API definitions."""
+    from assistant_api.services.agent_responses import process_response
+    from assistant_api.services.api_operations import OperationCatalog
+    from assistant_api.models import ScheduleEvent, Reminder
+    h=owned
+    run_id=str(uuid4()); remote=str(uuid4()); workflow=str(uuid4())
+    catalog=OperationCatalog(h.app)
+    operations=['mutate_business_memory','recall_business_memory','create_schedule']
+    async with h.app.state.session_factory() as db:
+        root=NexusRun(local_run_id=run_id,user_id=h.a,nexus_run_id=remote,workflow_execution_id=workflow,
+            idempotency_key='callback-test',request_text='记住：通勤与事项都提前12分钟提醒。然后安排讨论。',
+            status='running',context_json={'caller_processed':True,'api_flow':{
+                'text':'记住：通勤与事项都提前12分钟提醒。然后安排讨论。','trigger_source':'chat',
+                'offered_operations':operations,'receipts':[],'results':{},'visible_result':None,'step':0}})
+        db.add(root);await db.commit()
+
+    async def call(operation, body, execution):
+        """Send unmodified decision JSON into the same callback implementation used by Nexus."""
+        content=json.dumps({'decision':'call','call':{
+            'operation_id':operation,'body':body,'summary':'当前用户授权的记忆与日程操作'}},ensure_ascii=False)
+        if execution=='callback-save':
+            content='```json\n'+content+'\n```'
+        async with h.app.state.session_factory() as db:
+            return await process_response(db,h.app,{'protocol_version':'1','application_id':'personal_assistant',
+                'external_user_id':h.a,'run_id':remote,'workflow_id':workflow,'response_id':execution,
+                'execution_id':execution,'content':content})
+
+    invalid=await call('mutate_business_memory',{'action':'correct','source_quote':'通勤与事项都提前12分钟提醒。',
+        'entry_id':str(uuid4()),'expected_entry_version':1},'callback-invalid')
+    assert invalid['execution_status']=='failed' and invalid['disposition']=='continue',invalid
+    assert invalid['result'] is None
+    created=await call('mutate_business_memory',{'action':'save','source_quote':'通勤与事项都提前12分钟提醒。'},'callback-save')
+    assert created['execution_status']=='succeeded',created
+    saved=created['result']['data']
+    recalled=await call('recall_business_memory',{'query':'提醒','purpose':'事项'},'callback-read')
+    assert recalled['result']['data']['items'][0]['entry_id']==saved['entry_id']
+    invalid_source=await call('create_schedule',{'title':'讨论','starts_at':'2030-11-10T09:00:00+08:00',
+        'idempotency_key':'bad-quote','memory_defaults':{'reminder_offset_seconds':{
+            'entry_id':saved['entry_id'],'version':saved['entry_version'],'source_quote':'不是原文',
+            'value':-720,'reason':'检查未采用来源的失败响应。'}}},'callback-bad-quote')
+    assert invalid_source['execution_status']=='failed' and invalid_source['result'] is None,invalid_source
+    duplicate_source=await call('create_schedule',{'title':'讨论','starts_at':'2030-11-10T09:00:00+08:00',
+        'idempotency_key':'duplicate-source','reminder_offset_seconds':-720,
+        'memory_defaults':{'reminder_offset_seconds':{
+            'entry_id':saved['entry_id'],'version':saved['entry_version'],'source_quote':'通勤与事项都提前12分钟提醒。',
+            'value':-720,'reason':'重复来源应在写入前拒绝。'}}},'callback-duplicate-source')
+    assert duplicate_source['execution_status']=='failed' and duplicate_source['disposition']=='continue',duplicate_source
+    async with h.app.state.session_factory() as db:
+        assert list(await db.scalars(select(ScheduleEvent))) == []
+    scheduled=await call('create_schedule',{'title':'讨论','starts_at':'2030-11-10T09:00:00+08:00',
+        'idempotency_key':'model-key','memory_defaults':{'reminder_offset_seconds':{
+            'entry_id':saved['entry_id'],'version':saved['entry_version'],'source_quote':'通勤与事项都提前12分钟提醒。',
+            'value':-720,'reason':'本次安排按已保存提醒习惯。'}}},'callback-schedule')
+    assert scheduled['execution_status']=='succeeded',scheduled
+    result=scheduled['result']['data']
+    assert result['preference_application']['fields']['reminder_offset_seconds']['selected_by']=='ai'
+    assert result['reminders'][0]['trigger_at']=='2030-11-10T00:48:00Z'
+    assert result['preference_application']['fields']['reminder_offset_seconds']['source']=='memory'
+    replayed=await call('create_schedule',{'title':'讨论','starts_at':'2030-11-10T09:00:00+08:00',
+        'idempotency_key':'model-key','memory_defaults':{'reminder_offset_seconds':{
+            'entry_id':saved['entry_id'],'version':saved['entry_version'],'source_quote':'通勤与事项都提前12分钟提醒。',
+            'value':-720,'reason':'本次安排按已保存提醒习惯。'}}},'callback-schedule')
+    assert replayed==scheduled
+    async with h.app.state.session_factory() as db:
+        assert len(list(await db.scalars(select(ScheduleEvent)))) == 1
+        assert len(list(await db.scalars(select(Reminder)))) == 1
+    assert not h.calls
+    schema=h.app.openapi()['components']['schemas']['AgentMemoryCommand']['properties']
+    assert 'expected_entry_version' in schema and 'expected_version' not in schema and 'user_id' not in schema
+    from assistant_api.services.run_service import workflow_request
+    configured=workflow_request(h.app.state.settings,'memory-loop-budget',{
+        'application_response_mode':'caller_processed','wall_time_limit_ms':600000})
+    assert configured.role_bindings['controller'].timeout_seconds==600
+    from assistant_api.services.operation_intake import model_context
+    discovery={'query':'记忆 保存 纠正','text':'通勤习惯','timezone':'Asia/Shanghai',
+        'now':'2030-11-10T08:00:00+08:00','history':[],'receipts':[],'step':0}
+    model_context(discovery,catalog)
+    first=set(discovery['offered_operations'])
+    discovery['query']='create_schedule 日程创建'
+    model_context(discovery,catalog)
+    assert first.issubset(discovery['offered_operations'])
+
+
+async def test_memory_input_sources_conflict_before_writes(owned):
+    """Reject dual sources, including explicit null and disabled memory, without choosing intent or writing records."""
+    from assistant_api.models import ScheduleEvent, MatterDraft
+    h=owned
+    item=(await command(h,action='save',text='日程提前12分钟提醒。')).json()
+    selection={'entry_id':item['entry_id'],'version':1,'source_quote':'日程提前12分钟提醒。',
+        'value':-720,'reason':'用户要求采用提醒习惯。'}
+    base={'title':'讨论','starts_at':'2030-11-10T09:00:00+08:00',
+        'memory_defaults':{'reminder_offset_seconds':selection}}
+    for index,fields in enumerate([{'reminder_offset_seconds':-720},{'reminder_offset_seconds':-300},
+                                  {'reminder_at':None},{'use_preferences':False}]):
+        response=await h.client.post('/api/v1/schedules',headers=auth(h.token),
+            json={**base,**fields,'idempotency_key':f'conflicting-sources-{index}'})
+        assert response.status_code==422,response.text
+        assert response.json()['error']['code']=='input_source_conflict',response.text
+    resolved=await h.client.post('/api/v1/preferences/resolve',headers=auth(h.token),json={
+        'purpose':'schedule','values':{'reminder_offset_seconds':-720},
+        'selections':{'reminder_offset_seconds':selection}})
+    assert resolved.status_code==422 and resolved.json()['error']['code']=='input_source_conflict'
+    point={'latitude':31.2,'longitude':121.4,'coordinate_system':'gcj02'}
+    route=await h.client.post('/api/v1/commute/estimate',headers=auth(h.token),json={
+        'origin':point,'destination':point,'depart_at':'2030-11-10T08:00:00+08:00','mode':'walking',
+        'memory_defaults':{'mode':{**selection,'value':'walking'}}})
+    assert route.status_code==422 and route.json()['error']['code']=='input_source_conflict',route.text
+    async with h.app.state.session_factory() as db:
+        assert list(await db.scalars(select(ScheduleEvent)))==[]
+        assert list(await db.scalars(select(MatterDraft)))==[]
+    explicit=await h.client.post('/api/v1/schedules',headers=auth(h.token),json={
+        'title':'明确提醒','starts_at':'2030-11-10T09:00:00+08:00',
+        'reminder_offset_seconds':-300,'idempotency_key':'explicit-only-reminder'})
+    assert explicit.status_code==201,explicit.text
+    assert explicit.json()['reminders'][0]['trigger_at']=='2030-11-10T00:55:00Z'
+    assert explicit.json()['matter']['latest_progress']=='创建日程：明确提醒'
+    history=(await h.client.get('/api/v1/memory/history/'+item['entry_id'],headers=auth(h.token))).json()
+    assert history['items'][0]['created_at']
+    assert history['items'][0]['source']['text_origin']=='user_quote'
+    assert not h.calls
 
 
 async def test_deferred_conflict_keeps_newer_revision_and_reports_failure(owned):
@@ -192,7 +312,6 @@ async def test_deferred_conflict_keeps_newer_revision_and_reports_failure(owned)
     assert page['items'][0]['text']=='通勤骑行。' and page['items'][0]['version']==2
 
 
-
 async def test_missing_key_and_invalid_source_fail_without_writes(owned):
     """Unavailable encryption and fabricated quotes never produce an apparent saved or empty success."""
     from assistant_api.services.memory_repository import agent_command
@@ -207,3 +326,41 @@ async def test_missing_key_and_invalid_source_fail_without_writes(owned):
             await agent_command(db,h.app.state.memory_store,await db.get(User,h.a),str(uuid4()),
                 {'action':'save','source_quote':'不是用户的话','text':'不应保存'},key='bad-source')
     assert not h.calls
+
+
+async def test_additive_migration_and_import_preserve_account_and_history(tmp_path):
+    """0028 adds only missing memory storage; import retains original IDs, versions, status, source and settings."""
+    from scripts.migrate_sqlite import upgrade
+    from assistant_api.infrastructure.database import create_engine_and_factory
+    from assistant_api.models import Base, MemoryEntry
+    from assistant_api.services.memory_repository import MemoryStore
+    from assistant_api.core.errors import ConflictError
+    from sqlalchemy import text
+    path=tmp_path/'previous.db';url=f'sqlite+aiosqlite:///{path}'
+    engine,factory=create_engine_and_factory(url)
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda connection:Base.metadata.create_all(connection,
+            tables=[table for table in Base.metadata.sorted_tables if not table.name.startswith('assistant_memory_')]))
+    user_id=str(uuid4())
+    async with factory() as db:
+        db.add(User(user_id=user_id,email='preserve@example.com',display_name='保留账号',password_verifier='original-verifier'))
+        await db.commit()
+    await upgrade(url)
+    key=tmp_path/'memory.key';key.write_bytes(base64.urlsafe_b64encode(os.urandom(32)))
+    store=MemoryStore(factory,key)
+    entry_id=str(uuid4())
+    history=[{'entry_id':entry_id,'version':version,'status':'active','text':value,
+        'app_data':{'namespace':'personal_assistant','schema_version':1,'fields':{
+            'source':{'kind':'user_message','quote':'原始原话'}}}} for version,value in [(1,'公交'),(2,'步行')]]
+    result=await store.import_account(user_id,[{'entry':history[-1],'versions':history}],{'enabled':False,'version':5})
+    assert result=={'entries':1,'versions':2}
+    imported=await store.list_application_memory(user_id,history_entry_id=entry_id)
+    assert [item['version'] for item in imported['items']]==[2,1]
+    assert imported['items'][0]['source']['original_source']['quote']=='原始原话'
+    assert (await store.application_memory_settings(user_id))['enabled'] is False
+    with pytest.raises(ConflictError):
+        await store.import_account(user_id,[],{'enabled':True,'version':0})
+    async with factory() as db:
+        assert (await db.get(User,user_id)).password_verifier=='original-verifier'
+        assert await db.scalar(text("SELECT version FROM schema_migrations WHERE version='0028_owned_memory'"))
+    await engine.dispose()

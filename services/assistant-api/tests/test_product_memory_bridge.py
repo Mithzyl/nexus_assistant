@@ -12,6 +12,7 @@ from conftest import auth
 
 @pytest.mark.asyncio
 async def test_product_memory_owner_boundary_and_data(harness):
+    """Management is account-bound without a Run; supplied legacy sources remain owner-checked."""
     h = harness
     local, remote = str(uuid4()), str(uuid4())
     async with h.app.state.session_factory() as db:
@@ -21,9 +22,14 @@ async def test_product_memory_owner_boundary_and_data(harness):
     calls = []
 
     async def upstream(request):
+        """Serve current App memory while preserving distinct authenticated users."""
         calls.append(request)
+        assert request.url.path == "/api/v1/app/me/user-memories"
+        if request.headers["x-external-user-id"] == h.user_b:
+            return httpx.Response(200, json={"items": [], "next_offset": None})
         assert request.headers["x-external-user-id"] == h.user_a
-        assert request.url.path == f"/api/v1/app/runs/{remote}/user-memories"
+        if request.method == "GET" and request.url.params.get("offset") == "10":
+            return httpx.Response(200, json={"items": [], "next_offset": None})
         if request.method == "POST":
             body = json.loads(request.content)
             assert "local_run_id" not in body
@@ -40,16 +46,16 @@ async def test_product_memory_owner_boundary_and_data(harness):
     nexus._client = httpx.AsyncClient(base_url="http://nexus.test", transport=httpx.MockTransport(upstream))
     try:
         r = await h.client.get("/api/v1/memory", headers=auth(h.token_b))
-        assert r.status_code == 409
+        assert r.status_code == 200 and r.json()["items"] == []
         r = await h.client.get("/api/v1/memory", params={"local_run_id": local}, headers=auth(h.token_b))
         assert r.status_code == 404
-        assert not calls
+        assert len(calls) == 1
         r = await h.client.post("/api/v1/memory/search", headers=auth(h.token_a), json={"query_text": "通勤", "idempotency_key": "memory-search-fixture"})
         assert r.status_code == 200
         hit = r.json()["items"][0]
         assert hit["status"] == "candidate" and hit["version"] == 2
         assert hit["app_data"]["fields"]["arrival_local_time"] == "08:00"
-        assert r.json()["next_cursor"] == "10"
+        assert r.json()["next_cursor"] is None
         payload = {"local_run_id": local, "action": "propose", "key": "memory-fixture", "text": "通勤资料", "app_data": {"fields": {"arrival_local_time": "08:00"}}}
         r = await h.client.post("/api/v1/memory/commands", headers=auth(h.token_a), json=payload)
         assert r.status_code == 200 and r.json()["status"] == "candidate"
@@ -57,7 +63,7 @@ async def test_product_memory_owner_boundary_and_data(harness):
         assert r.status_code == 422
         r = await h.client.post("/api/v1/memory/commands", headers=auth(h.token_b), json=payload)
         assert r.status_code == 404
-        assert len(calls) == 2
+        assert len(calls) == 4
     finally:
         await nexus._client.aclose()
         nexus._client = old

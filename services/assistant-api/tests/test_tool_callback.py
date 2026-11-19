@@ -1,5 +1,7 @@
 """Current NexusPilot tool envelope: auth, ownership, formats and receipts."""
 
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import func, select
 
 from assistant_api.models import Note, ToolCallReceipt
@@ -98,13 +100,15 @@ async def test_note_search_is_user_scoped_and_returns_business_read_shape(harnes
 
 
 async def test_calendar_uses_current_date_arguments_and_user_scope(harness):
+    """Query the current-date fixture without an expired hardcoded month."""
+    today = datetime.now(UTC).date()
     response = await _call(
         harness,
         tool_envelope(
             external_user_id=harness.user_a,
             tool_execution_id="call-calendar-a",
             tool_name="personal_assistant.list_calendar_events",
-            arguments={"start_date": "2026-10-01", "end_date": "2026-10-31", "limit": 10},
+            arguments={"start_date": (today - timedelta(days=1)).isoformat(), "end_date": (today + timedelta(days=1)).isoformat(), "limit": 10},
         ),
     )
     assert response.status_code == 200, response.text

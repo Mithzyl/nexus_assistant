@@ -9,11 +9,12 @@ from dataclasses import dataclass
 
 @dataclass
 class AssistantError(Exception):
-    """Base class for failures that are safe to expose through the API."""
+    """Expose a stable failure code and explicitly supplied, caller-safe business details."""
 
     code: str
     message: str
     status_code: int = 400
+    details: dict | None = None
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return self.message

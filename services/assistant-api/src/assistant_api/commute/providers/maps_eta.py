@@ -29,6 +29,7 @@ TRANSPORT_TYPE = {"driving": "AUTOMOBILE", "walking": "WALKING"}
 
 class MapsEtaProvider:
     provider = "apple_maps_server_api"
+    supported_modes = tuple(TRANSPORT_TYPE)
     available = True
 
     def __init__(

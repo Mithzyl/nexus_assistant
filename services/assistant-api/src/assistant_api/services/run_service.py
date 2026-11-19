@@ -16,8 +16,6 @@ from `user_asks`, so an internal run cannot leak into it.
 
 from __future__ import annotations
 
-import logging
-
 import asyncio
 import json
 from collections.abc import Callable
@@ -30,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from assistant_api.core.config import Settings
 from assistant_api.core.errors import AssistantError, ConflictError, NotFoundError
+from assistant_api.core.observability import emit_event
 from assistant_api.models import NexusRun, User, UserAsk
 from assistant_api.models.base import new_id
 from assistant_api.nexus_client import (
@@ -57,13 +56,15 @@ _background_tasks: set[asyncio.Task] = set()
 _workflow_tasks: dict[str, asyncio.Task] = {}
 
 
-logger = logging.getLogger(__name__)
-
 def _track(task: asyncio.Task, local_run_id: str) -> None:
+    """Keep workflow tasks observable without logging exception bodies."""
     _background_tasks.add(task)
     _workflow_tasks[local_run_id] = task
 
     def _forget(done: asyncio.Task) -> None:
+        """Release the task and consume unexpected background exceptions without echoing content."""
+        if not done.cancelled() and done.exception() is not None:
+            emit_event("background_tick_failure", level="error", category="queue_failure", component="agent_observer")
         _background_tasks.discard(done)
         if _workflow_tasks.get(local_run_id) is done:
             _workflow_tasks.pop(local_run_id, None)
@@ -724,7 +725,7 @@ async def _consume_workflow(
     except asyncio.CancelledError:
         raise
     except Exception:  # noqa: BLE001 - a background observer must not crash the app
-        logger.exception("workflow observer failed for %s", local_run_id)
+        emit_event("background_tick_failure", level="error", category="queue_failure", component="agent_observer")
         async with session_factory() as db:
             row = await db.get(NexusRun, local_run_id)
             if row is not None:

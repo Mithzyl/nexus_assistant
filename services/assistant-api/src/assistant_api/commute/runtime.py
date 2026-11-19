@@ -91,6 +91,16 @@ class SystemClock:
         return datetime.now(UTC)
 
 
+def route_capabilities(runtime) -> dict:
+    """Publish configured adapter modes only; each request still checks quota and route availability."""
+    provider = runtime.eta
+    available = bool(getattr(provider, 'available', False))
+    return {'provider': getattr(provider, 'provider', 'unavailable'), 'available': available,
+            'supported_modes': list(getattr(provider, 'supported_modes', ())) if available else [],
+            'availability_basis': 'configured_adapter; request permission, quota and route availability are checked per call',
+            'selection_rule': '每一段使用用户指定的交通方式；未指定时结合实际测算选择。不可用时不得擅自更换。'}
+
+
 @dataclass
 class CommuteRuntime:
     settings: Settings

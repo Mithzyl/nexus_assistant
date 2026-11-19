@@ -23,6 +23,8 @@ from assistant_api.commute.providers.base import (
     RoutePoint,
     RouteSegment,
     RouteShapeStatus,
+    TRANSPORT_MODES,
+    TRANSPORT_LABELS,
 )
 from assistant_api.commute.timeutil import ensure_aware
 
@@ -32,6 +34,7 @@ class AmapProvider:
 
     provider = "amap"
     available = True
+    supported_modes = TRANSPORT_MODES
     coordinate_system = "gcj02"
 
     def __init__(
@@ -210,9 +213,15 @@ class AmapProvider:
         origin_city: str | None = None,
         destination_city: str | None = None,
     ) -> EtaResult:
-        if mode not in ("driving", "transit"):
+        """Measure the requested mode without substituting another mode on error.
+
+        Existing driving/transit use v3; walking and the two cycling modes use
+        v5 with cost and polyline explicitly requested. V5 duration is under
+        cost, and those modes do not claim live or future traffic prediction.
+        """
+        if mode not in self.supported_modes:
             raise ProviderNoRoute(
-                "AMap supports driving and public transit here",
+                "Unsupported AMap transport mode",
                 code="unsupported_transport_mode",
             )
         if mode == "transit" and not origin_city:
@@ -263,6 +272,26 @@ class AmapProvider:
                 fare_kind=(
                     "amap_taxi_cost_estimate" if taxi_cost is not None else None
                 ),
+            )
+        elif mode in ("walking", "bicycling", "electrobike"):
+            body = await self._get(
+                "/v5/direction/" + mode,
+                {"origin": self._coord(origin), "destination": self._coord(destination),
+                 "show_fields": "cost,polyline", "alternative_route": 1},
+            )
+            path = ((body.get("route") or {}).get("paths") or [None])[0]
+            if not isinstance(path, dict):
+                raise ProviderNoRoute("AMap returned no route", code="route_not_found")
+            points = self._step_points(path.get("steps"))
+            result = self._result(
+                mode=mode, origin=origin, destination=destination,
+                request_depart_at=request_depart_at, target_arrival_at=target_arrival_at,
+                duration=self._positive_int((path.get("cost") or {}).get("duration")),
+                distance=self._positive_int(path.get("distance")),
+                route_segments=(RouteSegment(kind=mode, label=TRANSPORT_LABELS[mode], points=points),)
+                               if len(points) >= 2 else (),
+                walking_distance=self._positive_int(path.get("distance")) if mode == "walking" else None,
+                timing_basis="static_route_estimate",
             )
         else:
             local = ensure_aware(request_depart_at).astimezone(
@@ -337,7 +366,9 @@ class AmapProvider:
         transfers_summary: str | None = None,
         fare: float | None = None,
         fare_kind: str | None = None,
+        timing_basis: str | None = None,
     ) -> EtaResult:
+        """Normalize measured values, retaining missing geometry and honest time-estimate limits."""
         if duration is None:
             raise ProviderNoRoute("AMap returned no usable duration", code="route_not_found")
         shape_status = route_shape_status or (
@@ -360,7 +391,7 @@ class AmapProvider:
             transfers_summary=transfers_summary,
             fare_cny=fare,
             fare_kind=fare_kind,
-            timing_basis=basis,
+            timing_basis=timing_basis or basis,
             route_segments=route_segments,
             route_shape_status=shape_status,
         )

@@ -1,0 +1,709 @@
+{
+  "provider": "opencode",
+  "model": "glm-5.3-flash",
+  "maximum_tasks": 4,
+  "maximum_model_calls_per_task": 6,
+  "prompt_modified": false,
+  "normal_services_modified_for_experiment": false,
+  "cases": [
+    {
+      "case": "zero_greeting",
+      "input": "你好，今天状态不错。",
+      "local_run_id": "d845c0b7-7f37-4f7e-a7fa-6bde98ec68ae",
+      "status": "succeeded",
+      "answer": "你好呀！状态不错就太好了。今天想安排点什么、查一下日程，还是有别的事？随时说一声就行。",
+      "clarify": null,
+      "elapsed_seconds": 5.6,
+      "nexus_run_id": "339f3ae4-7700-42c2-9e83-a7ff5621486e",
+      "workflow_id": "0ee37fca-0c29-45be-88e7-199741b9c2f2",
+      "workflow": {
+        "status": "COMPLETED",
+        "model_call_count": 1,
+        "max_model_calls": 6,
+        "error_code": null
+      },
+      "provider_attempts": [
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 19263,
+          "output_tokens": 64,
+          "error_code": null
+        }
+      ],
+      "initial_operations": [
+        "today_api_v1_today_get",
+        "list_reminders_api_v1_reminders_get",
+        "update_matter_api_v1_matters__matter_id__patch",
+        "commute_estimate_endpoint_api_v1_commute_estimate_post",
+        "create_check_api_v1_commute_plans__plan_id__checks_post",
+        "generate_commute_day_api_v1_commute_plans__plan_id__generate_day_post",
+        "list_drafts_api_v1_matters_drafts_get",
+        "refresh_commute_day"
+      ],
+      "initial_prompt_characters": 54471,
+      "actions": [
+        {
+          "sequence": 1,
+          "decision": "answer",
+          "operation": null,
+          "proposed_operation": null,
+          "dispatched": false,
+          "search_query": null,
+          "execution_status": null,
+          "disposition": "complete",
+          "raw_model_content": "{\"decision\":\"answer\",\"answer\":\"你好呀！状态不错就太好了。今天想安排点什么、查一下日程，还是有别的事？随时说一声就行。\"}"
+        }
+      ],
+      "memory_tool_called": false,
+      "empty_memory_returned": false,
+      "memory_tool_proposed": false,
+      "successful_memory_reads": 0,
+      "invalid_decision_count": 0
+    },
+    {
+      "case": "zero_implicit",
+      "input": "明天带母亲去医院，出行上有什么需要注意的？只给建议，不查询实时路线，也不创建记录。",
+      "local_run_id": "df224687-9c1c-4030-93c4-8adf4c7c6e6e",
+      "status": "succeeded",
+      "answer": "好，只给建议，不动你的日程和记录。明天陪妈妈去医院，出行上建议这样安排：1）提前把要带的证件和资料备齐：医保卡/就诊卡、身份证、既往病历和检查报告、正在吃的药盒或药单，最好列个清单前一天晚上放进包里；2）预留充足时间：医院早高峰挂号和候诊人多，建议比预约时间提前半小时到一小时到达，别卡点到；3）交通上优先考虑少走路的方案：如果妈妈腿脚不太方便，打车或家人送到门诊楼入口更省力，公共交通要留意从出入口到诊区的步行距离，大型医院往往要走上十分钟以上；4）到了医院先看楼层指引或问导诊台，确认科室位置、是否需要先自助机取号签到，报销或结算提前问清窗口；5）随身带点水和零食，妈妈有慢性病的话按医嘱确认当天是否需要空腹——涉及空腹检查就别吃早饭；6）检查项目多的话可以穿容易穿脱的衣物，避免连体衣和复杂配饰；7）回程也提前想好接您的位置，医院门口上下客点高峰容易堵。要是后面想让我帮忙记录具体时间和地点，或者到点测算路线，随时说一声。",
+      "clarify": null,
+      "elapsed_seconds": 23.9,
+      "nexus_run_id": "17b2a495-01f3-4fab-b41e-aff42fe6e9d1",
+      "workflow_id": "d917219d-ec7d-4d15-945d-a1e7756be89f",
+      "workflow": {
+        "status": "COMPLETED",
+        "model_call_count": 3,
+        "max_model_calls": 6,
+        "error_code": null
+      },
+      "provider_attempts": [
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 19610,
+          "output_tokens": 383,
+          "error_code": null
+        },
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 19921,
+          "output_tokens": 188,
+          "error_code": null
+        },
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 20544,
+          "output_tokens": 592,
+          "error_code": null
+        }
+      ],
+      "initial_operations": [
+        "search_place_candidates",
+        "today_api_v1_today_get",
+        "list_commute_plans_api_v1_commute_plans_get",
+        "recall_business_memory",
+        "create_schedule",
+        "create_todo",
+        "commute_estimate_endpoint_api_v1_commute_estimate_post",
+        "list_schedules"
+      ],
+      "initial_prompt_characters": 55706,
+      "actions": [
+        {
+          "sequence": 1,
+          "decision": "call",
+          "operation": "recall_business_memory",
+          "proposed_operation": "recall_business_memory",
+          "dispatched": false,
+          "search_query": null,
+          "execution_status": "failed",
+          "disposition": "continue",
+          "raw_model_content": "{\"decision\":\"call\",\"call\":{\"operation_id\":\"recall_business_memory\",\"body\":{\"purpose\":\"为明天陪母亲去医院提供出行建议，只参考既有偏好，不创建记录\",\"query\":\"医院 就诊 出行 偏好\",\"queries\":[\"常去医院\",\"陪家人出行习惯\",\"预约挂号 报到时间\",\"行动不便 接送\"],\"limit\":5,\"mode\":\"search\"},\"summary\":\"检索既有记忆里关于家人就医、出行偏好的记录，用于给出更贴合的建议，不做任何写入\"},\"path_parameters\":{},\"query_parameters\":{},\"headers\":{}}",
+          "arguments": {
+            "purpose": "为明天陪母亲去医院提供出行建议，只参考既有偏好，不创建记录",
+            "query": "医院 就诊 出行 偏好",
+            "queries": [
+              "常去医院",
+              "陪家人出行习惯",
+              "预约挂号 报到时间",
+              "行动不便 接送"
+            ],
+            "limit": 5,
+            "mode": "search"
+          },
+          "memory_result": null,
+          "actual_memory_items": null
+        },
+        {
+          "sequence": 2,
+          "decision": "call",
+          "operation": "recall_business_memory",
+          "proposed_operation": "recall_business_memory",
+          "dispatched": true,
+          "search_query": null,
+          "execution_status": "succeeded",
+          "disposition": "continue",
+          "raw_model_content": "{\"decision\":\"call\",\"call\":{\"body\":{\"limit\":5,\"mode\":\"search\",\"purpose\":\"为明天陪母亲去医院提供出行建议，只参考既有偏好，不创建记录\",\"query\":\"医院 就诊 出行 偏好\",\"queries\":[\"常去医院\",\"陪家人出行习惯\",\"预约挂号 报到时间\",\"行动不便 接送\"]},\"operation_id\":\"recall_business_memory\",\"summary\":\"检索既有记忆里关于家人就医、出行偏好的记录，用于给出更贴合的建议，不做任何写入\"}}",
+          "arguments": {
+            "limit": 5,
+            "mode": "search",
+            "purpose": "为明天陪母亲去医院提供出行建议，只参考既有偏好，不创建记录",
+            "query": "医院 就诊 出行 偏好",
+            "queries": [
+              "常去医院",
+              "陪家人出行习惯",
+              "预约挂号 报到时间",
+              "行动不便 接送"
+            ]
+          },
+          "memory_result": {
+            "status": "available",
+            "items": [],
+            "next_offset": null,
+            "scanned": 0,
+            "truncated": false,
+            "retrieval_method": "lexical",
+            "match_status": "no_match",
+            "coverage": {
+              "state": "complete",
+              "start_offset": 0,
+              "upstream_exhausted": true,
+              "reason": "end",
+              "continuation_supported": true
+            },
+            "next_steps": [
+              "try_alternative_queries",
+              "browse"
+            ]
+          },
+          "actual_memory_items": 0
+        },
+        {
+          "sequence": 3,
+          "decision": "answer",
+          "operation": null,
+          "proposed_operation": null,
+          "dispatched": false,
+          "search_query": null,
+          "execution_status": null,
+          "disposition": "complete",
+          "raw_model_content": "{\"decision\":\"answer\",\"answer\":\"好，只给建议，不动你的日程和记录。明天陪妈妈去医院，出行上建议这样安排：1）提前把要带的证件和资料备齐：医保卡/就诊卡、身份证、既往病历和检查报告、正在吃的药盒或药单，最好列个清单前一天晚上放进包里；2）预留充足时间：医院早高峰挂号和候诊人多，建议比预约时间提前半小时到一小时到达，别卡点到；3）交通上优先考虑少走路的方案：如果妈妈腿脚不太方便，打车或家人送到门诊楼入口更省力，公共交通要留意从出入口到诊区的步行距离，大型医院往往要走上十分钟以上；4）到了医院先看楼层指引或问导诊台，确认科室位置、是否需要先自助机取号签到，报销或结算提前问清窗口；5）随身带点水和零食，妈妈有慢性病的话按医嘱确认当天是否需要空腹——涉及空腹检查就别吃早饭；6）检查项目多的话可以穿容易穿脱的衣物，避免连体衣和复杂配饰；7）回程也提前想好接您的位置，医院门口上下客点高峰容易堵。要是后面想让我帮忙记录具体时间和地点，或者到点测算路线，随时说一声。\",\"cards\":[{\"kind\":\"info\",\"title\":\"陪诊出行提醒\",\"status\":\"info\",\"blocks\":[{\"type\":\"text\",\"text\":\"明天陪妈妈去医院，出行注意事项如下：\"},{\"type\":\"timeline\",\"items\":[{\"title\":\"前一晚备齐资料\",\"description\":\"医保卡、身份证、既往病历和检查报告、正在服用的药物清单，提前放进包里\"},{\"title\":\"提前半小时到一小时到达\",\"description\":\"早高峰挂号候诊人多，别卡预约时间到\"},{\"title\":\"优先少步行的交通方式\",\"description\":\"腿脚不便时打车到门诊楼入口更省力；公共交通留意出入口到诊区的步行距离\"},{\"title\":\"到院先确认科室和取号\",\"description\":\"看楼层指引或问导诊台，确认是否需要自助机签到\"},{\"title\":\"确认是否空腹\",\"description\":\"涉及空腹检查时按医嘱别吃早饭，慢性病用药遵医嘱\"},{\"title\":\"安排好回程接送点\",\"description\":\"医院门口上下客点高峰易堵，提前约好上车位置\"}]}]}],\"notify\":false}"
+        }
+      ],
+      "memory_tool_called": true,
+      "empty_memory_returned": true,
+      "memory_tool_proposed": true,
+      "successful_memory_reads": 1,
+      "invalid_decision_count": 1
+    },
+    {
+      "case": "with_implicit",
+      "input": "明天带母亲去医院，出行上有什么需要注意的？只给建议，不查询实时路线，也不创建记录。",
+      "local_run_id": "3daedf5d-65e5-4063-8fd6-8795fb7c9f4b",
+      "status": "succeeded",
+      "answer": "好的，只给建议，不动任何记录。明天带母亲去医院，出行重点就这几条：\n\n1. 时间留余量：医院上午人多，尽量早点出门；挂号高峰一般在8点半到10点，避开能省不少排队时间。建议比预约时间至少提前30-40分钟到。\n2. 交通选择：如果母亲走得慢或怕颠簸，优先打车或自驾，让车停在最近的门诊入口；坐公交地铁的话，先确认医院哪个门离入口最近，中途换乘别太多。\n3. 带的东西：身份证、医保卡、既往病历和检查报告、正在吃的药（或拍照带药盒）、水和小零食——上午抽血空腹的话，检查完能马上吃上，老人容易低血糖。\n4. 现场安排：先去自助机或分诊台确认流程，别一进门就排长队；母亲坐着等的时候你去跑腿排队，需要轮椅或担架入口处一般可借。\n5. 天气和穿着：出门前看一眼天气，多带一件外套，医院空调冷；穿容易穿脱的衣物，方便检查。\n6. 回程：问清楚医生能不能一次把检查都安排完，避免再跑一趟；开了药就在医院药房取好再走。\n\n要是告诉我具体是哪家医院、几点去，我可以再帮你想得更细一些。",
+      "clarify": null,
+      "elapsed_seconds": 21.9,
+      "nexus_run_id": "c6e13cce-1c5a-42fb-92e5-ec75bd1d088f",
+      "workflow_id": "ae300286-61a2-4bde-8eb8-d24de46d1222",
+      "workflow": {
+        "status": "COMPLETED",
+        "model_call_count": 2,
+        "max_model_calls": 6,
+        "error_code": null
+      },
+      "provider_attempts": [
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 19608,
+          "output_tokens": 638,
+          "error_code": null
+        },
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 20251,
+          "output_tokens": 575,
+          "error_code": null
+        }
+      ],
+      "initial_operations": [
+        "search_place_candidates",
+        "today_api_v1_today_get",
+        "list_commute_plans_api_v1_commute_plans_get",
+        "recall_business_memory",
+        "create_schedule",
+        "create_todo",
+        "commute_estimate_endpoint_api_v1_commute_estimate_post",
+        "list_schedules"
+      ],
+      "initial_prompt_characters": 55706,
+      "actions": [
+        {
+          "sequence": 1,
+          "decision": null,
+          "operation": null,
+          "proposed_operation": null,
+          "dispatched": false,
+          "search_query": null,
+          "execution_status": "failed",
+          "disposition": "continue",
+          "raw_model_content": "{\"decision\":\"answer\",\"answer\":\"好的，只给建议，不动任何记录。明天带母亲去医院，出行重点就这几条：\\n\\n1. 时间留余量：医院上午人多，尽量早点出门；挂号高峰一般在8点半到10点，避开能省不少排队时间。建议比预约时间至少提前30-40分钟到。\\n2. 交通选择：如果母亲走得慢或怕颠簸，优先打车或自驾，让车停在最近的门诊入口；坐公交地铁的话，先确认医院哪个门离入口最近，中途换乘别太多。\\n3. 带的东西：身份证、医保卡、既往病历和检查报告、正在吃的药（或拍照带药盒）、水和小零食——上午抽血空腹的话，检查完能马上吃上。老人容易低血糖。\\n4. 现场安排：先去自助机或分诊台确认流程，别一进门就排长队；母亲坐着等的时候你去跑腿排队，轮椅或担架需要的话入口处一般可借。\\n5. 天气和穿着：明天出门前看一眼天气，多带一件外套，医院空调冷；穿容易穿脱的衣物，方便检查。\\n6. 回程：问清楚医生能不能一次把检查都安排完，避免再跑一趟；如果开了药，顺路在医院药房取好再走。\\n\\n要是告诉我具体是哪家医院、几点去，我可以再帮你想得更细一些。\",\"cards\":[{\"kind\":\"plan\",\"title\":\"明天陪母亲去医院：出行建议\",\"status\":\"suggestion\",\"blocks\":[{\"type\":\"text\",\"text\":\"提前30-40分钟到，避开上午排队高峰；走得慢优先打车到最近的门诊入口。\"},{\"type\":\"fields\",\"items\":[{\"label\":\"证件单据\",\"value\":\"身份证、医保卡、病历和检查报告\"},{\"label\":\"药品\",\"value:\"},{\"label\":\"随身物品\",\"value\":\"水、小零食、保暖外套\"}]},{\"type\":\"fields\",\"items\":[{\"label\":\"到院时间\",\"value\":\"比预约/挂号时间早30-40分钟\"},{\"label\":\"现场\",\"value\":\"先确认流程再排队；需要轮椅可入口处借\"},{\"label\":\"回程\",\"value\":\"尽量一次检查完，药房取好药再走\"}]}]}]}"
+        },
+        {
+          "sequence": 2,
+          "decision": "answer",
+          "operation": null,
+          "proposed_operation": null,
+          "dispatched": false,
+          "search_query": null,
+          "execution_status": null,
+          "disposition": "complete",
+          "raw_model_content": "{\"decision\":\"answer\",\"answer\":\"好的，只给建议，不动任何记录。明天带母亲去医院，出行重点就这几条：\\n\\n1. 时间留余量：医院上午人多，尽量早点出门；挂号高峰一般在8点半到10点，避开能省不少排队时间。建议比预约时间至少提前30-40分钟到。\\n2. 交通选择：如果母亲走得慢或怕颠簸，优先打车或自驾，让车停在最近的门诊入口；坐公交地铁的话，先确认医院哪个门离入口最近，中途换乘别太多。\\n3. 带的东西：身份证、医保卡、既往病历和检查报告、正在吃的药（或拍照带药盒）、水和小零食——上午抽血空腹的话，检查完能马上吃上，老人容易低血糖。\\n4. 现场安排：先去自助机或分诊台确认流程，别一进门就排长队；母亲坐着等的时候你去跑腿排队，需要轮椅或担架入口处一般可借。\\n5. 天气和穿着：出门前看一眼天气，多带一件外套，医院空调冷；穿容易穿脱的衣物，方便检查。\\n6. 回程：问清楚医生能不能一次把检查都安排完，避免再跑一趟；开了药就在医院药房取好再走。\\n\\n要是告诉我具体是哪家医院、几点去，我可以再帮你想得更细一些。\",\"cards\":[{\"kind\":\"plan\",\"title\":\"明天陪母亲去医院：出行建议\",\"status\":\"suggestion\",\"blocks\":[{\"type\":\"text\",\"text\":\"提前30-40分钟到，避开上午排队高峰；走得慢优先打车到最近的门诊入口。\"},{\"type\":\"fields\",\"items\":[{\"label\":\"证件单据\",\"value\":\"身份证、医保卡、病历和检查报告\"},{\"label\":\"随身物品\",\"value\":\"正吃的药或药盒照片、水、小零食、保暖外套\"}]},{\"type\":\"fields\",\"items\":[{\"label\":\"到院时间\",\"value\":\"比预约/挂号时间早30-40分钟\"},{\"label\":\"现场\",\"value\":\"先确认流程再排队；需要轮椅可入口处借\"},{\"label\":\"回程\",\"value\":\"尽量一次检查完，药房取好药再走\"}]}]}]}"
+        }
+      ],
+      "memory_tool_called": false,
+      "empty_memory_returned": false,
+      "memory_tool_proposed": false,
+      "successful_memory_reads": 0,
+      "invalid_decision_count": 1
+    },
+    {
+      "case": "zero_explicit",
+      "input": "先查询你记住的我的出行偏好，再给出行建议。如果没有记忆，请明确告诉我，不要猜测。只给建议，不查询实时路线，也不创建记录。",
+      "local_run_id": "f4420e17-e184-4e47-ae21-2f2cb4c5d3ea",
+      "status": "succeeded",
+      "answer": null,
+      "clarify": "我查了一遍记忆（按出行偏好、通勤习惯、出发地目的地等多个关键词，并且完整扫过了所有记忆），目前没有记住任何你的出行偏好，这点明确告诉你，不做猜测。如果你本来就没有保存过这类记忆，也可以 direct 告诉我你的习惯（比如常用交通方式、出门时间、常去地点），我可以帮你记下来。另外，要给出行建议的话，请告诉我这次的大致情况：",
+      "elapsed_seconds": 26.0,
+      "nexus_run_id": "da1d93b1-dc32-4178-a55c-1c62b8a64108",
+      "workflow_id": "8e23ba7d-c539-4ec0-b952-dad04665ce6b",
+      "workflow": {
+        "status": "COMPLETED",
+        "model_call_count": 5,
+        "max_model_calls": 6,
+        "error_code": null
+      },
+      "provider_attempts": [
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 17893,
+          "output_tokens": 116,
+          "error_code": null
+        },
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 18448,
+          "output_tokens": 186,
+          "error_code": null
+        },
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 18708,
+          "output_tokens": 215,
+          "error_code": null
+        },
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 18967,
+          "output_tokens": 240,
+          "error_code": null
+        },
+        {
+          "status": "COMPLETED",
+          "provider": "opencode",
+          "model": "glm-5.3-flash",
+          "retry_count": 0,
+          "input_tokens": 19509,
+          "output_tokens": 301,
+          "error_code": null
+        }
+      ],
+      "initial_operations": [
+        "recall_business_memory",
+        "save_business_memory_fact",
+        "search_place_candidates",
+        "today_api_v1_today_get",
+        "list_commute_plans_api_v1_commute_plans_get",
+        "create_schedule",
+        "create_todo",
+        "list_schedules"
+      ],
+      "initial_prompt_characters": 49649,
+      "actions": [
+        {
+          "sequence": 1,
+          "decision": "call",
+          "operation": "recall_business_memory",
+          "proposed_operation": "recall_business_memory",
+          "dispatched": true,
+          "search_query": null,
+          "execution_status": "succeeded",
+          "disposition": "continue",
+          "raw_model_content": "{\"decision\":\"call\",\"call\":{\"operation_id\":\"recall_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"headers\":{},\"body\":{\"purpose\":\"查询用户的出行偏好，用于给出行建议；只读不创建记录\",\"query\":\"出行偏好 交通方式 习惯\",\"queries\":[\"出行偏好\",\"交通方式\",\"通勤习惯\",\"常用路线\"],\"mode\":\"search\",\"limit\":10},\"summary\":\"检索记忆中的出行偏好\"}}",
+          "arguments": {
+            "purpose": "查询用户的出行偏好，用于给出行建议；只读不创建记录",
+            "query": "出行偏好 交通方式 习惯",
+            "queries": [
+              "出行偏好",
+              "交通方式",
+              "通勤习惯",
+              "常用路线"
+            ],
+            "mode": "search",
+            "limit": 10
+          },
+          "memory_result": {
+            "status": "available",
+            "items": [],
+            "next_offset": null,
+            "scanned": 0,
+            "truncated": false,
+            "retrieval_method": "lexical",
+            "match_status": "no_match",
+            "coverage": {
+              "state": "complete",
+              "start_offset": 0,
+              "upstream_exhausted": true,
+              "reason": "end",
+              "continuation_supported": true
+            },
+            "next_steps": [
+              "try_alternative_queries",
+              "browse"
+            ]
+          },
+          "actual_memory_items": 0
+        },
+        {
+          "sequence": 2,
+          "decision": null,
+          "operation": null,
+          "proposed_operation": null,
+          "dispatched": false,
+          "search_query": null,
+          "execution_status": "failed",
+          "disposition": "continue",
+          "raw_model_content": "{\"decision\":\"call\",\"call\":{\"body\":{\"limit\":10,\"mode\":\"browse\",\"purpose\":\"检查是否存在与出行相关的未分类记忆，用于给出行建议；只读不创建记录\",\"query\":\"\"},\"headers\":{},\"operation_id\":\"recall_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"summary\":\"按原文浏览未分类记忆，确认是否有出行偏好\"},\"summary\":\"浏览未分类记忆确认没有出行相关记录\"}}"
+        },
+        {
+          "sequence": 3,
+          "decision": null,
+          "operation": null,
+          "proposed_operation": null,
+          "dispatched": false,
+          "search_query": null,
+          "execution_status": "failed",
+          "disposition": "continue",
+          "raw_model_content": "{\"decision\":\"call\",\"call\":{\"body\":{\"mode\":\"browse\",\"purpose\":\"检查是否存在与出行相关的未分类记忆，用于给出行建议；只读不创建记录\",\"limit\":10},\"headers\":{},\"operation_id\":\"recall_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"summary\":\"浏览未分类记忆，确认是否有出行偏好\"},\"summary\":\"修正参数后再次浏览记忆\"}}"
+        },
+        {
+          "sequence": 4,
+          "decision": "call",
+          "operation": "recall_business_memory",
+          "proposed_operation": "recall_business_memory",
+          "dispatched": true,
+          "search_query": null,
+          "execution_status": "succeeded",
+          "disposition": "continue",
+          "raw_model_content": "{\"decision\":\"call\",\"call\":{\"body\":{\"limit\":10,\"mode\":\"search\",\"purpose\":\"查询用户的出行偏好，用于给出行建议；只读不创建记录\",\"query\":\"地点 出发 到达 时间 作息\",\"queries\":[\"出发地\",\"目的地\",\"出发时间\"]},\"headers\":{},\"operation_id\":\"recall_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"summary\":\"换关键词再次检索出行相关记忆\"}}",
+          "arguments": {
+            "limit": 10,
+            "mode": "search",
+            "purpose": "查询用户的出行偏好，用于给出行建议；只读不创建记录",
+            "query": "地点 出发 到达 时间 作息",
+            "queries": [
+              "出发地",
+              "目的地",
+              "出发时间"
+            ]
+          },
+          "memory_result": {
+            "status": "available",
+            "items": [],
+            "next_offset": null,
+            "scanned": 0,
+            "truncated": false,
+            "retrieval_method": "lexical",
+            "match_status": "no_match",
+            "coverage": {
+              "state": "complete",
+              "start_offset": 0,
+              "upstream_exhausted": true,
+              "reason": "end",
+              "continuation_supported": true
+            },
+            "next_steps": [
+              "try_alternative_queries",
+              "browse"
+            ]
+          },
+          "actual_memory_items": 0
+        },
+        {
+          "sequence": 5,
+          "decision": "ask_user",
+          "operation": null,
+          "proposed_operation": null,
+          "dispatched": false,
+          "search_query": null,
+          "execution_status": null,
+          "disposition": "complete",
+          "raw_model_content": "{\"decision\":\"ask_user\",\"question\":\"我查了一遍记忆（按出行偏好、通勤习惯、出发地目的地等多个关键词，并且完整扫过了所有记忆），目前没有记住任何你的出行偏好，这点明确告诉你，不做猜测。如果你本来就没有保存过这类记忆，也可以 direct 告诉我你的习惯（比如常用交通方式、出门时间、常去地点），我可以帮你记下来。另外，要给出行建议的话，请告诉我这次的大致情况：\",\"choices\":[\"从哪里出发、去哪里？\",\"大概什么时间出发？\",\"偏好什么交通方式（开车/地铁公交/骑行/步行）？\",\"先按你常遇到的场景给个通用建议也行\"]}"
+        }
+      ],
+      "memory_tool_called": true,
+      "empty_memory_returned": true,
+      "memory_tool_proposed": true,
+      "successful_memory_reads": 2,
+      "invalid_decision_count": 2
+    }
+  ],
+  "actual_model_calls": 11,
+  "not_submitted": [],
+  "provider_http_attempts": [
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 2786
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 1916
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 1162
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 1279
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 3101
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 1771
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 2256
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 1618
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 1593
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 1467
+    },
+    {
+      "attempt_index": 1,
+      "status_code": 200,
+      "error_type": null,
+      "latency_ms": 1227
+    }
+  ],
+  "business_record_counts": {
+    "matter_todos": 0,
+    "schedules": 0,
+    "commute_plans": 0
+  },
+  "status": "已完成四组单次真实任务，不能据此估计各场景触发概率",
+  "fixtures": [
+    {
+      "case": "zero_greeting",
+      "memory_enabled": true,
+      "memory_count_before": 0,
+      "items": []
+    },
+    {
+      "case": "zero_implicit",
+      "memory_enabled": true,
+      "memory_count_before": 0,
+      "items": []
+    },
+    {
+      "case": "with_implicit",
+      "memory_enabled": true,
+      "memory_count_before": 1,
+      "items": [
+        {
+          "entry_id": "418f9525-3f78-45e6-9a0a-4d337e4548c7",
+          "version": 1,
+          "status": "active",
+          "sensitive": true,
+          "text": "带母亲出门时尽量少走路，她不喜欢坐地铁；她能接受短距离步行，优先选择少换乘的方式。",
+          "app_data": {
+            "namespace": "personal_assistant",
+            "schema_version": 1,
+            "fields": {
+              "tags": [
+                "陪同家人"
+              ],
+              "source": {
+                "kind": "user_settings"
+              }
+            }
+          },
+          "memory_type": "free_text",
+          "schema_version": 1,
+          "business": {
+            "category": null,
+            "tags": [
+              "陪同家人"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "zero_explicit",
+      "memory_enabled": true,
+      "memory_count_before": 0,
+      "items": []
+    }
+  ],
+  "configuration": {
+    "provider": "opencode",
+    "model": "glm-5.3-flash",
+    "allowlist": [
+      "deepseek-v4.1-flash",
+      "glm-5.3-flash"
+    ],
+    "assistant_binding": {
+      "controller": {
+        "provider": "opencode",
+        "model": "glm-5.3-flash"
+      }
+    },
+    "endpoint": "https://opencode.ai/inference/go/openai/v1",
+    "model_created": true,
+    "catalog_created": true,
+    "backups": [
+      "/private/tmp/assistant-glm-memory-experiment-20261107/nexus-before.env",
+      "/private/tmp/assistant-glm-memory-experiment-20261107/assistant-before.env"
+    ],
+    "model_calls": 0
+  },
+  "nexus_reload": {
+    "old_pid": 86543,
+    "new_pid": 70705,
+    "health_http_status": 200,
+    "models": [
+      "deepseek-v4.1-flash",
+      "glm-5.3-flash"
+    ],
+    "normal_worker_started": false,
+    "model_calls": 0
+  },
+  "assistant_reload": {
+    "old_pid": 65374,
+    "new_pid": 70804,
+    "port": 8010,
+    "health_http_status": 200,
+    "open_memory_schema_loaded": true,
+    "env_file": "/Users/mith/Desktop/superapp-next-worktrees/backend/services/assistant-api/.env",
+    "database": "/Users/mith/Desktop/superapp-next-worktrees/backend/services/assistant-api/data/local-development.db",
+    "automatic_ai_enabled": false,
+    "nexus_restarted": false,
+    "workers_started": false,
+    "model_calls": 0
+  },
+  "counting_note": "提出但校验失败的调用不算执行；只有 executed_call_json 存在才计派发，成功读取另按 execution_status=succeeded 统计。",
+  "with_memory_model_input_inspection": [
+    {
+      "controlled_memory_phrase_present": false,
+      "memory_packet_id": null
+    },
+    {
+      "controlled_memory_phrase_present": false,
+      "memory_packet_id": null
+    }
+  ],
+  "same_protocol_for_implicit_pair": true,
+  "cleanup": {
+    "temporary_services_stopped": [
+      "nexus-worker",
+      "nexus-api",
+      "assistant"
+    ],
+    "normal_services_stopped": false,
+    "data_preserved": true
+  },
+  "successful_memory_reads": 3,
+  "invalid_decision_count": 4,
+  "all_provider_http_200": true,
+  "conclusions": [
+    "零记忆不阻止模型先发起读取；零记忆隐含偏好任务执行一次空结果查询，明确查询任务执行两次空结果查询。",
+    "闲聊未查询；有一条相关记忆的同句输入未查询。两组隐含任务的应用协议相同，记忆未预注入模型输入；不能将差异归因于后台记忆数量。",
+    "有相关记忆组的初始工具目录包含记忆读取工具，仍未调用；仅靠提示词不能确保需要个性化时一定读取。",
+    "空库已完整查完仍有换词/浏览建议；明确查询组重复空查，存在多余检索。",
+    "四组各一次，不能据此估计触发概率或宣称覆盖所有情景。",
+    "出现四次JSON输出格式校验失败，在原Agent内续接纠正；不计作成功检索。"
+  ],
+  "normal_service_health": {
+    "nexus_8000": 200,
+    "assistant_8010": 200
+  },
+  "nexus_model_directory": {
+    "provider": "opencode",
+    "model": "glm-5.3-flash",
+    "selectable": true
+  },
+  "normal_worker_started": false,
+  "regression_or_hash_checks": false
+}

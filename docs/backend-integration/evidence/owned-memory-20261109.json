@@ -1,0 +1,1163 @@
+{
+  "status": "passed",
+  "scenario": "通勤来源记忆在事项读取并由同一Agent纠正，遗忘临时记忆，回答后候选处理",
+  "input": "这是隔离数据中的一次业务记忆验证，不代表我的真实习惯。请在当前通勤事项里管理我的记忆：先长期记住原话“通勤和事项出行默认步行，日程提前12分钟提醒。”；接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”，再检索核对新版本。另记住“临时资料：周二带纸质票据”，取得真实编号后遗忘这条临时资料，不遗忘第一条。最后把原话“我偶尔看展”作为候选记忆放到回答后整理，不作为有效偏好。不要创建日程、待办或修改通勤计划，不调用地图、天气和通知，不改自动AI或任何权限，不要求我填额外设置。全部工具执行在原Agent继续，最后直接用原始JSON格式的answer回答：第一条真实编号、当前版本及正文，临时资料遗忘状态，候选仅已排队。不要Markdown代码块，不要卡片。",
+  "final": {
+    "http_status": 200,
+    "body": {
+      "source": "chat",
+      "follow_up_id": null,
+      "follow_up_execution_id": null,
+      "confirm_status": "unknown",
+      "target_lifecycle": null,
+      "target_title": null,
+      "history_target_id": null,
+      "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+      "parent_run_id": null,
+      "request_text": "这是隔离数据中的一次业务记忆验证，不代表我的真实习惯。请在当前通勤事项里管理我的记忆：先长期记住原话“通勤和事项出行默认步行，日程提前12分钟提醒。”；接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”，再检索核对新版本。另记住“临时资料：周二带纸质票据”，取得真实编号后遗忘这条临时资料，不遗忘第一条。最后把原话“我偶尔看展”作为候选记忆放到回答后整理，不作为有效偏好。不要创建日程、待办或修改通勤计划，不调用地图、天气和通知，不改自动AI或任何权限，不要求我填额外设置。全部工具执行在原Agent继续，最后直接用原始JSON格式的answer回答：第一条真实编号、当前版本及正文，临时资料遗忘状态，候选仅已排队。不要Markdown代码块，不要卡片。",
+      "intent": "question",
+      "outcome": "answer",
+      "status": "succeeded",
+      "answer": "记忆验证都处理完了。第一条长期记忆的真实编号是 ea93617e-7375-4015-b512-b8e33cfddfc1，当前版本为 2，正文已按你的纠正更新为“通勤和事项出行默认公交，日程提前12分钟提醒。”，检索核对通过。临时资料“临时资料：周二带纸质票据”（编号 f2677097-f775-4865-a188-503b7ca64d53）已遗忘，状态为 forgotten，第一条未受影响。候选记忆“我偶尔看展”仅已排队，放到回答后整理，尚未成为有效偏好。",
+      "clarify": null,
+      "pending_context": {
+        "execution_result": {
+          "operation_id": "mutate_business_memory",
+          "status": "succeeded",
+          "http_status": 200,
+          "data": {
+            "operation_id": "9056ac3e-ef25-4e35-8614-e5205c7c96ef",
+            "status": "queued",
+            "execution": "after_answer",
+            "applied": false
+          }
+        },
+        "cards": []
+      },
+      "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+      "draft_id": null,
+      "draft": null,
+      "created_at": "2026-11-09T03:47:28.590972Z",
+      "completed_at": "2026-11-09T03:48:01.273777Z"
+    }
+  },
+  "fixture": {
+    "commute_matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+    "other_matter_id": "d197c43d-5a21-4853-934b-2038652dcd9d",
+    "plan_id": "c3bf76af-be1f-4750-9d30-bba047e1f5b0",
+    "memory_count_before_agent": 0
+  },
+  "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+  "nexus_counts": {
+    "runs": 1,
+    "workflows": 1,
+    "platform_memory_entries": 0
+  },
+  "model_requests": 8,
+  "model_attempts": [
+    {
+      "provider": "opencode",
+      "model": "glm-5.3-flash",
+      "status": "COMPLETED",
+      "retry_count": 0,
+      "error_code": null
+    },
+    {
+      "provider": "opencode",
+      "model": "glm-5.3-flash",
+      "status": "COMPLETED",
+      "retry_count": 0,
+      "error_code": null
+    },
+    {
+      "provider": "opencode",
+      "model": "glm-5.3-flash",
+      "status": "COMPLETED",
+      "retry_count": 0,
+      "error_code": null
+    },
+    {
+      "provider": "opencode",
+      "model": "glm-5.3-flash",
+      "status": "COMPLETED",
+      "retry_count": 0,
+      "error_code": null
+    },
+    {
+      "provider": "opencode",
+      "model": "glm-5.3-flash",
+      "status": "COMPLETED",
+      "retry_count": 0,
+      "error_code": null
+    },
+    {
+      "provider": "opencode",
+      "model": "glm-5.3-flash",
+      "status": "COMPLETED",
+      "retry_count": 0,
+      "error_code": null
+    },
+    {
+      "provider": "opencode",
+      "model": "glm-5.3-flash",
+      "status": "COMPLETED",
+      "retry_count": 0,
+      "error_code": null
+    },
+    {
+      "provider": "opencode",
+      "model": "glm-5.3-flash",
+      "status": "COMPLETED",
+      "retry_count": 0,
+      "error_code": null
+    }
+  ],
+  "callbacks": [
+    {
+      "execution_id": "18218541-8ffa-4b91-aace-eff7a9149ee9",
+      "status": "completed",
+      "request_json": {
+        "protocol_version": "1",
+        "application_id": "personal_assistant",
+        "external_user_id": "db567c52-468c-4a9e-b514-29228738b0a0",
+        "run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+        "workflow_id": "64b3c764-04b9-4708-be36-3a6c37af920a",
+        "response_id": "597fc7a2-7216-41fd-8219-8cf6fedf4235",
+        "execution_id": "18218541-8ffa-4b91-aace-eff7a9149ee9",
+        "content": "{\"decision\":\"call\",\"call\":{\"operation_id\":\"mutate_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"headers\":{},\"body\":{\"action\":\"save\",\"intent\":\"user_requested\",\"execution\":\"before_answer\",\"source_quote\":\"通勤和事项出行默认步行，日程提前12分钟提醒。\"},\"summary\":\"长期保存用户原话：通勤和事项出行默认步行，日程提前12分钟提醒\"}}"
+      },
+      "executed_call_json": {
+        "operation_id": "mutate_business_memory",
+        "path_parameters": {},
+        "query_parameters": {},
+        "headers": {},
+        "body": {
+          "action": "save",
+          "intent": "user_requested",
+          "execution": "before_answer",
+          "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。"
+        },
+        "summary": "长期保存用户原话：通勤和事项出行默认步行，日程提前12分钟提醒"
+      },
+      "response_json": {
+        "protocol_version": "1",
+        "execution_id": "18218541-8ffa-4b91-aace-eff7a9149ee9",
+        "disposition": "continue",
+        "execution_status": "succeeded",
+        "result": {
+          "operation_id": "mutate_business_memory",
+          "status": "succeeded",
+          "http_status": 200,
+          "data": {
+            "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+            "entry_version": 1,
+            "version": 1,
+            "status": "active",
+            "applied_version": 1
+          },
+          "executed_arguments": {
+            "action": "save",
+            "intent": "user_requested",
+            "execution": "before_answer",
+            "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。"
+          },
+          "executed_call": {
+            "operation_id": "mutate_business_memory",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "action": "save",
+              "intent": "user_requested",
+              "execution": "before_answer",
+              "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。"
+            },
+            "summary": "长期保存用户原话：通勤和事项出行默认步行，日程提前12分钟提醒"
+          },
+          "proposed_summary": "长期保存用户原话：通勤和事项出行默认步行，日程提前12分钟提醒"
+        },
+        "error": null
+      }
+    },
+    {
+      "execution_id": "969bd450-9566-4753-b0a2-4653b7e031f8",
+      "status": "completed",
+      "request_json": {
+        "protocol_version": "1",
+        "application_id": "personal_assistant",
+        "external_user_id": "db567c52-468c-4a9e-b514-29228738b0a0",
+        "run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+        "workflow_id": "64b3c764-04b9-4708-be36-3a6c37af920a",
+        "response_id": "22bef84c-dbbf-42a0-97b8-1bf633d83c5d",
+        "execution_id": "969bd450-9566-4753-b0a2-4653b7e031f8",
+        "content": "{\"decision\":\"call\",\"call\":{\"operation_id\":\"recall_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"headers\":{},\"body\":{\"purpose\":\"事项出行默认交通方式与日程提醒偏好验证\",\"query\":\"事项出行 默认 交通方式 提醒\",\"queries\":[\"事项出行默认\",\"日程提前提醒\"],\"limit\":5,\"matter_id\":\"8ab87c5d-1842-4329-8fb3-9b77f67274a7\",\"mode\":\"search\"},\"summary\":\"从事项出行角度检索该记忆，获取条目编号和当前版本\"}}"
+      },
+      "executed_call_json": {
+        "operation_id": "recall_business_memory",
+        "path_parameters": {},
+        "query_parameters": {},
+        "headers": {},
+        "body": {
+          "purpose": "事项出行默认交通方式与日程提醒偏好验证",
+          "query": "事项出行 默认 交通方式 提醒",
+          "queries": [
+            "事项出行默认",
+            "日程提前提醒"
+          ],
+          "limit": 5,
+          "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+          "mode": "search"
+        },
+        "summary": "从事项出行角度检索该记忆，获取条目编号和当前版本"
+      },
+      "response_json": {
+        "protocol_version": "1",
+        "execution_id": "969bd450-9566-4753-b0a2-4653b7e031f8",
+        "disposition": "continue",
+        "execution_status": "succeeded",
+        "result": {
+          "operation_id": "recall_business_memory",
+          "status": "succeeded",
+          "http_status": 200,
+          "data": {
+            "status": "available",
+            "items": [
+              {
+                "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+                "version": 1,
+                "entry_version": 1,
+                "provenance": {
+                  "kind": "user_message",
+                  "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+                  "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+                  "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+                  "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。",
+                  "text_origin": "user_quote",
+                  "proposed_by": "ai",
+                  "executed_by": "assistant",
+                  "intent": "user_requested"
+                },
+                "text": "通勤和事项出行默认步行，日程提前12分钟提醒。",
+                "typed_data": null,
+                "business": {
+                  "category": null,
+                  "tags": []
+                },
+                "match": {
+                  "matched_queries": [
+                    "事项出行 默认 交通方式 提醒",
+                    "事项出行默认",
+                    "日程提前提醒"
+                  ],
+                  "matched_tags": []
+                },
+                "source": {
+                  "kind": "assistant_memory",
+                  "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+                  "version": 1
+                }
+              }
+            ],
+            "next_offset": null,
+            "scanned": 1,
+            "truncated": false,
+            "retrieval_method": "lexical",
+            "match_status": "matched",
+            "confirmed_empty": false,
+            "coverage": {
+              "state": "complete",
+              "start_offset": 0,
+              "upstream_exhausted": true,
+              "reason": "end",
+              "continuation_supported": true
+            },
+            "next_steps": []
+          },
+          "executed_arguments": {
+            "purpose": "事项出行默认交通方式与日程提醒偏好验证",
+            "query": "事项出行 默认 交通方式 提醒",
+            "queries": [
+              "事项出行默认",
+              "日程提前提醒"
+            ],
+            "limit": 5,
+            "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+            "mode": "search"
+          },
+          "executed_call": {
+            "operation_id": "recall_business_memory",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "purpose": "事项出行默认交通方式与日程提醒偏好验证",
+              "query": "事项出行 默认 交通方式 提醒",
+              "queries": [
+                "事项出行默认",
+                "日程提前提醒"
+              ],
+              "limit": 5,
+              "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+              "mode": "search"
+            },
+            "summary": "从事项出行角度检索该记忆，获取条目编号和当前版本"
+          },
+          "proposed_summary": "从事项出行角度检索该记忆，获取条目编号和当前版本"
+        },
+        "error": null
+      }
+    },
+    {
+      "execution_id": "16ab49d0-47ee-4895-ac2e-18fbf6facd69",
+      "status": "completed",
+      "request_json": {
+        "protocol_version": "1",
+        "application_id": "personal_assistant",
+        "external_user_id": "db567c52-468c-4a9e-b514-29228738b0a0",
+        "run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+        "workflow_id": "64b3c764-04b9-4708-be36-3a6c37af920a",
+        "response_id": "fdd010f3-a948-4503-8fe2-bb4fc5b42008",
+        "execution_id": "16ab49d0-47ee-4895-ac2e-18fbf6facd69",
+        "content": "{\"decision\":\"call\",\"call\":{\"operation_id\":\"mutate_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"headers\":{},\"body\":{\"action\":\"correct\",\"intent\":\"user_requested\",\"execution\":\"before_answer\",\"entry_id\":\"ea93617e-7375-4015-b512-b8e33cfddfc1\",\"expected_entry_version\":1,\"source_quote\":\"接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”\",\"text\":\"通勤和事项出行默认公交，日程提前12分钟提醒。\"},\"summary\":\"将同一条目纠正为：通勤和事项出行默认公交，日程提前12分钟提醒\"}}"
+      },
+      "executed_call_json": {
+        "operation_id": "mutate_business_memory",
+        "path_parameters": {},
+        "query_parameters": {},
+        "headers": {},
+        "body": {
+          "action": "correct",
+          "intent": "user_requested",
+          "execution": "before_answer",
+          "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+          "expected_entry_version": 1,
+          "source_quote": "接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”",
+          "text": "通勤和事项出行默认公交，日程提前12分钟提醒。"
+        },
+        "summary": "将同一条目纠正为：通勤和事项出行默认公交，日程提前12分钟提醒"
+      },
+      "response_json": {
+        "protocol_version": "1",
+        "execution_id": "16ab49d0-47ee-4895-ac2e-18fbf6facd69",
+        "disposition": "continue",
+        "execution_status": "succeeded",
+        "result": {
+          "operation_id": "mutate_business_memory",
+          "status": "succeeded",
+          "http_status": 200,
+          "data": {
+            "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+            "entry_version": 2,
+            "version": 2,
+            "status": "active",
+            "applied_version": 2
+          },
+          "executed_arguments": {
+            "action": "correct",
+            "intent": "user_requested",
+            "execution": "before_answer",
+            "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+            "expected_entry_version": 1,
+            "source_quote": "接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”",
+            "text": "通勤和事项出行默认公交，日程提前12分钟提醒。"
+          },
+          "executed_call": {
+            "operation_id": "mutate_business_memory",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "action": "correct",
+              "intent": "user_requested",
+              "execution": "before_answer",
+              "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+              "expected_entry_version": 1,
+              "source_quote": "接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”",
+              "text": "通勤和事项出行默认公交，日程提前12分钟提醒。"
+            },
+            "summary": "将同一条目纠正为：通勤和事项出行默认公交，日程提前12分钟提醒"
+          },
+          "proposed_summary": "将同一条目纠正为：通勤和事项出行默认公交，日程提前12分钟提醒"
+        },
+        "error": null
+      }
+    },
+    {
+      "execution_id": "a86f0feb-9089-444b-bd83-ff2ce863c427",
+      "status": "completed",
+      "request_json": {
+        "protocol_version": "1",
+        "application_id": "personal_assistant",
+        "external_user_id": "db567c52-468c-4a9e-b514-29228738b0a0",
+        "run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+        "workflow_id": "64b3c764-04b9-4708-be36-3a6c37af920a",
+        "response_id": "06f2154c-a55f-4f40-aee6-9badc95d8e9b",
+        "execution_id": "a86f0feb-9089-444b-bd83-ff2ce863c427",
+        "content": "{\"decision\":\"call\",\"call\":{\"operation_id\":\"recall_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"headers\":{},\"body\":{\"purpose\":\"核对该记忆纠正后的最新版本\",\"query\":\"通勤 事项出行 默认 公交 提醒\",\"queries\":[\"事项出行默认\",\"日程提前提醒\"],\"limit\":5,\"matter_id\":\"8ab87c5d-1842-4329-8fb3-9b77f67274a7\",\"mode\":\"search\"},\"summary\":\"再次检索核对纠正后的新版记忆正文\"}}"
+      },
+      "executed_call_json": {
+        "operation_id": "recall_business_memory",
+        "path_parameters": {},
+        "query_parameters": {},
+        "headers": {},
+        "body": {
+          "purpose": "核对该记忆纠正后的最新版本",
+          "query": "通勤 事项出行 默认 公交 提醒",
+          "queries": [
+            "事项出行默认",
+            "日程提前提醒"
+          ],
+          "limit": 5,
+          "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+          "mode": "search"
+        },
+        "summary": "再次检索核对纠正后的新版记忆正文"
+      },
+      "response_json": {
+        "protocol_version": "1",
+        "execution_id": "a86f0feb-9089-444b-bd83-ff2ce863c427",
+        "disposition": "continue",
+        "execution_status": "succeeded",
+        "result": {
+          "operation_id": "recall_business_memory",
+          "status": "succeeded",
+          "http_status": 200,
+          "data": {
+            "status": "available",
+            "items": [
+              {
+                "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+                "version": 2,
+                "entry_version": 2,
+                "provenance": {
+                  "kind": "user_message",
+                  "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+                  "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+                  "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+                  "source_quote": "接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”",
+                  "text_origin": "user_quote",
+                  "proposed_by": "ai",
+                  "executed_by": "assistant",
+                  "intent": "user_requested",
+                  "original_source": {
+                    "kind": "user_message",
+                    "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+                    "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+                    "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+                    "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。",
+                    "text_origin": "user_quote",
+                    "proposed_by": "ai",
+                    "executed_by": "assistant",
+                    "intent": "user_requested"
+                  }
+                },
+                "text": "通勤和事项出行默认公交，日程提前12分钟提醒。",
+                "typed_data": null,
+                "business": {
+                  "category": null,
+                  "tags": []
+                },
+                "match": {
+                  "matched_queries": [
+                    "通勤 事项出行 默认 公交 提醒",
+                    "事项出行默认",
+                    "日程提前提醒"
+                  ],
+                  "matched_tags": []
+                },
+                "source": {
+                  "kind": "assistant_memory",
+                  "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+                  "version": 2
+                }
+              }
+            ],
+            "next_offset": null,
+            "scanned": 1,
+            "truncated": false,
+            "retrieval_method": "lexical",
+            "match_status": "matched",
+            "confirmed_empty": false,
+            "coverage": {
+              "state": "complete",
+              "start_offset": 0,
+              "upstream_exhausted": true,
+              "reason": "end",
+              "continuation_supported": true
+            },
+            "next_steps": []
+          },
+          "executed_arguments": {
+            "purpose": "核对该记忆纠正后的最新版本",
+            "query": "通勤 事项出行 默认 公交 提醒",
+            "queries": [
+              "事项出行默认",
+              "日程提前提醒"
+            ],
+            "limit": 5,
+            "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+            "mode": "search"
+          },
+          "executed_call": {
+            "operation_id": "recall_business_memory",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "purpose": "核对该记忆纠正后的最新版本",
+              "query": "通勤 事项出行 默认 公交 提醒",
+              "queries": [
+                "事项出行默认",
+                "日程提前提醒"
+              ],
+              "limit": 5,
+              "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+              "mode": "search"
+            },
+            "summary": "再次检索核对纠正后的新版记忆正文"
+          },
+          "proposed_summary": "再次检索核对纠正后的新版记忆正文"
+        },
+        "error": null
+      }
+    },
+    {
+      "execution_id": "0ba54a90-f189-4047-a3cc-25e66442ddd8",
+      "status": "completed",
+      "request_json": {
+        "protocol_version": "1",
+        "application_id": "personal_assistant",
+        "external_user_id": "db567c52-468c-4a9e-b514-29228738b0a0",
+        "run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+        "workflow_id": "64b3c764-04b9-4708-be36-3a6c37af920a",
+        "response_id": "1a5f1ae7-4c21-4403-ae59-11ef633887a3",
+        "execution_id": "0ba54a90-f189-4047-a3cc-25e66442ddd8",
+        "content": "{\"decision\":\"call\",\"call\":{\"operation_id\":\"save_business_memory_fact\",\"path_parameters\":{},\"query_parameters\":{},\"headers\":{},\"body\":{\"source_quote\":\"临时资料：周二带纸质票据\",\"category\":\"临时资料\",\"tags\":[\"周二\",\"纸质票据\"]},\"summary\":\"保存用户明确要求记住的临时资料原话\"}}"
+      },
+      "executed_call_json": {
+        "operation_id": "save_business_memory_fact",
+        "path_parameters": {},
+        "query_parameters": {},
+        "headers": {},
+        "body": {
+          "source_quote": "临时资料：周二带纸质票据",
+          "category": "临时资料",
+          "tags": [
+            "周二",
+            "纸质票据"
+          ]
+        },
+        "summary": "保存用户明确要求记住的临时资料原话"
+      },
+      "response_json": {
+        "protocol_version": "1",
+        "execution_id": "0ba54a90-f189-4047-a3cc-25e66442ddd8",
+        "disposition": "continue",
+        "execution_status": "succeeded",
+        "result": {
+          "operation_id": "save_business_memory_fact",
+          "status": "succeeded",
+          "http_status": 200,
+          "data": {
+            "entry_id": "f2677097-f775-4865-a188-503b7ca64d53",
+            "entry_version": 1,
+            "version": 1,
+            "status": "active",
+            "applied_version": 1
+          },
+          "executed_arguments": {
+            "source_quote": "临时资料：周二带纸质票据",
+            "category": "临时资料",
+            "tags": [
+              "周二",
+              "纸质票据"
+            ]
+          },
+          "executed_call": {
+            "operation_id": "save_business_memory_fact",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "source_quote": "临时资料：周二带纸质票据",
+              "category": "临时资料",
+              "tags": [
+                "周二",
+                "纸质票据"
+              ]
+            },
+            "summary": "保存用户明确要求记住的临时资料原话"
+          },
+          "proposed_summary": "保存用户明确要求记住的临时资料原话"
+        },
+        "error": null
+      }
+    },
+    {
+      "execution_id": "4697ceb8-a457-416d-9cc6-8513dc4373a8",
+      "status": "completed",
+      "request_json": {
+        "protocol_version": "1",
+        "application_id": "personal_assistant",
+        "external_user_id": "db567c52-468c-4a9e-b514-29228738b0a0",
+        "run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+        "workflow_id": "64b3c764-04b9-4708-be36-3a6c37af920a",
+        "response_id": "12b525e2-8b87-4490-9990-0d7dbf99fb3f",
+        "execution_id": "4697ceb8-a457-416d-9cc6-8513dc4373a8",
+        "content": "{\"decision\":\"call\",\"call\":{\"operation_id\":\"mutate_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"headers\":{},\"body\":{\"action\":\"forget\",\"intent\":\"user_requested\",\"execution\":\"before_answer\",\"entry_id\":\"f2677097-f775-4865-a188-503b7ca64d53\",\"expected_entry_version\":1,\"source_quote\":\"另记住“临时资料：周二带纸质票据”，取得真实编号后遗忘这条临时资料，不遗忘第一条。\"},\"summary\":\"遗忘临时资料条目：临时资料：周二带纸质票据\"}}"
+      },
+      "executed_call_json": {
+        "operation_id": "mutate_business_memory",
+        "path_parameters": {},
+        "query_parameters": {},
+        "headers": {},
+        "body": {
+          "action": "forget",
+          "intent": "user_requested",
+          "execution": "before_answer",
+          "entry_id": "f2677097-f775-4865-a188-503b7ca64d53",
+          "expected_entry_version": 1,
+          "source_quote": "另记住“临时资料：周二带纸质票据”，取得真实编号后遗忘这条临时资料，不遗忘第一条。"
+        },
+        "summary": "遗忘临时资料条目：临时资料：周二带纸质票据"
+      },
+      "response_json": {
+        "protocol_version": "1",
+        "execution_id": "4697ceb8-a457-416d-9cc6-8513dc4373a8",
+        "disposition": "continue",
+        "execution_status": "succeeded",
+        "result": {
+          "operation_id": "mutate_business_memory",
+          "status": "succeeded",
+          "http_status": 200,
+          "data": {
+            "entry_id": "f2677097-f775-4865-a188-503b7ca64d53",
+            "entry_version": 2,
+            "version": 2,
+            "status": "forgotten",
+            "applied_version": 2
+          },
+          "executed_arguments": {
+            "action": "forget",
+            "intent": "user_requested",
+            "execution": "before_answer",
+            "entry_id": "f2677097-f775-4865-a188-503b7ca64d53",
+            "expected_entry_version": 1,
+            "source_quote": "另记住“临时资料：周二带纸质票据”，取得真实编号后遗忘这条临时资料，不遗忘第一条。"
+          },
+          "executed_call": {
+            "operation_id": "mutate_business_memory",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "action": "forget",
+              "intent": "user_requested",
+              "execution": "before_answer",
+              "entry_id": "f2677097-f775-4865-a188-503b7ca64d53",
+              "expected_entry_version": 1,
+              "source_quote": "另记住“临时资料：周二带纸质票据”，取得真实编号后遗忘这条临时资料，不遗忘第一条。"
+            },
+            "summary": "遗忘临时资料条目：临时资料：周二带纸质票据"
+          },
+          "proposed_summary": "遗忘临时资料条目：临时资料：周二带纸质票据"
+        },
+        "error": null
+      }
+    },
+    {
+      "execution_id": "1da2a3be-c42d-4dd2-83f0-56f009261b96",
+      "status": "completed",
+      "request_json": {
+        "protocol_version": "1",
+        "application_id": "personal_assistant",
+        "external_user_id": "db567c52-468c-4a9e-b514-29228738b0a0",
+        "run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+        "workflow_id": "64b3c764-04b9-4708-be36-3a6c37af920a",
+        "response_id": "536787fc-4f6f-4170-b26d-76c167318a4d",
+        "execution_id": "1da2a3be-c42d-4dd2-83f0-56f009261b96",
+        "content": "{\"decision\":\"call\",\"call\":{\"operation_id\":\"mutate_business_memory\",\"path_parameters\":{},\"query_parameters\":{},\"headers\":{},\"body\":{\"action\":\"propose\",\"intent\":\"incidental\",\"execution\":\"after_answer\",\"source_quote\":\"我偶尔看展\"},\"summary\":\"将“我偶尔看展”作为候选记忆放到回答后整理\"}}"
+      },
+      "executed_call_json": {
+        "operation_id": "mutate_business_memory",
+        "path_parameters": {},
+        "query_parameters": {},
+        "headers": {},
+        "body": {
+          "action": "propose",
+          "intent": "incidental",
+          "execution": "after_answer",
+          "source_quote": "我偶尔看展"
+        },
+        "summary": "将“我偶尔看展”作为候选记忆放到回答后整理"
+      },
+      "response_json": {
+        "protocol_version": "1",
+        "execution_id": "1da2a3be-c42d-4dd2-83f0-56f009261b96",
+        "disposition": "continue",
+        "execution_status": "succeeded",
+        "result": {
+          "operation_id": "mutate_business_memory",
+          "status": "succeeded",
+          "http_status": 200,
+          "data": {
+            "operation_id": "9056ac3e-ef25-4e35-8614-e5205c7c96ef",
+            "status": "queued",
+            "execution": "after_answer",
+            "applied": false
+          },
+          "executed_arguments": {
+            "action": "propose",
+            "intent": "incidental",
+            "execution": "after_answer",
+            "source_quote": "我偶尔看展"
+          },
+          "executed_call": {
+            "operation_id": "mutate_business_memory",
+            "path_parameters": {},
+            "query_parameters": {},
+            "headers": {},
+            "body": {
+              "action": "propose",
+              "intent": "incidental",
+              "execution": "after_answer",
+              "source_quote": "我偶尔看展"
+            },
+            "summary": "将“我偶尔看展”作为候选记忆放到回答后整理"
+          },
+          "proposed_summary": "将“我偶尔看展”作为候选记忆放到回答后整理"
+        },
+        "error": null
+      }
+    },
+    {
+      "execution_id": "6213f816-f040-4985-86bd-c154a87d43f0",
+      "status": "completed",
+      "request_json": {
+        "protocol_version": "1",
+        "application_id": "personal_assistant",
+        "external_user_id": "db567c52-468c-4a9e-b514-29228738b0a0",
+        "run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+        "workflow_id": "64b3c764-04b9-4708-be36-3a6c37af920a",
+        "response_id": "86dfb113-3174-4b62-af26-cc73b8d88467",
+        "execution_id": "6213f816-f040-4985-86bd-c154a87d43f0",
+        "content": "{\"decision\":\"answer\",\"answer\":\"记忆验证都处理完了。第一条长期记忆的真实编号是 ea93617e-7375-4015-b512-b8e33cfddfc1，当前版本为 2，正文已按你的纠正更新为“通勤和事项出行默认公交，日程提前12分钟提醒。”，检索核对通过。临时资料“临时资料：周二带纸质票据”（编号 f2677097-f775-4865-a188-503b7ca64d53）已遗忘，状态为 forgotten，第一条未受影响。候选记忆“我偶尔看展”仅已排队，放到回答后整理，尚未成为有效偏好。\",\"notify\":false}"
+      },
+      "executed_call_json": null,
+      "response_json": {
+        "protocol_version": "1",
+        "execution_id": "6213f816-f040-4985-86bd-c154a87d43f0",
+        "disposition": "complete"
+      }
+    }
+  ],
+  "cross_matter_query": {
+    "status": "available",
+    "items": [
+      {
+        "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+        "version": 2,
+        "entry_version": 2,
+        "provenance": {
+          "kind": "user_message",
+          "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+          "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+          "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+          "source_quote": "接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”",
+          "text_origin": "user_quote",
+          "proposed_by": "ai",
+          "executed_by": "assistant",
+          "intent": "user_requested",
+          "original_source": {
+            "kind": "user_message",
+            "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+            "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+            "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+            "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。",
+            "text_origin": "user_quote",
+            "proposed_by": "ai",
+            "executed_by": "assistant",
+            "intent": "user_requested"
+          }
+        },
+        "text": "通勤和事项出行默认公交，日程提前12分钟提醒。",
+        "typed_data": null,
+        "business": {
+          "category": null,
+          "tags": []
+        },
+        "match": {
+          "matched_queries": [
+            "公交"
+          ],
+          "matched_tags": []
+        },
+        "source": {
+          "kind": "assistant_memory",
+          "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+          "version": 2
+        }
+      }
+    ],
+    "next_offset": null,
+    "scanned": 3,
+    "truncated": false,
+    "retrieval_method": "lexical",
+    "match_status": "matched",
+    "confirmed_empty": false,
+    "coverage": {
+      "state": "complete",
+      "start_offset": 0,
+      "upstream_exhausted": true,
+      "reason": "end",
+      "continuation_supported": true
+    },
+    "next_steps": []
+  },
+  "primary_history": {
+    "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+    "current_version": 2,
+    "items": [
+      {
+        "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+        "entry_version": 2,
+        "version": 2,
+        "status": "active",
+        "sensitive": false,
+        "memory_type": "free_text",
+        "schema_version": 1,
+        "text": "通勤和事项出行默认公交，日程提前12分钟提醒。",
+        "source": {
+          "kind": "user_message",
+          "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+          "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+          "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+          "source_quote": "接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”",
+          "text_origin": "user_quote",
+          "proposed_by": "ai",
+          "executed_by": "assistant",
+          "intent": "user_requested",
+          "original_source": {
+            "kind": "user_message",
+            "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+            "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+            "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+            "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。",
+            "text_origin": "user_quote",
+            "proposed_by": "ai",
+            "executed_by": "assistant",
+            "intent": "user_requested"
+          }
+        },
+        "app_data": null,
+        "typed_data": null
+      },
+      {
+        "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+        "entry_version": 1,
+        "version": 1,
+        "status": "active",
+        "sensitive": false,
+        "memory_type": "free_text",
+        "schema_version": 1,
+        "text": "通勤和事项出行默认步行，日程提前12分钟提醒。",
+        "source": {
+          "kind": "user_message",
+          "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+          "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+          "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+          "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。",
+          "text_origin": "user_quote",
+          "proposed_by": "ai",
+          "executed_by": "assistant",
+          "intent": "user_requested"
+        },
+        "app_data": null,
+        "typed_data": null
+      }
+    ],
+    "next_offset": null
+  },
+  "owner_memory_after_worker": {
+    "items": [
+      {
+        "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+        "entry_version": 2,
+        "version": 2,
+        "status": "active",
+        "sensitive": false,
+        "memory_type": "free_text",
+        "schema_version": 1,
+        "text": "通勤和事项出行默认公交，日程提前12分钟提醒。",
+        "source": {
+          "kind": "user_message",
+          "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+          "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+          "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+          "source_quote": "接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”",
+          "text_origin": "user_quote",
+          "proposed_by": "ai",
+          "executed_by": "assistant",
+          "intent": "user_requested",
+          "original_source": {
+            "kind": "user_message",
+            "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+            "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+            "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+            "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。",
+            "text_origin": "user_quote",
+            "proposed_by": "ai",
+            "executed_by": "assistant",
+            "intent": "user_requested"
+          }
+        },
+        "app_data": null,
+        "typed_data": null,
+        "business": {
+          "category": null,
+          "tags": []
+        }
+      },
+      {
+        "entry_id": "f2677097-f775-4865-a188-503b7ca64d53",
+        "entry_version": 2,
+        "version": 2,
+        "status": "forgotten",
+        "sensitive": false,
+        "memory_type": "free_text",
+        "schema_version": 1,
+        "text": "临时资料：周二带纸质票据",
+        "app_data": {
+          "namespace": "personal_assistant",
+          "schema_version": 1,
+          "fields": {
+            "tags": [
+              "周二",
+              "纸质票据"
+            ],
+            "business_category": "临时资料"
+          }
+        },
+        "source": {
+          "kind": "user_message",
+          "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+          "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+          "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+          "source_quote": "另记住“临时资料：周二带纸质票据”，取得真实编号后遗忘这条临时资料，不遗忘第一条。",
+          "text_origin": "model_rewrite",
+          "proposed_by": "ai",
+          "executed_by": "assistant",
+          "intent": "user_requested",
+          "original_source": {
+            "kind": "user_message",
+            "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+            "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+            "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+            "source_quote": "临时资料：周二带纸质票据",
+            "text_origin": "user_quote",
+            "proposed_by": "ai",
+            "executed_by": "assistant",
+            "intent": "user_requested"
+          }
+        },
+        "typed_data": null,
+        "business": {
+          "category": "临时资料",
+          "tags": [
+            "周二",
+            "纸质票据"
+          ]
+        }
+      },
+      {
+        "entry_id": "d456be89-97ac-4c89-9abf-e267ffd9141b",
+        "entry_version": 1,
+        "version": 1,
+        "status": "candidate",
+        "sensitive": false,
+        "memory_type": "free_text",
+        "schema_version": 1,
+        "text": "我偶尔看展",
+        "source": {
+          "kind": "user_message",
+          "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+          "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+          "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+          "source_quote": "我偶尔看展",
+          "text_origin": "user_quote",
+          "proposed_by": "ai",
+          "executed_by": "assistant",
+          "intent": "incidental"
+        },
+        "app_data": null,
+        "typed_data": null,
+        "business": {
+          "category": null,
+          "tags": []
+        }
+      }
+    ],
+    "next_offset": null
+  },
+  "deferred_operation_before_worker": {
+    "operation_id": "9056ac3e-ef25-4e35-8614-e5205c7c96ef",
+    "status": "queued",
+    "execution": "after_answer",
+    "applied": false
+  },
+  "deferred_operation_after_worker": {
+    "operation_id": "9056ac3e-ef25-4e35-8614-e5205c7c96ef",
+    "status": "succeeded",
+    "result": {
+      "entry_id": "d456be89-97ac-4c89-9abf-e267ffd9141b",
+      "entry_version": 1,
+      "version": 1,
+      "status": "candidate",
+      "applied_version": 1
+    },
+    "error_code": null
+  },
+  "active_memory_after_worker": {
+    "status": "available",
+    "items": [
+      {
+        "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+        "version": 2,
+        "entry_version": 2,
+        "provenance": {
+          "kind": "user_message",
+          "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+          "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+          "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+          "source_quote": "接着从事项出行的角度检索这条记忆，将同一条目纠正为“通勤和事项出行默认公交，日程提前12分钟提醒。”",
+          "text_origin": "user_quote",
+          "proposed_by": "ai",
+          "executed_by": "assistant",
+          "intent": "user_requested",
+          "original_source": {
+            "kind": "user_message",
+            "local_run_id": "4f2ec79d-3701-4513-9a22-448d5911a890",
+            "nexus_run_id": "2982fed4-9d0a-4b7b-b4db-ecd40959c748",
+            "matter_id": "8ab87c5d-1842-4329-8fb3-9b77f67274a7",
+            "source_quote": "通勤和事项出行默认步行，日程提前12分钟提醒。",
+            "text_origin": "user_quote",
+            "proposed_by": "ai",
+            "executed_by": "assistant",
+            "intent": "user_requested"
+          }
+        },
+        "text": "通勤和事项出行默认公交，日程提前12分钟提醒。",
+        "typed_data": null,
+        "business": {
+          "category": null,
+          "tags": []
+        },
+        "match": {
+          "matched_queries": [],
+          "matched_tags": []
+        },
+        "source": {
+          "kind": "assistant_memory",
+          "entry_id": "ea93617e-7375-4015-b512-b8e33cfddfc1",
+          "version": 2
+        }
+      }
+    ],
+    "next_offset": null,
+    "scanned": 3,
+    "truncated": false,
+    "retrieval_method": "browse",
+    "match_status": "matched",
+    "confirmed_empty": false,
+    "coverage": {
+      "state": "complete",
+      "start_offset": 0,
+      "upstream_exhausted": true,
+      "reason": "end",
+      "continuation_supported": true
+    },
+    "next_steps": []
+  },
+  "worker_model_requests": 0,
+  "normal_database_or_configuration_changed": false,
+  "nexus_source_changed": false,
+  "paid_map_weather_calls": 0,
+  "regression_or_hash_checks": false,
+  "earlier_attempts_and_final": [
+    {
+      "directory": "/private/tmp/assistant-owned-memory-20261109",
+      "model_request_attempts": 1,
+      "workflows": [
+        {
+          "status": "OUTCOME_UNKNOWN",
+          "model_call_count": 1,
+          "error_code": "application_outcome_unknown"
+        }
+      ]
+    },
+    {
+      "directory": "/private/tmp/assistant-owned-memory-recheck-20261109",
+      "model_request_attempts": 8,
+      "workflows": [
+        {
+          "status": "OUTCOME_UNKNOWN",
+          "model_call_count": 8,
+          "error_code": "timeout"
+        }
+      ]
+    },
+    {
+      "directory": "/private/tmp/assistant-owned-memory-final-20261109",
+      "model_request_attempts": 2,
+      "workflows": [
+        {
+          "status": "OUTCOME_UNKNOWN",
+          "model_call_count": 2,
+          "error_code": "network_error"
+        }
+      ]
+    },
+    {
+      "directory": "/private/tmp/assistant-owned-memory-network-retry-20261109",
+      "model_request_attempts": 16,
+      "workflows": [
+        {
+          "status": "FAILED",
+          "model_call_count": 16,
+          "error_code": "agent_model_call_limit_exceeded"
+        }
+      ]
+    },
+    {
+      "directory": "/private/tmp/assistant-owned-memory-acceptance-20261109",
+      "model_request_attempts": 16,
+      "workflows": [
+        {
+          "status": "FAILED",
+          "model_call_count": 16,
+          "error_code": "agent_model_call_limit_exceeded"
+        }
+      ]
+    },
+    {
+      "directory": "/private/tmp/assistant-owned-memory-final-flow-20261109",
+      "model_request_attempts": 8,
+      "workflows": [
+        {
+          "status": "COMPLETED",
+          "model_call_count": 8,
+          "error_code": null
+        }
+      ]
+    }
+  ],
+  "total_model_request_attempts": 51,
+  "direct_checks": {
+    "command": ".venv/bin/python -m pytest tests/test_owned_memory.py -q --tb=short --disable-warnings --maxfail=1",
+    "passed": 8,
+    "regression_suite_run": false,
+    "after_live_change_note": "真实场景结束后进一步区分已检索与实际业务采用：仅检索不阻止回答后修改，实际采用才要求当场处理；同一 8 项定向文件再次通过，未重复调用模型。"
+  },
+  "scope_note": "本轮最终真实验收是跨通勤/事项的记忆完整流程，不包含日程新建；早先额外日程复合场景失败，不计为通过。",
+  "background_audit_note": "一次实际 background.tick 已执行；随后只读汇总首次用错 Nexus runs 表名，修正为 llm_runs 后继续汇总，未再次执行 worker 或模型。"
+}

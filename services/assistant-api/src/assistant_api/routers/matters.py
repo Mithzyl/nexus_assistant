@@ -281,7 +281,7 @@ async def create_commute_draft(payload: commute_bundle.CreateDraftRequest,
     "/matters/drafts", response_model=schemas.DraftRead, status_code=201,
     operation_id="create_structured_draft",
     summary="新增待办、日程或事项的结构化草稿，向已有事项追加新记录",
-    description="从零新建时提供title及todos或schedule，不需要先创建空事项；向已有事项追加时先读取matter_id及version，传expected_matter_version。这里只准备草稿，正式记录由后续confirm接口原子保存。新记录不能带原todo_id或schedule_id；修改原记录请走已有对象的编辑草稿入口。没有截止或提醒时间时省略，不猜时间。重复请求使用相同idempotency_key和参数。schedule与各todos支持各自memory_defaults；采用记忆时省略同字段普通参数，来源由后端校验并在确认时再次检查、内部保存，不自动展示记忆原文。",
+    description="从零新建时提供title及todos或schedule，不需要先创建空事项；向已有事项追加时先读取matter_id及version，传expected_matter_version。这里只准备草稿，正式记录由后续confirm接口原子保存。新记录不能带原todo_id或schedule_id；修改原记录请走已有对象的编辑草稿入口。没有截止或提醒时间时省略，不猜时间。待办明确要绑定本次一并保存的新日程截止时，传schedule_due和偏移秒数，省略schedule_id和due_at；绑定已有日程时要提供同一事项的真实ID。重复请求使用相同idempotency_key和参数。schedule与各todos支持各自memory_defaults；采用记忆时省略同字段普通参数，来源由后端校验并在确认时再次检查、内部保存，不自动展示记忆原文。",
     openapi_extra={"x-assistant": {"effect": "preview", "keywords": ["新增待办", "创建待办", "添加日程", "新建日程", "追加待办", "新建事项"], "next": [
         {"method": "POST", "path": "/api/v1/matters/drafts/{draft_id}/confirm", "purpose": "参数明确时用返回的draft_id、version直接保存，无需用户再次确认。"},
     ]}},
@@ -647,7 +647,7 @@ async def revert_change(
 @router.get("/today", response_model=schemas.TodayRead,
     summary='查询指定日期的日程截止待办和提醒',
     description='按day与timezone查询真实记录；未确认的到点提醒可能仍显示。结果不是自动完成证明。',
-    openapi_extra={'x-assistant': {'effect': 'read'}}
+    openapi_extra={'x-assistant': {'effect': 'read', 'keywords': ['今日安排', '今天日程', '查询今天', '今日待办']}}
 )
 async def today(
     db: DatabaseSession,
@@ -775,20 +775,38 @@ async def commute_place_confirm(
 
 
 @router.post("/commute/estimate", response_model=schemas.EstimateResponse,
-             openapi_extra={'x-assistant': {'effect': 'read'}},
+             openapi_extra={'x-assistant': {'effect': 'read', 'keywords': ['测算路线', '路线耗时', '通勤路线', '行程规划']}},
     summary='测算已有出发点到目的地的路线',
-    description='origin与origin_schedule_id必须且只能一个；depart_at或arrive_by至少一个。previous_schedule需要origin_schedule_id。出发点未知则询问，不猜地址、坐标或耗时；测算不会创建日程。'
+    description='起点为origin、origin_schedule_id或memory_defaults.origin之一，终点为destination或memory_defaults.destination；depart_at或arrive_by至少一个。memory_defaults是AI根据当前任务选择并引用的已检索记忆，不要求用户另配用途或角色，含entry_id/version/source_quote/value/reason。明确参数优先，纯文字不能证明新坐标；歧义用ask_user卡片选择。previous_schedule需要origin_schedule_id。支持类型：driving驾车、walking步行、transit公共交通、bicycling自行车、electrobike电动车；实际方式以route_capabilities为准。每段遵守用户指定方式，不得擅自更换。检查返回status而非仅HTTP状态；不可用就如实说明。出发点未知则询问，不猜地址、坐标或耗时；未提供schedule_id时测算不保存安排，提供时只关联该用户自己的日程路线。'
 )
 async def commute_estimate_endpoint(
     payload: schemas.EstimateRequest,
+    request: Request,
     db: DatabaseSession,
     runtime: CommuteRuntimeDependency,
     user: CurrentUser,
+    client: NexusClient,
 ) -> dict:
-    """POST is this implementation's choice (the plan did not specify a method)."""
+    """Measure explicit or source-validated Agent-selected choices without applying legacy role defaults."""
+
+    from assistant_api.schemas.preferences import PreferenceResolveRequest
+    from assistant_api.services import preferences
+    receipt=None
+    preferences.validate_memory_sources(
+        payload.model_dump(mode='json',exclude_unset=True,exclude={'use_preferences','memory_defaults'}),
+        payload.memory_defaults,enabled=payload.use_preferences)
+    if payload.use_preferences and payload.memory_defaults:
+        receipt=await preferences.resolve(db,client,user,PreferenceResolveRequest(purpose='route',
+            values=payload.model_dump(mode='json',exclude_unset=True,exclude={'use_preferences','memory_defaults'}),
+            selections=payload.memory_defaults),execution_run_id=request.scope.get('assistant_execution_run_id'))
+        preferences.require_resolved(receipt)
+        payload=schemas.EstimateRequest.model_validate({**receipt['values'],'use_preferences':False})
+        await preferences.assert_current(db,client,user,receipt)
 
     origin = payload.origin
     origin_basis = payload.origin_basis
+    if receipt and receipt['fields'].get('origin',{}).get('source')=='memory':
+        origin_basis='memory'
     origin_schedule_fingerprint = None
     if payload.origin_schedule_id:
         previous = await db.scalar(
@@ -812,7 +830,7 @@ async def commute_estimate_endpoint(
         )
         origin_basis = "previous_schedule"
         origin_schedule_fingerprint = schedule_routes.schedule_fingerprint(previous)
-    assert origin is not None
+    assert origin is not None and payload.destination is not None
 
     result = await commute_estimate.estimate(
         runtime,
@@ -829,6 +847,10 @@ async def commute_estimate_endpoint(
         origin_schedule_id=payload.origin_schedule_id,
         schedule_id=payload.schedule_id,
     )
+    if receipt is not None:
+        result['preference_application']=receipt
+        if result.get('destination') and receipt['fields'].get('destination',{}).get('source')=='memory':
+            result['destination']['basis']='memory'
     if payload.schedule_id and result["status"] == "available":
         if origin_schedule_fingerprint is not None:
             result["origin_schedule_fingerprint"] = origin_schedule_fingerprint

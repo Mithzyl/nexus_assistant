@@ -1,15 +1,19 @@
 """Validate declarative embedded cards and bind private business values locally.
 
-AI chooses text, fields, timelines and images. Result bindings use the preceding
-HTTP response, so its body is never copied into the model prompt. No HTML, code,
-CSS or executable action is accepted in this presentation protocol.
+AI optionally chooses text, fields, timelines and images. Assistant validates the
+same input schema it publishes, resolves real tool results and converts display
+values before validating browser-ready output. No executable content is accepted.
 """
 from __future__ import annotations
 
+import copy
+import json
+from decimal import Decimal
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator
+from jsonschema import Draft202012Validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, ValidationError, field_validator
 
 from assistant_api.services.api_operations import read_result_pointer, resolve_result_references
 
@@ -40,7 +44,7 @@ class CardImage(CardModel):
 
 
 class CardField(CardModel):
-    """Present a labelled scalar, with an optional standard display format."""
+    """Present a labelled scalar after server-side unit conversion and result binding."""
     label: str = Field(min_length=1, max_length=60)
     value: str | int | FiniteFloat | bool | None
     format: Literal['text', 'datetime', 'date', 'time', 'number'] = 'text'
@@ -101,8 +105,57 @@ class EmbeddedCard(CardModel):
     status: Literal['completed', 'failed', 'unknown', 'suggestion', 'info'] = 'info'
 
 
+STATUS_DISPLAY_LABELS = {
+    'todo_status': {'open': '未完成', 'done': '已完成'},
+    'schedule_status': {'scheduled': '已安排', 'cancelled': '已取消'},
+    'reminder_status': {'scheduled': '待提醒', 'due': '已到提醒时间', 'acknowledged': '已确认', 'cancelled': '已取消'},
+    'matter_status': {'active': '进行中', 'waiting': '等待中', 'archived': '已归档', 'deleted': '已删除'},
+}
+
+
+def format_card_status(value, display_format):
+    """Translate a bound status using an explicit domain; retain null/unknown codes without claiming success."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError('状态显示需要真实结果中的字符串状态值。')
+    return STATUS_DISPLAY_LABELS[display_format].get(value, value)
+
+
+def format_card_seconds(value, *, relative=False):
+    """Convert a finite second count into explicit units, retaining the direction of reminder offsets."""
+    if value is None:
+        return None
+    if isinstance(value,bool) or not isinstance(value,(int,float)):
+        raise ValueError('秒数格式需要真实结果中的有限数字。')
+    seconds=Decimal(str(value))
+    if not seconds.is_finite():
+        raise ValueError('秒数格式不支持无限值。')
+    remaining=abs(seconds)
+    parts=[]
+    for size,unit in ((86400,'天'),(3600,'小时'),(60,'分钟')):
+        count=int(remaining//size)
+        if count:
+            parts.append(f'{count}{unit}')
+            remaining-=count*size
+    if remaining or not parts:
+        parts.append(format(remaining.normalize(),'f')+'秒')
+    if relative and not seconds:
+        return '开始时提醒'
+    direction=('提前' if seconds<0 else '延后') if relative else ('-' if seconds<0 else '')
+    return direction+''.join(parts)
+
+
+def bound_field_name(binding):
+    """Read the source field from a result/item pointer, without guessing its unit from an AI-authored label."""
+    if not isinstance(binding,dict):
+        return None
+    field=binding.get('field') or binding.get('$result') or binding.get('$item')
+    return field.rsplit('/',1)[-1].replace('~1','/').replace('~0','~') if isinstance(field,str) else None
+
+
 def resolve_card_values(value, receipt: dict | None, item=None, depth: int = 0, results: dict | None = None):
-    """Resolve result bindings and bounded collection templates without returning bodies to AI."""
+    """Bind actual values and convert declared second units before validating browser-ready card fields."""
     if depth > 12:
         raise ValueError('卡片内容嵌套过深')
     if isinstance(value, list):
@@ -133,7 +186,20 @@ def resolve_card_values(value, receipt: dict | None, item=None, depth: int = 0, 
     resolved = {k: resolve_card_values(v, receipt, item, depth + 1, results) for k, v in value.items()}
     if 'label' in resolved and 'value' in resolved:
         content = resolved['value']
-        if resolved.get('format') == 'weekdays':
+        field=bound_field_name(value.get('value'))
+        display_format=resolved.get('format')
+        if field in {'reminder_offset_seconds','schedule_offset_seconds'}:
+            # These API fields are signed seconds, even when a model labels them
+            # "提前分钟" and requests a raw number. Never present -900 as minutes.
+            display_format='relative_seconds'
+            resolved['label']='提醒'
+        if display_format in STATUS_DISPLAY_LABELS:
+            resolved['value'] = format_card_status(content, display_format)
+            resolved['format'] = 'text'
+        elif display_format in {'duration_seconds','relative_seconds'}:
+            resolved['value']=format_card_seconds(content,relative=display_format=='relative_seconds')
+            resolved['format']='text'
+        elif resolved.get('format') == 'weekdays':
             if not isinstance(content, list) or not content or any(type(day) is not int or day not in range(1, 8) for day in content):
                 raise ValueError('weekdays格式需要星期1至7的数组。')
             days = sorted(set(content)); names = ['周一','周二','周三','周四','周五','周六','周日']
@@ -147,26 +213,37 @@ def resolve_card_values(value, receipt: dict | None, item=None, depth: int = 0, 
     return resolved
 
 
-def validate_result_fields(value) -> None:
-    """Require result-card field values and image URLs to be bound to actual HTTP output."""
-    if isinstance(value, list):
-        for entry in value:
-            validate_result_fields(entry)
-    elif isinstance(value, dict):
-        if ('label' in value and 'value' in value) or 'src' in value:
-            content = value.get('value') if 'value' in value else value['src']
-            if not isinstance(content, dict) or not ({'$result', '$item'} & set(content)):
-                raise ValueError('操作结果字段须引用真实执行结果')
-        for child in value.values():
-            validate_result_fields(child)
+def validate_card_input(value, validator, index):
+    """Validate the published model-input schema and identify the failing path without echoing values."""
+    error = next(validator.iter_errors(value), None)
+    if error is None:
+        return
+    pending, leaves = [error], []
+    while pending:
+        item = pending.pop()
+        if item.context:
+            pending.extend(item.context)
+        else:
+            leaves.append(item)
+    error = max(leaves, key=lambda item: len(item.absolute_path))
+    path = '.'.join(map(str, ['cards', index, *error.absolute_path]))
+    requirement = (json.dumps(error.validator_value, ensure_ascii=False)[:200]
+                   if error.validator in {'type', 'enum', 'const', 'required', 'minLength', 'maxLength', 'minItems', 'maxItems'}
+                   else '按card_schema提供字段')
+    hint = ('结果卡片的value/src必须使用$result或$item引用；不能填业务结果常量。'
+            if isinstance(value, dict) and value.get('kind') == 'result' else
+            'info/plan普通说明允许文字常量；状态显示格式必须引用真实状态。')
+    raise ValueError(f'{path}: 不符合{error.validator}要求（{requirement}）。{hint}')
 
 
 def prepare_cards(values: list[dict], receipt: dict | None, results: dict | None = None) -> list[dict]:
-    """Bind cards to real results; pending or unapplied operations cannot claim completion."""
+    """Validate the published input, bind real values and produce compatible output without modifying business data."""
     if len(values) > 6:
         raise ValueError('一次最多返回6张卡片')
     cards = []
-    for value in values:
+    validator = Draft202012Validator(presentation_schema())
+    for index, value in enumerate(values):
+        validate_card_input(value, validator, index)
         kind = value.get('kind', 'info')
         if kind == 'result':
             if not receipt:
@@ -174,21 +251,94 @@ def prepare_cards(values: list[dict], receipt: dict | None, results: dict | None
             data = receipt.get('data')
             if receipt.get('http_status') == 202 or (isinstance(data, dict) and data.get('applied') is False):
                 raise ValueError('当前操作尚未完成保存')
-            validate_result_fields(value.get('blocks', []))
-        resolved = resolve_card_values(value, receipt, results=results)
+        # Legacy model-authored top-level status was never authoritative. Ignore
+        # it before resolving bindings, then derive the browser status below.
+        resolved = resolve_card_values({key: item for key, item in value.items() if key != 'status'}, receipt, results=results)
         resolved['status'] = (receipt.get('status', 'unknown') if kind == 'result' else 'suggestion' if kind == 'plan' else 'info')
         if resolved['status'] == 'succeeded':
             resolved['status'] = 'completed'
-        cards.append(EmbeddedCard.model_validate(resolved).model_dump(mode='json', exclude_none=True))
+        try:
+            cards.append(EmbeddedCard.model_validate(resolved).model_dump(mode='json', exclude_none=True))
+        except ValidationError as exc:
+            error = exc.errors(include_input=False, include_url=False)[0]
+            path = '.'.join(map(str, ['cards', index, *error['loc']]))
+            raise ValueError(f'{path}: 引用解析后的值不符合展示字段类型（{error["type"]}）。') from exc
     return cards
 
 
 def presentation_schema() -> dict:
-    """Publish the current presentation schema as prompt context rather than a business registry."""
+    """Define model-authored cards once for both published instructions and actual input validation.
+
+    Browser output remains EmbeddedCard. Input permits result/item bindings and
+    collection templates; result-card fields/images require references, whereas
+    advice literals remain valid. Resolved values still need output validation.
+    """
     schema = EmbeddedCard.model_json_schema()
-    binding = {'type':'object', 'properties': {'$result':{'type':'string'}, 'step':{'type':'integer','minimum':0}, 'field':{'type':'string'}, 'where':{'type':'object'}}, 'required':['$result'], 'additionalProperties':False}
-    item_binding = {'type':'object','properties':{'$item':{'type':'string'}},'required':['$item'],'additionalProperties':False}
-    fields = schema['$defs']['CardField']['properties']
-    fields['value']['anyOf'].extend([binding, item_binding])
-    fields['format']['enum'].extend(['weekdays','list'])
+    definitions = schema['$defs']
+    definitions['ResultBinding'] = {'type': 'object', 'properties': {
+        '$result': {'type': 'string'}, 'step': {'type': 'integer', 'minimum': 0},
+        'field': {'type': 'string'}, 'where': {'type': 'object', 'minProperties': 1}},
+        'required': ['$result'], 'additionalProperties': False}
+    definitions['ItemBinding'] = {'type': 'object', 'properties': {'$item': {'type': 'string'}},
+        'required': ['$item'], 'additionalProperties': False}
+    definitions['ValueBinding'] = {'oneOf': [{'$ref': '#/$defs/ResultBinding'}, {'$ref': '#/$defs/ItemBinding'}]}
+    binding = {'$ref': '#/$defs/ValueBinding'}
+
+    def allow_bindings(properties, names):
+        """Keep scalar constraints while permitting a value resolved from a real response."""
+        for name in names:
+            properties[name] = {'anyOf': [properties[name], copy.deepcopy(binding)]}
+
+    allow_bindings(schema['properties'], ['title', 'subtitle'])
+    for name, fields in {
+        'CardField': ['label', 'value'], 'CardImage': ['src', 'alt', 'caption'],
+        'ImageBlock': ['src', 'alt', 'caption'], 'CardLink': ['label', 'href'],
+        'TextBlock': ['text'], 'TimelineItem': ['title', 'subtitle', 'time', 'description', 'category', 'connector'],
+    }.items():
+        allow_bindings(definitions[name]['properties'], fields)
+    field_format = definitions['CardField']['properties']['format']
+    field_format['enum'].extend(['weekdays', 'list', 'duration_seconds', 'relative_seconds', *STATUS_DISPLAY_LABELS])
+    field_format['description'] = ('duration_seconds转换真实秒数；relative_seconds转换带符号提醒偏移，不能将秒数标为分钟。'
+        '状态格式只用于真实结果引用，未知值保留原码；固定映射：' + json.dumps(STATUS_DISPLAY_LABELS, ensure_ascii=False))
+    scalar_value = copy.deepcopy(definitions['CardField']['properties']['value'])
+    definitions['CardField']['properties']['value'] = {'anyOf': [scalar_value, {'type': 'array'}]}
+    definitions['CardField']['allOf'] = [
+        {'if': {'required': ['format'], 'properties': {'format': {'enum': list(STATUS_DISPLAY_LABELS)}}},
+         'then': {'properties': {'value': binding}}},
+        {'if': {'required': ['format'], 'properties': {'format': {'const': 'weekdays'}}},
+         'then': {'properties': {'value': {'anyOf': [binding, {'type': 'array', 'minItems': 1,
+             'items': {'type': 'integer', 'minimum': 1, 'maximum': 7}}]}}}},
+        {'if': {'required': ['format'], 'properties': {'format': {'const': 'list'}}},
+         'then': {'properties': {'value': {'anyOf': [binding, {'type': 'array', 'maxItems': 30,
+             'items': {'type': ['string', 'number', 'boolean']}}]}}}},
+        {'if': {'required': ['format'], 'properties': {'format': {'enum': ['duration_seconds', 'relative_seconds']}}},
+         'then': {'properties': {'value': {'anyOf': [binding, {'type': ['number', 'null']}]}}}},
+        {'if': {'not': {'required': ['format'], 'properties': {'format': {'enum': ['weekdays', 'list']}}}},
+         'then': {'properties': {'value': scalar_value}}},
+    ]
+    schema['properties']['status'] = {'readOnly': True,
+        'description': '由Assistant根据实际执行状态生成；省略即可，兼容旧格式的任何传入值会被忽略，不作状态依据。'}
+
+    def collection_items(item_name):
+        """Share array/template structure while retaining result-specific item constraints."""
+        return {'anyOf': [
+            {'type': 'array', 'items': {'$ref': '#/$defs/' + item_name}, 'minItems': 1, 'maxItems': 30},
+            {'type': 'object', 'properties': {'$each': {'type': 'string'}, 'template': {'$ref': '#/$defs/' + item_name}},
+             'required': ['$each', 'template'], 'additionalProperties': False}]}
+    definitions['TimelineBlock']['properties']['items'] = collection_items('TimelineItem')
+    for target, (original, properties) in {
+        'ResultCardField': ('CardField', {'value': binding}),
+        'ResultCardImage': ('CardImage', {'src': binding}),
+        'ResultImageBlock': ('ImageBlock', {'src': binding}),
+        'ResultFieldsBlock': ('FieldsBlock', {'items': {'items': {'$ref': '#/$defs/ResultCardField'}}}),
+        'ResultTimelineItem': ('TimelineItem', {
+            'fields': {'items': {'$ref': '#/$defs/ResultCardField'}},
+            'image': {'anyOf': [{'$ref': '#/$defs/ResultCardImage'}, {'type': 'null'}]}}),
+        'ResultTimelineBlock': ('TimelineBlock', {'items': collection_items('ResultTimelineItem')}),
+    }.items():
+        definitions[target] = {'allOf': [{'$ref': '#/$defs/' + original}, {'properties': properties}]}
+    schema['allOf'] = [{'if': {'required': ['kind'], 'properties': {'kind': {'const': 'result'}}},
+        'then': {'properties': {'blocks': {'items': {'oneOf': [
+            {'$ref': '#/$defs/' + name} for name in ('TextBlock', 'ResultFieldsBlock', 'ResultImageBlock', 'ResultTimelineBlock')
+        ]}}}}}]
     return schema

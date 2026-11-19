@@ -20,7 +20,14 @@ from assistant_api.core.config import get_settings
 from assistant_api.models import Base
 
 VERSION = "0001_sqlite_baseline"
+NEXT_ACTION_VERSION = "0030_next_actions"
 COLUMN_MIGRATIONS = (
+    (NEXT_ACTION_VERSION, "matter_todos", "priority", "VARCHAR(8)"),
+    (NEXT_ACTION_VERSION, "matter_todos", "estimated_duration_minutes", "INTEGER"),
+    (NEXT_ACTION_VERSION, "matter_todos", "available_after", "DATETIME"),
+    (NEXT_ACTION_VERSION, "matter_todos", "place", "JSON"),
+    (NEXT_ACTION_VERSION, "matter_todos", "due_schedule_id", "VARCHAR(36) REFERENCES schedules(schedule_id) ON DELETE SET NULL"),
+    (NEXT_ACTION_VERSION, "matter_todos", "due_schedule_offset_seconds", "INTEGER"),
     ("0025_supplement_relations", "supplement_texts", "relation_type", "VARCHAR(24)"),
     ("0023_commute_day_override", "commute_instances", "arrival_local_time_override", "VARCHAR(5)"),
     ("0022_explicit_reminder_dependency", "reminders", "schedule_offset_seconds", "INTEGER"),
@@ -170,7 +177,7 @@ async def _apply_indexes(conn) -> None:
 
 
 async def init(database_url: str) -> None:
-    """Initialize storage including encrypted business-memory applications; never infer historical sources."""
+    """Initialize current metadata and mark additive migrations without guessing legacy values."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
@@ -179,6 +186,7 @@ async def init(database_url: str) -> None:
             await _record(conn, VERSION, "metadata")
             await _record(conn, "0029_business_memory_applications", "metadata:business_memory_applications")
             await _record(conn, "0026_agent_response_receipts", "metadata:agent_response_receipts")
+            await _record(conn, "0027_browser_push", "metadata:browser_push_subscriptions,browser_push_deliveries")
             await _record(conn, "0028_owned_memory", "metadata:assistant_memory_scopes,assistant_memory_entries,assistant_memory_versions,assistant_memory_operations")
             await _record(conn, "0021_follow_ups", "metadata:follow_ups,follow_up_executions,business_change_events")
             await _record(conn, "0024_matter_supplements", "metadata:matter_supplements,supplement_texts")
@@ -213,9 +221,10 @@ async def upgrade(database_url: str) -> None:
             await _apply_indexes(conn)
             await _record(conn, "0021_follow_ups", "created missing follow-up tables")
             await _record(conn, "0024_matter_supplements", "created missing supplement tables")
-            await _record(conn, "0029_business_memory_applications", "created missing encrypted attribution table; no existing records changed")
             await _record(conn, "0026_agent_response_receipts", "created missing agent_response_receipts")
+            await _record(conn, "0027_browser_push", "created missing browser push tables")
             await _record(conn, "0028_owned_memory", "created missing Assistant owned memory tables; no existing data moved or removed")
+            await _record(conn, "0029_business_memory_applications", "created missing encrypted attribution table; no existing records changed")
             await _record(conn, VERSION, "upgrade")
     finally:
         await engine.dispose()

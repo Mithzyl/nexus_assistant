@@ -9,7 +9,7 @@ router = APIRouter(prefix='/api/v1', tags=['records'])
 
 @router.post('/todos', operation_id='create_todo', response_model=schemas.TodoOperationRead, response_model_exclude_none=True, status_code=201,
              summary='直接新增待办并保存，日程不是前提',
-             description='新增待办的首选入口，一次调用保存待办并返回真实todo和matter，不需要先创建空事项、草稿或再次确认。title必填，截止和提醒时间可省略。matter_id省略时后端在同一正式事务中创建所属事项；指定原matter_id时同时提供expected_matter_version。不会创建日程。schedule_reminder仅用户明确要求相对某条日程提醒时提供，必须指定真实schedule_id及offset_seconds，并使用该日程所属matter_id和当前版本；与绝对reminder_at二选一。同一请求复用idempotency_key。 AI按本次任务选择已检索记忆时传memory_defaults，包含entry_id/version/source_quote/value/reason，可附references记录计算所依据的真实对象和版本；省略同字段普通参数，null也不能重复。修改时只对明确提交的记忆选择重新应用，其他字段保留。来源内部保存，不新增前端入口、不默认输出记忆原文；必要解释由AI简述，确需时可用卡片。',
+             description='新增待办的首选入口，一次调用保存待办并返回真实todo和matter，不需要先创建空事项、草稿或再次确认。title必填，截止和提醒时间可省略。matter_id省略时后端在同一正式事务中创建所属事项；指定原matter_id时同时提供expected_matter_version。不会创建日程。priority（low/normal/high/urgent）、预计耗时分钟数、最早可执行时刻和已确认place均可省略，未知值不要猜。明确要求日程改期后截止一起变化时传schedule_due={schedule_id,offset_seconds}，例如-1800为日程前30分钟，不再传due_at。先定位同一事项的原日程并取得其matter.version；截止不会创建提醒。schedule_reminder仅用户明确要求相对某条日程提醒时提供，必须指定真实schedule_id及offset_seconds，并使用该日程所属matter_id和当前版本；与绝对reminder_at二选一。同一请求复用idempotency_key。 AI按本次任务选择已检索记忆时传memory_defaults，包含entry_id/version/source_quote/value/reason，可附references记录计算所依据的真实对象和版本；省略同字段普通参数，null也不能重复。修改时只对明确提交的记忆选择重新应用，其他字段保留。来源内部保存，不新增前端入口、不默认输出记忆原文；必要解释由AI简述，确需时可用卡片。',
              openapi_extra={'x-assistant': {'effect': 'write', 'keywords': ['新增待办', '创建待办', '添加待办', '待办保存']}})
 async def create_todo(payload: schemas.TodoCreateRequest, request: Request, db: DatabaseSession, user: CurrentUser,
                       runtime: CommuteRuntimeDependency, settings: SettingsDependency, client: NexusClient):
@@ -36,7 +36,7 @@ async def get_todo(todo_id: str, db: DatabaseSession, user: CurrentUser):
 
 
 @router.patch('/todos/{todo_id}', operation_id='update_todo', response_model=schemas.TodoOperationRead, response_model_exclude_none=True,
-              summary='直接修改或完成原待办并保存', description='先读取原todo和matter.version，传expected_matter_version及idempotency_key。只传要修改字段，未传保留；status=done完成、open恢复。due_at/reminder_at=null清除相应时间；绝对提醒和schedule_reminder互斥。不会新增待办、创建或修改日程，也不改变事项标题。结果直接包含实际保存的todo。 AI按本次任务选择已检索记忆时传memory_defaults，包含entry_id/version/source_quote/value/reason，可附references记录计算所依据的真实对象和版本；省略同字段普通参数，null也不能重复。修改时只对明确提交的记忆选择重新应用，其他字段保留。来源内部保存，不新增前端入口、不默认输出记忆原文；必要解释由AI简述，确需时可用卡片。',
+              summary='直接修改或完成原待办并保存', description='先读取原todo和matter.version，传expected_matter_version及idempotency_key。只传要修改字段，未传保留；status=done完成、open恢复。due_at或reminder_at传null清除对应时间；schedule_due传null取消相对截止。切换到绝对截止只传due_at；切换到相对截止只传schedule_due，指定原日程ID和偏移秒数。priority、estimated_duration_minutes、available_after、place传null可清除。绝对提醒和schedule_reminder互斥。不会新增待办、创建或修改日程，也不改变事项标题。结果直接包含实际保存的todo。 AI按本次任务选择已检索记忆时传memory_defaults，包含entry_id/version/source_quote/value/reason，可附references记录计算所依据的真实对象和版本；省略同字段普通参数，null也不能重复。修改时只对明确提交的记忆选择重新应用，其他字段保留。来源内部保存，不新增前端入口、不默认输出记忆原文；必要解释由AI简述，确需时可用卡片。',
               openapi_extra={'x-assistant': {'effect': 'write', 'keywords': ['修改待办', '完成待办', '恢复待办']}})
 async def update_todo(todo_id: str, payload: schemas.TodoPatchRequest, request: Request, db: DatabaseSession, user: CurrentUser,
                       runtime: CommuteRuntimeDependency, settings: SettingsDependency, client: NexusClient):
@@ -75,7 +75,7 @@ async def get_schedule(schedule_id: str, db: DatabaseSession, user: CurrentUser)
 
 
 @router.patch('/schedules/{schedule_id}', operation_id='update_schedule', response_model=schemas.ScheduleOperationRead, response_model_exclude_none=True,
-              summary='直接修改原日程时间地点或标题并保存', description='先GET原日程，传expected_matter_version和idempotency_key，只提供修改字段。后端保留未传字段及同一schedule_id；不新增日程，不自动修改待办标题、截止时间和绝对提醒。只有明确schedule_reminder绑定的提醒随日程时间重算。reminder_at=null取消日程自己的提醒；明确相对提醒用reminder_offset_seconds，修改时间时后端保持该相对间隔。 AI按本次任务选择已检索记忆时传memory_defaults，包含entry_id/version/source_quote/value/reason，可附references记录计算所依据的真实对象和版本；省略同字段普通参数，null也不能重复。修改时只对明确提交的记忆选择重新应用，其他字段保留。来源内部保存，不新增前端入口、不默认输出记忆原文；必要解释由AI简述，确需时可用卡片。',
+              summary='直接修改原日程时间地点或标题并保存', description='先GET原日程，传expected_matter_version和idempotency_key，只提供修改字段。后端保留未传字段及同一schedule_id；不新增日程，不自动修改待办标题、绝对截止和绝对提醒。仅显式依赖该日程的schedule_due截止和schedule_reminder提醒随日程时间重算，不要额外调用待办更新。reminder_at=null取消日程自己的提醒；明确相对提醒用reminder_offset_seconds，修改时间时后端保持该相对间隔。 AI按本次任务选择已检索记忆时传memory_defaults，包含entry_id/version/source_quote/value/reason，可附references记录计算所依据的真实对象和版本；省略同字段普通参数，null也不能重复。修改时只对明确提交的记忆选择重新应用，其他字段保留。来源内部保存，不新增前端入口、不默认输出记忆原文；必要解释由AI简述，确需时可用卡片。',
               openapi_extra={'x-assistant': {'effect': 'write', 'keywords': ['修改日程', '补充原日程', '修改会议', '调整日程时间']}})
 async def update_schedule(schedule_id: str, payload: schemas.SchedulePatchRequest, request: Request, db: DatabaseSession, user: CurrentUser,
                           runtime: CommuteRuntimeDependency, settings: SettingsDependency, client: NexusClient):
@@ -85,7 +85,7 @@ async def update_schedule(schedule_id: str, payload: schemas.SchedulePatchReques
 
 
 @router.delete('/schedules/{schedule_id}', operation_id='cancel_schedule', response_model=schemas.ScheduleOperationRead, response_model_exclude_none=True,
-               summary='取消指定未来日程，保留事项和待办', description='先GET原日程并提供当前expected_matter_version查询参数及Idempotency-Key。沿用既有未来日程取消规则；只取消此日程及自身或明确依赖的提醒，不完成、不删除相关待办，不取消同事项的独立待办提醒。',
+               summary='取消指定未来日程，保留事项和待办', description='先GET原日程并提供当前expected_matter_version查询参数及Idempotency-Key。沿用既有未来日程取消规则；只取消此日程及自身或明确依赖的提醒，不完成、不删除相关待办，不取消同事项的独立待办提醒；依赖原日程的截止清空实际时刻，保留绑定待重新安排。',
                openapi_extra={'x-assistant': {'effect': 'write', 'keywords': ['取消日程', '取消会议']}})
 async def cancel_schedule(schedule_id: str, db: DatabaseSession, user: CurrentUser,
                           runtime: CommuteRuntimeDependency, settings: SettingsDependency,

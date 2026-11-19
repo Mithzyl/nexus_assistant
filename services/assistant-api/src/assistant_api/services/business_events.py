@@ -10,7 +10,7 @@ _installed = False
 
 def record_changes(session, flush_context, instances):
     """Append business changes, excluding supplement queue bookkeeping already represented by saved progress."""
-    ignored = {'follow_ups','follow_up_executions','business_change_events','nexus_runs','user_asks','user_sessions','service_heartbeats','commute_leases','tool_call_receipts','matter_supplements'}
+    ignored = {'follow_ups','follow_up_executions','business_change_events','browser_push_subscriptions','browser_push_deliveries','nexus_runs','user_asks','user_sessions','service_heartbeats','commute_leases','tool_call_receipts','matter_supplements','next_action_states','next_action_command_receipts'}
     for row in list(session.new)+list(session.dirty)+list(session.deleted):
         state=inspect(row)
         if state.mapper.local_table.name in ignored or 'user_id' not in state.mapper.columns:
@@ -30,7 +30,7 @@ def record_bulk_changes(orm_state):
     if not (orm_state.is_update or orm_state.is_delete):
         return
     table = orm_state.statement.table
-    if 'user_id' not in table.c or table.name in {'follow_ups','follow_up_executions','business_change_events','nexus_runs','user_asks','user_sessions','matter_supplements'}:
+    if 'user_id' not in table.c or table.name in {'follow_ups','follow_up_executions','business_change_events','browser_push_subscriptions','browser_push_deliveries','nexus_runs','user_asks','user_sessions','matter_supplements','next_action_states','next_action_command_receipts'}:
         return
     from sqlalchemy import select
     primary = list(table.primary_key.columns)

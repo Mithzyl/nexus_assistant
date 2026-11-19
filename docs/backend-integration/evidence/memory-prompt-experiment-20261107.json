@@ -1,0 +1,161 @@
+{
+  "provider": "opencode",
+  "model": "deepseek-v4.1-flash",
+  "maximum_tasks": 4,
+  "maximum_model_calls_per_task": 6,
+  "prompt_modified": false,
+  "normal_services_modified_for_experiment": false,
+  "cases": [
+    {
+      "case": "zero_greeting",
+      "input": "你好，今天状态不错。",
+      "local_run_id": "169eac61-f790-4c88-9ae2-aa9dc818c2d8",
+      "status": "failed",
+      "answer": null,
+      "clarify": null,
+      "elapsed_seconds": 3.5,
+      "nexus_run_id": "2b5af7b9-e938-482b-8bdb-5b4977556254",
+      "workflow_id": "6fa99858-6619-4cf3-b209-cc93cb5a21a4",
+      "workflow": {
+        "status": "FAILED",
+        "model_call_count": 1,
+        "max_model_calls": 6,
+        "error_code": "rate_limited"
+      },
+      "provider_attempts": [
+        {
+          "status": "FAILED",
+          "provider": "opencode",
+          "model": "deepseek-v4.1-flash",
+          "retry_count": 0,
+          "input_tokens": null,
+          "output_tokens": null,
+          "error_code": "rate_limited"
+        }
+      ],
+      "initial_operations": [
+        "today_api_v1_today_get",
+        "list_reminders_api_v1_reminders_get",
+        "update_matter_api_v1_matters__matter_id__patch",
+        "commute_estimate_endpoint_api_v1_commute_estimate_post",
+        "create_check_api_v1_commute_plans__plan_id__checks_post",
+        "generate_commute_day_api_v1_commute_plans__plan_id__generate_day_post",
+        "list_drafts_api_v1_matters_drafts_get",
+        "refresh_commute_day"
+      ],
+      "initial_prompt_characters": 54471,
+      "actions": [],
+      "memory_tool_called": false,
+      "empty_memory_returned": false
+    }
+  ],
+  "stopped_reason": "provider_failure; remaining cases not submitted",
+  "actual_model_calls": 1,
+  "not_submitted": [
+    "zero_implicit",
+    "with_implicit",
+    "zero_explicit"
+  ],
+  "provider_http_attempts": [
+    {
+      "attempt_index": 1,
+      "status_code": 429,
+      "error_type": "rate_limited",
+      "latency_ms": 844
+    }
+  ],
+  "status": "未完成：首个模型请求被供应商以HTTP429拒绝，无法观察记忆决策",
+  "valid_behavior_conclusions": [],
+  "model_configuration_change": {
+    "configuration": "/Users/mith/Desktop/superapp-next-worktrees/backend/services/assistant-api/.env",
+    "backup": "/private/tmp/assistant-memory-prompt-experiment-20261107/assistant-before-model-change.env",
+    "before": {
+      "controller": {
+        "provider": "openai_compatible",
+        "model": "tiel-coder-35b-a3b-ud-q4_k_xl"
+      }
+    },
+    "after": {
+      "controller": {
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash"
+      }
+    }
+  },
+  "normal_api_reload": {
+    "old_pid": 59497,
+    "new_pid": 65374,
+    "port": 8010,
+    "health_http_status": 200,
+    "open_memory_schema_loaded": true,
+    "env_file": "/Users/mith/Desktop/superapp-next-worktrees/backend/services/assistant-api/.env",
+    "database": "/Users/mith/Desktop/superapp-next-worktrees/backend/services/assistant-api/data/local-development.db",
+    "automatic_ai_enabled": false,
+    "nexus_restarted": false,
+    "workers_started": false,
+    "model_calls": 0
+  },
+  "cleanup": {
+    "stopped_temporary_services": [
+      "nexus-worker",
+      "nexus-api",
+      "assistant"
+    ],
+    "normal_services_stopped": false,
+    "test_data_preserved": true
+  },
+  "fixtures": [
+    {
+      "case": "zero_greeting",
+      "memory_enabled": true,
+      "memory_count_before": 0,
+      "items": []
+    },
+    {
+      "case": "zero_implicit",
+      "memory_enabled": true,
+      "memory_count_before": 0,
+      "items": []
+    },
+    {
+      "case": "with_implicit",
+      "memory_enabled": true,
+      "memory_count_before": 1,
+      "items": [
+        {
+          "entry_id": "81bb663f-a549-4132-8b9f-33ab306ccc5a",
+          "version": 1,
+          "status": "active",
+          "sensitive": true,
+          "text": "带母亲出门时尽量少走路，她不喜欢坐地铁；她能接受短距离步行，优先选择少换乘的方式。",
+          "app_data": {
+            "namespace": "personal_assistant",
+            "schema_version": 1,
+            "fields": {
+              "tags": [
+                "陪同家人"
+              ],
+              "source": {
+                "kind": "user_settings"
+              }
+            }
+          },
+          "memory_type": "free_text",
+          "schema_version": 1,
+          "business": {
+            "category": null,
+            "tags": [
+              "陪同家人"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "zero_explicit",
+      "memory_enabled": true,
+      "memory_count_before": 0,
+      "items": []
+    }
+  ]
+}

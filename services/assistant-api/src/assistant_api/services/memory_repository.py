@@ -195,6 +195,55 @@ class MemoryStore:
                 return {**result, 'operation_id': operation.operation_id}
             return result
 
+    async def import_account(self, user_id, entries, settings):
+        """Import complete owned histories atomically, preserving IDs/revisions; conflicting existing data aborts all writes.
+
+        The source is a trusted owner-scoped export, not model or browser input.
+        This method never changes or deletes the old Nexus copy.
+        """
+        from assistant_api.schemas.memory import AppMemoryData, TypedMemory
+        from pydantic import TypeAdapter
+        async with self.factory() as db, db.begin():
+            scope=await self.lock_scope(db,user_id)
+            existing=await db.scalar(select(MemoryEntry.entry_id).where(MemoryEntry.user_id==user_id).limit(1))
+            if existing or scope.scope_revision:
+                raise ConflictError('memory_import_target_not_empty','目标账号已有本地记忆或操作，停止导入，不覆盖。')
+            for exported in entries:
+                versions=exported['versions']
+                current=exported['entry']
+                if (not versions or current['version']!=max(item['version'] for item in versions)
+                        or sorted(item['version'] for item in versions)!=list(range(1,current['version']+1))):
+                    raise ConflictError('memory_import_history_incomplete','来源历史不完整，停止导入。')
+                if await db.get(MemoryEntry,current['entry_id']):
+                    raise ConflictError('memory_import_id_conflict','来源条目编号已存在，不覆盖。')
+                converted=[]
+                for item in sorted(versions,key=lambda item:item['version']):
+                    if item.get('entry_id',current['entry_id'])!=current['entry_id'] or item['status'] not in {'active','candidate','forgotten'}:
+                        raise ConflictError('memory_import_invalid','来源条目或状态无效。')
+                    if item.get('text') is not None and (not isinstance(item['text'],str) or len(item['text'])>4000):
+                        raise ConflictError('memory_import_invalid','来源正文无效。')
+                    app_data=AppMemoryData.model_validate(item['app_data']).model_dump(mode='json') if item.get('app_data') else None
+                    typed=TypeAdapter(TypedMemory).validate_python(item['typed_data']).model_dump(mode='json') if item.get('typed_data') else None
+                    body={'text':item.get('text',''),'app_data':app_data,'typed_data':typed,
+                        'source':{'kind':'import','origin_system':'nexus','origin_entry_id':current['entry_id'],
+                            'origin_entry_version':item['version'],'executed_by':'assistant',
+                            'text_origin':'legacy_preserved','original_source':item.get('source') or
+                                ((item.get('app_data') or {}).get('fields') or {}).get('source')}}
+                    converted.append((item,self.encrypt(user_id,body)))
+                last,ciphertext=converted[-1]
+                db.add(MemoryEntry(entry_id=current['entry_id'],user_id=user_id,entry_version=last['version'],
+                    status=last['status'],sensitive=last.get('sensitive',False),
+                    memory_type=last.get('memory_type','free_text'),schema_version=1,body=ciphertext))
+                await db.flush()
+                for item,ciphertext in converted:
+                    db.add(MemoryVersion(entry_id=current['entry_id'],entry_version=item['version'],status=item['status'],
+                        sensitive=item.get('sensitive',False),memory_type=item.get('memory_type','free_text'),body=ciphertext))
+            if type(settings.get('enabled')) is not bool or type(settings.get('version')) is not int:
+                raise ConflictError('memory_import_settings_invalid','来源记忆开关或设置版本无效。')
+            scope.enabled=settings['enabled']
+            scope.scope_revision=settings['version']
+            return {'entries':len(entries),'versions':sum(len(item['versions']) for item in entries)}
+
 
 async def agent_command(db, store, user, local_run_id, value, *, key):
     """Validate the current trusted user quote and record model interpretation before local execution or queueing."""

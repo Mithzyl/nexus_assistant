@@ -1,0 +1,609 @@
+{
+  "date": "2026-11-06",
+  "timezone": "Asia/Shanghai",
+  "status": "进行中，修复后的真实综合任务已验证部分业务，但完整路线和最终卡片未通过",
+  "availability": {
+    "provider": "opencode",
+    "endpoint": "https://opencode.ai/inference/go/openai/v1",
+    "model": "deepseek-v4.1-flash",
+    "run_id": "f5322b9e-effc-41ba-b3b3-0653ac9d0069",
+    "workflow_id": "8ddd1236-488e-461f-9a1a-fb5489f1b8fc",
+    "status": "completed",
+    "answer": "NEXUS_READY",
+    "model_call_budget": 1,
+    "evidence": "/private/tmp/nexus-availability-20261106/result.json"
+  },
+  "first_ecosystem_attempt": {
+    "entry": "Chrome → Assistant intake → Nexus App API → independent Worker → Assistant business callback",
+    "database": "isolated SQLite for both services",
+    "object_storage": "real local MinIO, separate bucket",
+    "model": "real OpenCode Go deepseek-v4.1-flash",
+    "local_run_id": "d55cd6ba-33ea-433b-b288-d58bceb5782e",
+    "nexus_run_id": "191bb8c5-fbd3-4866-9ee4-38f8fbfa1437",
+    "workflow_id": "10e0e4e3-b6e8-4dff-836a-9d4c1812426c",
+    "status": "cancelled",
+    "model_calls": 4,
+    "business_callbacks": 1,
+    "completed_business_operations": [
+      "list commute plans"
+    ],
+    "native_operations": [
+      "search_tools",
+      "search_tools",
+      "request_user_input"
+    ],
+    "new_todos": 0,
+    "existing_schedules_retained": 2,
+    "existing_commute_plans_retained": 1,
+    "overall_verification": "未通过，未完成保存待办、路线及卡片验证",
+    "evidence_directory": "/private/tmp/assistant-ecosystem-20261106"
+  },
+  "repair": {
+    "operation_catalog": "Preserve requested primary operations before optional draft continuations; ignore explicitly forbidden action clauses for retrieval.",
+    "nexus_policy": "Optional application_native_tools_enabled defaults true; Assistant explicitly opts out in caller_processed mode.",
+    "fixed_output_checks": {
+      "catalog_and_published_constraints": 6,
+      "catalog_tasks_including_new_client_policy": 5,
+      "caller_continuation_and_native_compatibility": 11,
+      "policy_replay_and_change": 2,
+      "note": "Some checks overlap; counts are separate executions, not a cumulative unique-test total."
+    },
+    "real_model_recheck": "executed once after explicit authorization; stopped at 12 calls"
+  },
+  "normal_services_restarted": false,
+  "normal_business_database_modified": false,
+  "committed_or_pushed": false,
+  "regression_or_fingerprint_checks": false,
+  "authorized_recheck": {
+    "authorization": "One additional real Agent task, maximum 12 model calls; maps/weather as needed; isolated business data.",
+    "entry": "Real Chrome Assistant UI → formal Nexus App API → independent Worker → actual Assistant callbacks",
+    "local_run_id": "f9af5d9d-febe-463a-b97c-ee5223add349",
+    "nexus_run_id": "b855cc20-01f0-4b84-91f4-25d045fd7eda",
+    "workflow_id": "24329c5c-65a0-4dff-a5c1-58abbc09e5e5",
+    "status": "failed",
+    "error_code": "agent_model_call_limit_exceeded",
+    "model_calls": 12,
+    "max_model_calls": 12,
+    "provider": "opencode",
+    "model": "deepseek-v4.1-flash",
+    "native_tool_calls": 0,
+    "provider_retries": 0,
+    "business_callbacks": 12,
+    "business_operations": {
+      "commute_query": 1,
+      "today_query": 1,
+      "todo_query": 1,
+      "place_queries": 4,
+      "create_todo": 2,
+      "route_estimates": 3
+    },
+    "saved_todos": [
+      {
+        "todo_id": "3f87baa5-29b4-438b-9555-c90cae82ef73",
+        "title": "到上海博物馆人民广场馆取资料（停留15分钟，15:45前完成）",
+        "status": "open",
+        "due_at": "2026-11-06 07:45:00.000000",
+        "reminder_at": null
+      },
+      {
+        "todo_id": "c0d5ee81-2638-457c-aef1-f454f870f1ab",
+        "title": "到上海大剧院交材料（停留10分钟，16:15前完成）",
+        "status": "open",
+        "due_at": "2026-11-06 08:15:00.000000",
+        "reminder_at": null
+      }
+    ],
+    "existing_schedule_ids_preserved": true,
+    "existing_commute_id_preserved": true,
+    "same_agent_context": {
+      "checked_continuations": 11,
+      "full_original_body_arguments_summary_and_result": true,
+      "stable_instructions": true,
+      "final_call_result_read_by_model": false
+    },
+    "route_results": [
+      {
+        "status": "unavailable",
+        "provider": "unavailable",
+        "mode": "walking",
+        "reason_code": "unsupported_transport_mode",
+        "duration_seconds": null,
+        "distance_meters": null
+      },
+      {
+        "status": "available",
+        "provider": "amap",
+        "mode": "driving",
+        "reason_code": null,
+        "duration_seconds": 432,
+        "distance_meters": 1739
+      },
+      {
+        "status": "available",
+        "provider": "amap",
+        "mode": "driving",
+        "reason_code": null,
+        "duration_seconds": 179,
+        "distance_meters": 747
+      }
+    ],
+    "final_answer_and_timeline_card": "not generated; verification failed",
+    "browser_check": "Saved todos and correct local deadlines visible on Today page. Failure state visible on Ask page; no AI timeline card to verify.",
+    "scope": "Both service databases are new SQLite; new real local MinIO bucket. Existing development services/config/database left unchanged by this run.",
+    "evidence_directory": "/private/tmp/assistant-ecosystem-recheck-20261106",
+    "verification_summary": "/private/tmp/assistant-ecosystem-recheck-20261106/verification-summary.json",
+    "saved_todos_screenshot": "/private/tmp/assistant-ecosystem-recheck-20261106/saved-todos-browser.png",
+    "extra_model_calls_after_limit": 0
+  },
+  "transport_modes_implementation": {
+    "date": "2026-11-06",
+    "status": "代码已修改，定向检查通过；三次正式真实任务均首轮 HTTP 429，最近一次已确认上游 overloaded，路线与卡片未验证",
+    "supported_modes": [
+      "driving",
+      "walking",
+      "transit",
+      "bicycling",
+      "electrobike"
+    ],
+    "scoped_checks": {
+      "tests.test_route_transport_modes::test_amap_active_modes_return_duration_and_own_geometry[walking]": {
+        "result": "通过",
+        "source": "/private/tmp/route-modes-checks-20261106.xml"
+      },
+      "tests.test_route_transport_modes::test_amap_active_modes_return_duration_and_own_geometry[bicycling]": {
+        "result": "通过",
+        "source": "/private/tmp/route-modes-checks-20261106.xml"
+      },
+      "tests.test_route_transport_modes::test_amap_active_modes_return_duration_and_own_geometry[electrobike]": {
+        "result": "通过",
+        "source": "/private/tmp/route-modes-checks-20261106.xml"
+      },
+      "tests.test_route_transport_modes::test_agent_context_publishes_current_route_capabilities_and_budget": {
+        "result": "通过",
+        "source": "/private/tmp/route-modes-checks-20261106.xml"
+      },
+      "tests.test_route_transport_modes::test_commute_quote_measures_new_mode_and_reuses_existing_modes": {
+        "result": "通过",
+        "source": "/private/tmp/route-mode-quote-check-20261106.xml"
+      },
+      "tests.test_operation_catalog_tasks::test_daily_route_task_offers_requested_business_capabilities": {
+        "result": "通过",
+        "source": "/private/tmp/route-modes-checks-20261106.xml"
+      }
+    },
+    "test_note": "Each entry uses its latest actual execution; earlier failures remain in their original XML. The quote fixture initially had no configured ETA and was corrected explicitly.",
+    "real_agent_attempt": {
+      "local_run_id": "6b7bf80b-b804-4df6-8622-dbbe0822d6c1",
+      "workflow": {
+        "workflow_execution_id": "f15dca8a-318c-4f9d-b7b5-043a65c1ab3d",
+        "run_id": "27d9afd6-fe22-4d99-a296-29d7964f608b",
+        "status": "FAILED",
+        "model_call_count": 1,
+        "max_model_calls": 24,
+        "error_code": "rate_limited"
+      },
+      "provider": "opencode",
+      "model": "deepseek-v4.1-flash",
+      "provider_http_status": 429,
+      "provider_error": "rate_limited",
+      "business_callbacks": 0,
+      "todos_created": 0,
+      "final_timeline_card": "未验证",
+      "evidence_directory": "/private/tmp/assistant-route-modes-20261106",
+      "retry": "Explicitly authorized resubmission executed once; see authorized_resubmission."
+    },
+    "configuration_evidence": {
+      "route_capabilities": {
+        "provider": "amap",
+        "available": true,
+        "supported_modes": [
+          "driving",
+          "walking",
+          "transit",
+          "bicycling",
+          "electrobike"
+        ],
+        "availability_basis": "configured_adapter; request permission, quota and route availability are checked per call",
+        "selection_rule": "每一段使用用户指定的交通方式；未指定时结合实际测算选择。不可用时不得擅自更换。"
+      },
+      "agent_budget": {
+        "max_model_calls": 24,
+        "wall_time_limit_ms": 600000
+      },
+      "caller_workflow_budget": {
+        "max_model_calls": 24,
+        "wall_time_limit_ms": 600000
+      }
+    },
+    "normal_config_or_business_data_changed": false,
+    "normal_services_restarted": false,
+    "dependencies_installed_or_migrations_run": false,
+    "committed_or_pushed": false,
+    "regression_or_hash_checks": false,
+    "authorized_resubmission": {
+      "local_run_id": "cfc3439a-269c-45da-81df-436025c8d11d",
+      "run_id": "bc115549-5637-48bb-bc09-a223034634f6",
+      "workflow_id": "2908b4d5-a1da-4886-acd7-baf2ea42e200",
+      "status": "failed",
+      "provider": "opencode",
+      "model": "deepseek-v4.1-flash",
+      "provider_http_status": 429,
+      "error_code": "rate_limited",
+      "model_call_count": 1,
+      "model_call_budget": 24,
+      "business_callbacks": 0,
+      "todos_created": 0,
+      "existing_schedules": 2,
+      "existing_commute_plans": 1,
+      "route_and_timeline_verification": "未执行，供应商未返回模型正文",
+      "rate_limit_cause": "Existing persisted records do not distinguish transient rate limits from account quota exhaustion.",
+      "additional_retries": 0,
+      "evidence_directory": "/private/tmp/assistant-route-modes-retry-20261106",
+      "browser_screenshot": "/private/tmp/assistant-route-modes-retry-20261106/rate-limit-browser.png"
+    },
+    "documentation_and_resubmission": {
+      "workflow": {
+        "workflow_execution_id": "4ebbb547-04fe-4507-92e6-4832b09d8f12",
+        "run_id": "55f14422-ec8e-4f23-ba8e-722c8480bf14",
+        "status": "FAILED",
+        "model_call_count": 1,
+        "max_model_calls": 24,
+        "error_code": "rate_limited"
+      },
+      "provider": "opencode",
+      "model": "deepseek-v4.1-flash",
+      "physical_attempts": [
+        {
+          "attempt_index": 1,
+          "status_code": 429,
+          "error_type": "rate_limited"
+        }
+      ],
+      "provider_failure": [
+        {
+          "http_status": 429,
+          "error": {
+            "message": "Upstream request failed: [overloaded] the server is overloaded; retry shortly",
+            "type": "server_error"
+          },
+          "headers": {
+            "retry-after": "2",
+            "retry-after-ms": "2000"
+          },
+          "client_user_agent": "NexusPilot/0.1",
+          "session_header_present": true
+        }
+      ],
+      "business_counts": {
+        "agent_response_receipts": 0,
+        "matter_todos": 0,
+        "schedules": 2,
+        "commute_plans": 1
+      },
+      "result": "未完成，上游服务过载；没有业务调用、路线或最终卡片",
+      "same_run_retry_policy": "The isolated environment has NEXUSPILOT_MODEL_MAX_RETRIES=0; no automatic retries were sent.",
+      "normal_config_or_business_data_changed": false,
+      "additional_model_requests": 0,
+      "official_documents": {
+        "go": "https://opencode.ai/v2/docs/console/go/",
+        "budgets": "https://opencode.ai/v2/docs/console/budgets/"
+      },
+      "documentation_finding": "429 may represent a budget failure; Go also has rolling 5-hour, weekly and monthly allowances. This actual response instead reports upstream overload and Retry-After 2 seconds."
+    }
+  },
+  "short_context_verification": {
+    "scope": "Isolated current Assistant /api/v1/asks → real Nexus API/independent Worker → real OpenCode Go; not the normal running 8010 instance or business intake.",
+    "local_run_id": "c0344c2e-7011-480f-a2ca-2b0bd8761fc2",
+    "nexus_run_id": "ae03ac15-ea1a-4b0f-ae71-a919716aa13f",
+    "workflow_id": "22469ce2-5f10-410f-b117-025b92e603a1",
+    "input_text": "链路核对代号S7K2。只回复S7K2，不调用工具。",
+    "input_characters": 25,
+    "comparison": {
+      "user_input": {
+        "characters": 25,
+        "matches_input": true
+      },
+      "assistant_saved_request": {
+        "characters": 25,
+        "matches_input": true
+      },
+      "assistant_outbound_user_request": {
+        "characters": 25,
+        "matches_input": true
+      },
+      "nexus_received_user_request": {
+        "characters": 25,
+        "matches_input": true
+      },
+      "nexus_model_objective": {
+        "characters": 25,
+        "matches_input": true
+      }
+    },
+    "all_input_stages_match": true,
+    "assistant_outbound_field_names": [
+      "user_request"
+    ],
+    "assistant_memory_disclosures": [],
+    "nexus_effective_user_message": "{\"feedback\":\"\",\"objective\":\"链路核对代号S7K2。只回复S7K2，不调用工具。\",\"related_input_snapshots\":[],\"review_sources\":{}}",
+    "effective_message_count": 1,
+    "nexus_added_context": {
+      "system_instruction_characters": 2561,
+      "native_tool_definition_count": 16,
+      "native_tool_definition_json_characters": 19943,
+      "native_tool_names": [
+        "describe_tools",
+        "list_run_files",
+        "read_file_content",
+        "read_task_note",
+        "save_task_note",
+        "search_file_content",
+        "search_tools",
+        "query_memory",
+        "save_memory",
+        "propose_memory",
+        "confirm_memory",
+        "correct_memory",
+        "forget_memory",
+        "get_memory_settings",
+        "set_memory_settings",
+        "request_user_input"
+      ],
+      "business_api_catalog_supplied_by_assistant": false
+    },
+    "attempts": [
+      {
+        "attempt_id": "58bf53f1-77a0-468b-a79e-2c69d6929ae1",
+        "status": "COMPLETED",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "retry_count": 0,
+        "input_tokens": 6508,
+        "output_tokens": 47
+      }
+    ],
+    "provider_http_attempts": [
+      {
+        "attempt_index": 1,
+        "status_code": 200,
+        "error_type": null
+      }
+    ],
+    "native_tool_calls": 0,
+    "workflow": [
+      {
+        "status": "COMPLETED",
+        "execution_backend": "worker",
+        "model_call_count": 1,
+        "max_model_calls": 1
+      }
+    ],
+    "assistant_status": "succeeded",
+    "answer": "S7K2",
+    "result": "原文逐层一致；Nexus 添加任务包装、系统说明和原生工具定义；实际响应成功。",
+    "no_regression_or_hash_checks": true
+  },
+  "conditional_short_then_combined": {
+    "date": "2026-11-06",
+    "scope": "One isolated Assistant short request; combined task only if provider HTTP 200 and Assistant succeeds.",
+    "short_request": {
+      "condition_passed": false,
+      "assistant_status": "failed",
+      "answer": null,
+      "model_attempts": [
+        {
+          "provider": "opencode",
+          "model": "deepseek-v4.1-flash",
+          "status": "FAILED",
+          "retry_count": 0
+        }
+      ],
+      "provider_http": [
+        {
+          "attempt_index": 1,
+          "status_code": 429,
+          "error_type": "rate_limited"
+        }
+      ]
+    },
+    "provider_error": [
+      {
+        "http_status": 429,
+        "error": {
+          "message": "Upstream request failed: [overloaded] the server is overloaded; retry shortly",
+          "type": "server_error"
+        },
+        "headers": {
+          "retry-after": "3",
+          "retry-after-ms": "2242"
+        },
+        "client_user_agent": "NexusPilot/0.1",
+        "session_header_present": true
+      }
+    ],
+    "combined_task": {
+      "status": "跳过",
+      "reason": "Short request returned provider HTTP 429 rather than 200; the user prerequisite was not met.",
+      "submitted": false
+    },
+    "evidence_directory": "/private/tmp/assistant-conditional-short-20261106",
+    "normal_config_or_business_data_changed": false,
+    "extra_tests_regression_or_hash_checks": false
+  },
+  "local_compatible_model_verification": {
+    "date": "2026-11-06",
+    "status": "基本业务工具调用通过；完整路线定制未通过",
+    "entry": "Formal Assistant intake → Nexus App API → independent Worker → authenticated Assistant body callback",
+    "storage": "New SQLite databases and separate local MinIO buckets; real configured model and Amap locations",
+    "provider": "openai_compatible",
+    "base_url": "https://mithfusion.site/v1",
+    "model": "tiel-coder-35b-a3b-ud-q4_k_xl",
+    "agent_run_count": 3,
+    "total_model_calls": 23,
+    "simple": {
+      "run_id": "f9421c17-c8f3-49c7-8d11-c98a3ce8e5c5",
+      "model_calls": 6,
+      "tool_test_passed": true,
+      "card_test_passed": false,
+      "saved_todos": 1,
+      "context_checks_passed": true,
+      "evidence": "/private/tmp/assistant-localmodel-20261106/simple/verification.json"
+    },
+    "first_comprehensive": {
+      "run_id": "da1fead1-489b-474e-9cd5-2502f5d6586a",
+      "model_calls": 5,
+      "status": "unknown",
+      "cause": "Temporary verification harness mistakenly limited the shared Agent node to 180 seconds; fifth model attempt received only 72.553 seconds remaining. Corrected only for the subsequent fresh proof.",
+      "evidence": "/private/tmp/assistant-localmodel-20261106/timeout-diagnosis.json"
+    },
+    "corrected_comprehensive": {
+      "run_id": "6d78fdfd-0816-40a8-9015-8da569dfc044",
+      "workflow_id": "adee551a-45d7-44a2-a008-fa0c341efa7a",
+      "model_calls": 12,
+      "status": "unknown",
+      "node_timeout_seconds": 600,
+      "workflow_wall_time_ms": 600000,
+      "max_model_calls": 24,
+      "context_checks_passed": true,
+      "checked_continuations": 11,
+      "new_todos": 2,
+      "new_schedules": 1,
+      "invalid_model_bodies_rejected": 4,
+      "explicit_route_estimates": 0,
+      "timeline_cards": 0,
+      "existing_schedule_ids_preserved": true,
+      "existing_commute_id_preserved": true,
+      "last_business_response": {
+        "operation_id": "create_schedule",
+        "status": "failed",
+        "http_status": 409,
+        "data": {
+          "error": {
+            "code": "conflict_detected",
+            "message": "本次变更与已有日程冲突，请先选择调整方案或明确接受风险。",
+            "retryable": false
+          },
+          "request_id": "3f0feb2a-5f1f-4d31-b7b7-7c45cd913dd2"
+        }
+      },
+      "conflict": {
+        "has_conflict": true,
+        "severity": "tight",
+        "window": {
+          "start": "2026-11-06T08:45:00Z",
+          "end": "2026-11-06T14:55:00Z"
+        },
+        "conflicts": [
+          {
+            "schedule_id": "38bd4f88-81a5-4441-9b61-dbd009259235",
+            "title": "上海博物馆人民广场馆取资料",
+            "starts_at": "2026-11-06T11:12:00Z",
+            "ends_at": "2026-11-06T11:27:00Z",
+            "gap_seconds": 1080,
+            "eta_seconds": 238,
+            "eta_status": "available",
+            "relation": "previous",
+            "reason": "eta_short"
+          },
+          {
+            "schedule_id": "7768ef1e-4ace-4d31-8ad9-543fe4b35e96",
+            "title": "测试已有通勤",
+            "starts_at": "2026-11-06T12:00:00Z",
+            "ends_at": "2026-11-06T12:20:00Z",
+            "gap_seconds": 300,
+            "eta_seconds": 442,
+            "eta_status": "available",
+            "relation": "next",
+            "reason": "next_too_close"
+          }
+        ],
+        "options": [
+          {
+            "option_id": "A",
+            "label": "调整本次时间",
+            "detail": "把本次安排整体推迟约 5 分钟，开始时间约 11:50（UTC）；应用后会重新计算剩余冲突。",
+            "recommended": true,
+            "proposed_start": "2026-11-06T11:50:00Z",
+            "creates_todo": null,
+            "shift_seconds": 300,
+            "target_schedule_id": null,
+            "executable": true,
+            "unavailable_reason": null,
+            "affected": []
+          },
+          {
+            "option_id": "B",
+            "label": "调整相邻安排",
+            "detail": "把事项「上海博物馆人民广场馆取资料」中的「上海博物馆人民广场馆取资料」提前约 5 分钟，并生成一条联系待办。",
+            "recommended": false,
+            "proposed_start": null,
+            "creates_todo": "联系相关方调整「上海博物馆人民广场馆取资料」时间",
+            "shift_seconds": -300,
+            "target_schedule_id": "38bd4f88-81a5-4441-9b61-dbd009259235",
+            "executable": true,
+            "unavailable_reason": null,
+            "affected": [
+              {
+                "type": "schedule",
+                "matter_id": "f1a97c14-7a4f-4626-983e-06923e32d136",
+                "matter_title": "上海博物馆人民广场馆取资料",
+                "schedule_id": "38bd4f88-81a5-4441-9b61-dbd009259235",
+                "title": "上海博物馆人民广场馆取资料",
+                "source": "web_native",
+                "before_starts_at": "2026-11-06T11:12:00Z",
+                "before_ends_at": "2026-11-06T11:27:00Z",
+                "after_starts_at": "2026-11-06T11:07:00Z",
+                "after_ends_at": "2026-11-06T11:22:00Z"
+              }
+            ]
+          },
+          {
+            "option_id": "C",
+            "label": "保持时间，提前出发",
+            "detail": "按原时间进行，提前结束上一项或自行确认路况；系统不会替你改外部安排。",
+            "recommended": false,
+            "proposed_start": null,
+            "creates_todo": null,
+            "shift_seconds": 0,
+            "target_schedule_id": null,
+            "executable": true,
+            "unavailable_reason": null,
+            "affected": []
+          }
+        ],
+        "eta_note": null
+      },
+      "initial_operation_ids": [
+        "today_api_v1_today_get",
+        "search_place_candidates",
+        "list_commute_plans_api_v1_commute_plans_get",
+        "update_schedule",
+        "update_commute_day",
+        "create_schedule",
+        "get_commute_day",
+        "create_todo"
+      ],
+      "evidence": "/private/tmp/assistant-localmodel-corrected-20261106/comprehensive/verification.json"
+    },
+    "findings": [
+      "Initial eight selected operations included updates but omitted commute route estimation. Anchored prohibition matching misses a clause beginning 也不要修改.",
+      "Model did not request more interface definitions; no explicit per-leg walking/bicycling/walking estimates occurred.",
+      "Malformed JSON and prose mixed with JSON were rejected before dispatch.",
+      "Second new schedule returned conflict_detected HTTP 409: 300-second gap before existing commute, internal conflict travel estimate 442 seconds. This is not the requested explicit route plan.",
+      "Unhandled business 409 is mapped to stop/unknown without conflict details in the returned model result, preventing further schedule adjustment."
+    ],
+    "normal_database_counts": {
+      "users": 2,
+      "matter_todos": 4,
+      "schedules": 0,
+      "commute_plans": 0,
+      "nexus_runs": 13
+    },
+    "normal_business_counts_unchanged": true,
+    "normal_configuration_or_services_modified": false,
+    "temporary_services_stopped": true,
+    "automatic_ai_enabled": false,
+    "regression_or_hash_checks": false,
+    "implementation_changes": false
+  }
+}

@@ -177,7 +177,7 @@ def definition_matches(operation, definitions, schemas):
 
 
 async def process_response(db, app, payload):
-    """Check callback ownership, dispatch business calls and retain their memory sources."""
+    """Check callback ownership and retain memory sources for business handlers to validate when used."""
     identity = payload['execution_id']
     if payload['application_id'] != app.state.settings.nexus_application_id:
         raise ForbiddenError('application_mismatch', '应用标识与凭据不匹配。')
@@ -341,9 +341,35 @@ async def process_response(db, app, payload):
         return await finish(db, root, receipt, flow, outcome(identity, 'failed',
             error.get('message') or '索引参数无效，请按已发布uri修正；没有执行业务操作。',
             code=error.get('code')))
+    details = error.get('details') or {}
+    if (business['http_status'] == 409 and error.get('code') == 'conflict_detected'
+            and isinstance(details, dict) and details.get('formal_write_status') == 'not_applied'
+            and (operation.path == '/api/v1/schedules'
+                 or operation.path == '/api/v1/schedules/{schedule_id}'
+                 or operation.path == '/api/v1/matters/drafts/{draft_id}/confirm')):
+        # This marker is produced only after the shared confirmation transaction
+        # rolled back. A preview may persist; it is not a saved calendar event.
+        result = {**business, 'executed_arguments': actual.body,
+                  'executed_call': actual.model_dump(mode='json'), 'proposed_summary': call.summary,
+                  'recovery_guidance': '本次正式变更未保存，预览草稿仍保留；此前成功操作保持有效。'
+                      '按真实冲突选择调整当前提议或用 ask_user 询问，不重做已成功操作，'
+                      '未经用户明确授权不得接受冲突或修改其他日程。'}
+        return await finish(db, root, receipt, flow, outcome(identity, 'failed',
+            error.get('message') or '本次正式日程变更已回滚，请调整或询问用户。',
+            result=result, code='conflict_detected'))
+    if (business['http_status'], error.get('code')) in {
+        (409, 'availability_changed'), (409, 'recommendation_changed'), (409, 'recommendation_feedback_full'),
+        (404, 'recommendation_not_found'), (404, 'recommendation_target_not_found'),
+        (422, 'snooze_time_invalid'), (422, 'deadline_schedule_required'), (422, 'deadline_schedule_invalid'),
+        (422, 'deadline_schedule_inactive'), (422, 'deadline_timing_conflict'),
+    } and (operation.operation_id in {'save_availability', 'command_next_action', 'create_todo', 'update_todo'}
+           or operation.path == '/api/v1/matters/drafts/{draft_id}/confirm'):
+        # Only known failures before business persistence may be corrected by the same Agent.
+        return await finish(db, root, receipt, flow, outcome(identity, 'failed',
+            error.get('message'), code=error['code']))
     if (operation.operation_id=='resolve_business_preferences' or (
         operation.path in {'/api/v1/schedules','/api/v1/commute/estimate','/api/v1/todos',
-                          '/api/v1/todos/{todo_id}','/api/v1/schedules/{schedule_id}',
+                          '/api/v1/todos/{todo_id}','/api/v1/schedules/{schedule_id}','/api/v1/availability',
                           '/api/v1/matters/drafts','/api/v1/matters/drafts/{draft_id}',
                           '/api/v1/matters/commute-drafts','/api/v1/matters/drafts/{draft_id}/commute-quote',
                           '/api/v1/matters/drafts/{draft_id}/confirm',

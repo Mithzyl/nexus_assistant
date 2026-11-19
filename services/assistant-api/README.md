@@ -10,6 +10,9 @@ NexusPilot 提供模型与 Agent 工作流。Assistant 使用 `matter_plan` 提�
 本轮接口清单、结构化创建入口、调用参数与 AI 步骤要求见
 [接口复核与AI业务调用说明](../../docs/backend-integration/27-接口复核与AI业务调用说明.md)。
 
+浏览器关闭页面后的待办、日程和通勤推送见
+[浏览器推送通知](../../docs/backend-integration/29-浏览器推送通知.md)；默认关闭，需独立配置密钥、升级数据库并运行后台 worker。
+
 设计说明见 [`../../docs/backend-integration/`](../../docs/backend-integration/)。
 通勤提醒模块的架构、接口示例与 App 联调清单见
 [`../../docs/commute/`](../../docs/commute/)。
@@ -20,7 +23,62 @@ Assistant 为每次用户任务创建一个 Nexus 运行。创建工作流时使
 
 Nexus 将模型正文、实际工具参数和结果保留在原运行中，供下一次模型调用使用。Assistant 在执行业务前保存本次执行编号和请求。同编号同内容可读取已有结果，结果未确认时停止重复写入。最终回答由原运行保存，页面重连后按本地任务编号读取结果。旧 `/internal/nexus/tools` 继续提供既有只读接口。
 
-首轮消息提供业务接口简表和 `resolve_operation_definitions` 的参数结构。模型需要其他业务接口时，调用已认证的 `POST /api/v1/operation-catalog/resolve`，按简表里的 URI 读取完整定义。Assistant 依据原运行已收到的定义校验参数，定义变化时要求重新读取。
+格式错误返回 `invalid_parameters / failed / continue`，说明决策、参数或卡片的错误位置、字段类型或格式要求，不回传无效字段的原始值。只修正当前输出；先前成功的业务操作保留。
+
+卡片是可选展示：`answer`、`ask_user`和`clarify`都允许省略cards或传`cards=[]`，后端不会自动补卡。用户要求只返回文字、标题或简短确认时，提示Nexus按要求返回文字；追问的question和choices仍保留，不通过后端正则猜用户意图。
+
+`response_cards.presentation_schema()`维护模型输入结构，既发送给Nexus，也由`prepare_cards()`在解析引用前直接校验。`kind=result`的字段value和图片src必须使用`$result`或模板内`$item`引用，规则同样适用于时间线条目；info/plan的普通说明仍可使用常量。图片引用、`$each/template`、数组及秒数显示格式均在输入结构中声明。结构错误返回cards索引和字段路径；引用是否存在、实际结果类型及可展示URL仍需解析后校验。
+
+状态中文显示必须明确选择格式并保持真实引用，例如：
+
+```json
+{"label":"状态","value":{"$result":"/todo/status"},"format":"todo_status"}
+```
+
+| 显示格式 | 固定转换 |
+| --- | --- |
+| todo_status | open→未完成，done→已完成 |
+| schedule_status | scheduled→已安排，cancelled→已取消 |
+| reminder_status | scheduled→待提醒，due→已到提醒时间，acknowledged→已确认，cancelled→已取消 |
+| matter_status | active→进行中，waiting→等待中，archived→已归档，deleted→已删除 |
+
+未知状态保留原码，null保留为空，不推断成功；转换后的字段使用客户端既有`format=text`。这是显示转换，不修改接口返回值或数据库状态。卡片顶层status是只读生成字段，兼容旧输入时忽略其传入值，始终由Assistant按真实回执计算；它不等于业务字段value中的状态。
+
+本次定向验证入口：`.venv/bin/python -m pytest tests/test_card_input_contract.py`。17项检查通过，包含真实隔离SQLite待办、错误卡片拒绝、引用修正及中文投影，确认原待办仍为open且未重复创建；没有调用模型或做回归。现有服务未重启，不能据此声称已加载或通过真实模型/浏览器验收。
+
+日程新增、修改及草稿确认发生 `409/conflict_detected` 时，只有正式保存事务已成功回滚，错误才包含 `error.details.formal_write_status=not_applied`，同时提供真实 `conflict`、`draft`（编号、版本、preview 状态）和 `target`（原事项、日程编号）。Assistant 回调返回 `failed / continue` 及完整调用参数、summary 和实际错误，让原 Nexus Agent 决定调整当前提议或 `ask_user`。预览草稿可能已经保存，不等于正式日程已保存；不得未经授权接受冲突或修改其他日程。
+
+没有上述回滚依据的 409、服务异常、超时或提交后响应丢失仍为 `unknown / stop`，相同或新执行编号都不得重做写入。定向验证入口：`.venv/bin/python -m pytest tests/test_agent_repair_feedback.py`，使用临时 SQLite 和替代上游，无真实模型调用；通过不代表运行中服务已加载本次修改。
+
+### 一级接口索引与按需定义
+
+首轮不再按用户文字选择八份完整定义，也不再做否定句过滤或动作优先级推断。`operation_index` 从当前 OpenAPI 生成，每页最多128项简要说明，仅含 `uri`、`summary`、`effect`，并返回 `total/next_offset`。uri已包含接口名称，不重复附上operation_id、HTTP方法和路径；后者在完整定义中提供。用户原文完整保留，操作意图由 Nexus 判断。
+
+看到索引不增加请求，也不要求先查询或解析。按需规则如下：
+
+| 当前情况 | Nexus可采取的动作 |
+| --- | --- |
+| 普通问答 | 直接answer，不请求定义 |
+| 需求不清楚 | 先ask_user，不强制解析 |
+| 首次使用本Agent尚未获提供完整定义的业务接口 | 解析其uri，可同时获取多个 |
+| 同Agent已获提供该完整定义 | 直接调用，不重复解析 |
+| 执行中需要另一项能力 | 只解析新增接口 |
+| 只有参数错误、定义未变化 | 按错误反馈修正参数，不重新解析 |
+| 回调明确返回operation_definition_stale | 本条未执行，重新取得对应定义后再决定调用 |
+
+“已获提供”只认可当前Run的初始消息，以及该Run成功回调结果中的完整定义和共享结构；不借用服务器缓存标记或上一个Agent的记录。新Agent初始消息会重新提供解析工具定义并清除旧加载标记。业务调用前比较已提供结构与当前发布结构，只有实际变化才报告失效；不计算哈希。解析工具仍按当前请求结构校验，避免共享错误结构更新导致无法取得新定义。
+
+首轮只预加载解析工具 `resolve_operation_definitions` 的完整参数定义。它使用已认证的 `POST /api/v1/operation-catalog/resolve`，请求示例：
+
+```json
+{"uris":["assistant://operations/create_todo"]}
+```
+
+返回 `api_operations`、共享 `components.schemas` 及 `resolved_uris`。uri只标识本地发布定义，不会访问外部地址或执行业务。Nexus 阅读完整字段、规则及返回结构后，再决定是否提出业务调用；未加载定义的业务调用会被拒绝。每次最多解析8个uri是单次响应大小限制，不是总接口能力限制。
+
+`decision=search` 现在返回简短目录；仅在目录不足时由 Agent 给出 `search_query`，或用空字符串和 `search_offset` 分页读取全目录。它不自动展开参数或后续接口。已获取定义及共享结构在同一个 Agent 继续有效，回调只追加新增或已变化的定义，更新说明替代同名旧说明；完整调用参数、summary和真实结果仍保留。目录不是执行授权，身份、版本、业务规则及重复请求检查保持不变。
+
+定向检查：`.venv/bin/python -m pytest tests/test_operation_index.py`。实际新增模型轮次、token和耗时必须通过同任务真实对比记录，不能把本地目录解析耗时当作模型等待时间；一次样本也不能推断所有任务的长期性能。
 
 Nexus 私有 App 配置需要绑定此路径和独立服务端凭据，不能由模型指定执行地址或身份。
 Assistant 新增迁移 `0026_agent_response_receipts`，保存原文、关联身份、实际参数及处理回执。
@@ -73,7 +131,23 @@ cp .env.example .env          # 仅在 .env 不存在的新环境执行，再填
 
 日常 `restart` 使用 Compose restart，复用原容器；`stop` 保留容器和所有宿主数据。`start` 复用未变化的服务，需要替换时由 Compose 删除旧服务容器，并仅清理本项目孤立容器。依赖变更时先 `build` 再 `start`，不使用 `down --volumes` 或全局 prune。`docker-constraints.txt` 记录切换时本机依赖版本；源代码以只读目录挂载，普通代码修改后统一 restart 即可加载。
 
-内部 `scripts/run_backend.py` 仍可用于原生进程管理，默认仅监听回环地址；不要与 Docker 并行启动。该脚本不负责迁移或开启自动 AI，任一子进程退出会停止其余子进程，Docker 的 `unless-stopped` 策略再启动整组。支持 caller_processed 的 Nexus 必须批准应用正文处理连接。
+内部 `scripts/run_backend.py` 仍可用于原生进程管理，默认仅监听回环地址；不要与 Docker 并行启动。该脚本不负责迁移或开启自动 AI，任一核心子进程退出会停止其余子进程，Docker 的 `unless-stopped` 策略再启动整组。支持 caller_processed 的 Nexus 必须批准应用正文处理连接。
+
+## 上线监测：结构化日志与只读快照
+
+统一入口 `scripts/run_backend.py` 额外管理独立的监测进程。它使用同一配置的本机 SQLite，每 60 秒只读采一次数据；监测进程异常退出会记一条事件并单独重启，不影响 API、scheduler 或 worker 的生命周期。不新增网页、公开接口、数据库表，也不启动模型或地图请求。现有的核心进程退出策略保持不变。
+
+- `http_request`：每次 HTTP 响应记录 UTC 时间、固定路由模板、HTTP 方法、状态码、耗时毫秒数、服务端生成的请求编号和有限错误分类。流式请求的耗时到最后一段响应；中断单独记录。统一入口关闭 Uvicorn 原始访问日志，避免记录完整路径、动态编号或查询串。
+- `operations_snapshot`：记录各任务的状态计数、已可执行任务最老等待时间、运行超时或过期租约、近 24 小时失败；区分等待用户、等待延迟重试和实际积压。另记录两个后台心跳、到期未派发及未处理业务变更、SQLite 可读性、迁移版本、大小、所在磁盘余量和主要业务表计数。数据库不可读时队列状态返回 `null`，不显示成空队列。已确认的 SQLite 异常不输出数据库路径或原始错误消息。
+- `background_tick_failure` / `monitor_process_exit`：记录后台循环或监测进程故障的类别，不写异常正文。JSON 事件都带 `schema_version`。不输出正文、SQL 参数、密钥、地址查询参数、用户身份或记录正文。请求编号用于定位一次 HTTP 请求，当前未做跨 Nexus 的请求关联或供应商费用采集。
+
+日志写入现有标准输出：原生运行使用统一入口的服务日志；Compose 使用既有容器日志和轮转。不另外生成无轮转的业务数据文件。采集时仅选择 `service=assistant`、`schema_version=1` 的 JSON 行，再按 `category`、`event`、`route`、`alerts[].code` 聚合后交给 AI；不要直接上传混合日志文件或 SQLite 数据库。独立查看一条快照（从本目录运行，沿用已授权的配置）：
+
+```bash
+PYTHONPATH=src .venv/bin/python -m assistant_api.operations_monitor --once
+```
+
+轮询间隔由 `ASSISTANT_MONITOR_INTERVAL_SECONDS` 控制（默认 60 秒）；队列和派发等待的告警阈值为 `ASSISTANT_MONITOR_QUEUE_STALL_SECONDS`（默认 180 秒）；有租约的执行超过实际租约即告警，无租约执行按更新超过 15 分钟判断。数据库采样只验证可读性及必要迁移，不用测试写入验证可写，也不等同于备份可恢复。目标环境的日志收集、通知路由和备份恢复演练仍是部署条件。
 
 ## 独立 stub 开发环境（兼容入口）
 
@@ -168,10 +242,18 @@ NexusPilot 应用 API 的服务，并断言 9 次上游调用里没有任何请�
 | GET | `/api/v1/asks/{id}` | 单条请求状态与最终回答（刷新时向上游对账） |
 | POST | `/api/v1/asks/{id}/cancel` | 取消（转发 NexusPilot） |
 | GET | `/api/v1/asks/{id}/events` | SSE 代理，支持 `Last-Event-ID` |
-| POST | `/api/v1/memory/search` | 按关键词匹配 Nexus 新版个人记忆，保留状态、版本、结构化数据和分页 |
-| GET | `/api/v1/memory` | 当前账号的 Nexus 个人记忆原始分页；可指定本地 `local_run_id` |
-| GET | `/api/v1/memory/settings` | 当前 App 记忆开关与版本 |
-| POST | `/api/v1/memory/commands` | 显式用户记忆操作；必填本地 `local_run_id`，支持现有 Nexus `app_data` |
+| POST | `/api/v1/memory/search` | 按关键词匹配 Assistant 自有个人记忆，保留状态、版本、结构化数据和分页 |
+| GET | `/api/v1/memory` | 当前账号记忆分页与业务投影；不要求已有 Run，旧 `local_run_id` 可选并核对归属 |
+| GET | `/api/v1/memory/settings` | Assistant 账号记忆开关与设置修订号 |
+| POST | `/api/v1/memory/commands` | 本人记忆管理；本地支持 typed_data、app_data、undo；旧 disclose 已不适用 |
+| GET | `/api/v1/memory/history/{entry_id}` | 本账号条目的本地版本历史；offset/limit 分页 |
+| POST | `/api/v1/business-memory/query` | 业务 Agent 按用途读取有效事实、来源及版本；不调用模型 |
+| POST | `/api/v1/business-memory/facts` | 当前聊天 Agent 保存用户明确要求记住的逐字原话；直接客户端不能伪造来源 |
+| POST | `/api/v1/business-memory/commands` | 当前 Agent 新增、纠正、遗忘；支持回答后候选队列 |
+| GET | `/api/v1/memory/operations/{operation_id}` | 本人查询回答后的处理状态 |
+| GET | `/api/v1/preferences` | deprecated：旧配置兼容读取；configuration_required=false |
+| PATCH | `/api/v1/preferences` | deprecated：旧配置兼容保存；不决定新任务选用记忆，不向模型开放 |
+| POST | `/api/v1/preferences/resolve` | 只读解析当前可用默认值、来源和未采用原因；不保存安排或调用模型 |
 | POST | `/api/v1/data-sources` | 登记设备内容来源与授权范围 |
 | GET | `/api/v1/data-sources` | 当前用户的来源、同步状态与授权 |
 | PATCH | `/api/v1/data-sources/{id}` | 分别更新同步、助手授权、字段和范围 |
@@ -271,11 +353,31 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
 这些地点接口同样拒绝 URL 查询参数。
 
 供应商限制：以上保证浏览器→Web代理→Assistant 的地点查询使用固定URL及JSON体。
-现有高德适配器仍按其 v3 官方接口使用 GET，Open-Meteo 预报也使用 GET/query；
+高德地点、驾车和公交使用 v3，步行、自行车和电动车使用 v5；均按官方接口使用 GET，Open-Meteo 预报也使用 GET/query；
 不宣称供应商链路已经满足“全部URL无参数”。官方说明见
 [高德地点搜索](https://developer.amap.com/api/webservice/guide/api/search/)和
 [Open-Meteo接口定义](https://github.com/open-meteo/open-meteo/blob/main/openapi/forecast.yml)。
 本次未更换供应商或修改其调用协议。
+
+### 路线交通方式与 Agent 预算（2026-11-06）
+
+`POST /api/v1/commute/estimate` 的 `mode`、通勤计划、组合草稿及路线返回统一支持
+`driving`、`walking`、`transit`、`bicycling`、`electrobike`。
+高德新增三种方式显式请求 `show_fields=cost,polyline`，从 `cost.duration` 读取秒数，
+返回真实路线坐标；不以驾车替换失败的步行或骑行，不根据距离虚构耗时。
+步行/骑行耗时标为 `static_route_estimate`，不宣称实时路况或未来交通预测。
+接口和数据模型兼容原三种方式；不需要新增数据库字段或迁移。现有前端方式选择控件未修改。
+
+业务 Agent 固定输入增加 `route_capabilities`，只公布当前适配器配置支持的方式，
+具体账号权限、配额及有无路线仍以每次响应为准。每段交通方式由用户明确指定时必须遵守；
+未指定时 AI 可以依据实际测算提出选择。AI 负责地点顺序、交通方式和时间衔接，
+具体道路路径由地图供应商计算。HTTP 200 不代表 `data.status=available`。
+
+`ASSISTANT_NEXUS_BUSINESS_MAX_MODEL_CALLS` 默认 24（1–64），
+`ASSISTANT_NEXUS_BUSINESS_WALL_TIME_LIMIT_MS` 默认 600000（最多 10 分钟）。
+预算在任务创建时保存并传入 Nexus，由同一个 Agent 使用，终答也计一次调用。
+普通非业务调用保留原默认；Assistant 不自行创建下一轮 Agent 或强制改为回答。
+运行验证状态见[当前接口与 AI 调用说明](../../docs/backend-integration/27-接口复核与AI业务调用说明.md)。
 
 本次验证使用内存 SQLite 和 mock 地点供应商，仅执行新增
 `tests/test_place_lookup.py` 中的定向检查，不作为真实供应商、浏览器地图或生产业务验收。
@@ -297,13 +399,45 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
   `scripts/migrate_sqlite.py` 管理。
 - 记忆召回失败返回 5xx，不返回空列表——"没有"和"查不到"必须能区分。
 
-Assistant 使用本地数据库管理业务记忆。登录用户可通过 `GET /api/v1/memory` 列表、`GET /api/v1/memory/history/{entry_id}` 历史及 `GET /api/v1/memory/settings` 读取自己的数据。`POST /api/v1/memory/commands` 用于保存、纠正、遗忘、恢复及设置开关。本人管理可独立于聊天使用，旧客户端传入任务编号时仍核对任务归属。
+记忆由 Assistant 本地管理，Nexus 只在同一 Agent 中理解相关记忆并请求业务工具。
+当前实现、字段、聊天时序、错误及迁移说明统一见
+[05：Agent、业务记忆与偏好应用](../../docs/backend-integration/05-Agent-工具-记忆运行流程.md)。
 
-新聊天保存用户原文后，在首次调用模型前读取当前账号的相关记忆，并随同本次任务交给 Nexus。模型可用 `POST /api/v1/business-memory/query` 补查，也可通过 `POST /api/v1/business-memory/commands` 提出修改。Assistant 核对任务、账号、原话和版本。旧通用问答入口传入的 `memory_disclosures` 只在 Assistant 校验归属和版本。新的业务任务使用前述受限工具。
+- 本人管理：GET `/api/v1/memory`、`/settings`、`/history/{entry_id}`，POST `/commands`；不依赖 Nexus Run。
+- AI 检索：POST `/api/v1/business-memory/query`，开放查询和标签；新任务首轮默认执行一次本地有界预取，后续按需补查。
+- AI 修改：POST `/api/v1/business-memory/commands`，operation_id=`mutate_business_memory`；新增、候选、纠正及遗忘，
+  使用当前用户原话及 `expected_entry_version`，不接收用户身份、总开关或本人确认权限。
+- 独立日程、路线仍使用 `memory_defaults` 保存实际采用的来源；通勤与事项默认共用账号记忆，来源事项不是范围限制。
+- 关键读写在终答前完成。非紧急候选可 `execution=after_answer` 登记；返回 queued 不代表保存成功，
+  回答持久化后由 Assistant worker 执行本地队列，无需再次调用模型。GET `/api/v1/memory/operations/{operation_id}` 查看结果。
 
-模型登记允许延后的修改时，接口返回 `queued` 和 `applied=false`。最终回答成功保存后，Assistant 的后台工作进程执行已登记的命令，并通过 `GET /api/v1/memory/operations/{operation_id}` 提供实际结果。记忆关闭或版本冲突会阻止修改。处理过程无需调用模型。
+迁移 `0028_owned_memory` 新增本地条目、历史、设置和操作表。正文及来源使用独立密钥加密：
+`ASSISTANT_MEMORY_ENCRYPTION_KEY_PATH`。可用 `scripts/configure_memory.py --key-file ...` 创建一次，
+不能覆盖已有密钥；SQLite 和密钥须私密备份。应用前备份现有数据并执行 `scripts/migrate_sqlite.py upgrade`。
+已有 Nexus 记忆用 `scripts/import_owned_memory.py --user-id ...` 预览，暂停该账号写入后 `--apply` 导入；
+保留原编号、全部历史、状态和开关，不删除来源，不双写。目标非空或版本变化时停止。
+本机常用开发库已应用 0028，配置独立密钥并保留原 Nexus Assistant 记忆及历史，API 已按原配置重启；服务器不属于本次操作范围。API、scheduler 和 worker 现已由固定 Docker 容器统一管理，使用同一原 `.env` 与数据库；回答后记忆由 worker 处理，不需要再次调用模型。统一启停使用本页上方 `scripts/manage_backend.py`，不再单独启动 Uvicorn 或后台模块。
 
-数据库迁移 `0028_owned_memory` 创建记忆条目、历史、开关和操作记录表。记忆加密密钥由 `ASSISTANT_MEMORY_ENCRYPTION_KEY_PATH` 指向，首次配置可使用 `scripts/configure_memory.py`。保留已有密钥，并随数据库一同私密备份。
+当前偏好使用由 AI 根据本次输入与检索记忆判断，不要求用户额外开启用途、绑定角色或填设置表。
+
+0030（待办字段和今天页推荐）：新增六个可空待办列和三张独立表，用于保存每周作息、当前推荐与反馈回执。使用现有 SQLite 增量升级入口；在常用库升级前保留备份。接口、输入和范围见[现行产品规划](../../docs/产品规划-工作安排与计划接续.md#6-首版接口与实施状态)。本次仅在隔离库执行升级和定向验证，未更改常用库或重启服务。
+
+2026-11-10：已补待办、普通/通勤组合草稿、长期通勤计划及明确重新应用的记忆来源记录，说明见 [05 来源记录](../../docs/backend-integration/05-Agent-工具-记忆运行流程.md#本次新增来源记录实现隐私与启用条件)。AI 选择来源，后端只校验/保存；不增加前端入口或默认展示记忆正文。新增 `0029_business_memory_applications` 创建加密的内部来源表，复用原记忆密钥，不改已有账号或业务行。代码曾在隔离库定向验证。2026-11-11 已备份本机 `data/local-development.db` 至 `data/backups/before-0029-20261111-152748/local-development.db`，执行既有 `scripts/migrate_sqlite.py upgrade --database <实际数据库地址>` 完成 0029，再通过 `scripts/run_backend.py --env-file .env` 整组重启 API、scheduler 和 worker。API 在 `127.0.0.1:8010` 返回健康状态 200，两个后台进程均产生新心跳；原账号、业务和记忆记录数量保持不变，原配置及记忆密钥未改动，自动 AI 仍关闭。此次仅核对迁移与运行状态，未调用模型或增加测试；服务器未在本次操作范围。
+独立日程和路线接口接收 memory_defaults（按字段提供 entry_id/version/source_quote/value/reason）；
+后端核对本任务检索来源、当前版本、引用原文、明确限制和字段类型，保存真实采用来源并返回原 Agent。
+已有结构值要求一致；文本解释标 model_interpretation，不改成用户本次输入或已确认长期事实。
+参数由 AI 根据本次用户输入选择来源：明确值只传普通字段，采用记忆只传 memory_defaults，不能将记忆值重复抄入普通字段。
+同字段或关联字段（如 reminder_at 与提醒记忆）同时出现，包括 null，返回 422/input_source_conflict，写入前停止；原 Agent 可修正后继续。
+use_preferences=false 时不提交记忆选择。后端校验归属、版本、原文、字段一致性及重复请求，不替 AI 判断语义来源。未选记忆不自动套旧角色配置。
+有歧义由 decision=ask_user 返回 question、choices 和 cards；后端保留卡片及原问题/选项供后续选择解释。
+结果卡片的提醒偏移使用 `format=relative_seconds`，耗时使用 `format=duration_seconds`，由 Assistant 将实际秒数转换为带单位的文字；不将原始秒数标成分钟。已有提醒偏移字段的结果引用也按此规则展示，不修改数据库中的秒数或提醒时间。
+旧 GET/PATCH preferences 已标 deprecated 并保留原数据兼容，当前只读 resolve 可按需校验，正式保存会再检查。
+当前 22 项隔离定向检查通过；未做真实模型语义质量验证或重载服务。
+详细参数、来源和询问示例见[偏好应用与对接](../../docs/backend-integration/05-Agent-工具-记忆运行流程.md#对外接口)。
+
+旧 `memory_disclosures` 不再写 Nexus 平台授权；旧通用入口仅校验本地归属和版本。
+当前业务 Agent 继续拒绝非空旧授权列表，使用受限记忆工具。本人命令 `disclose` 返回
+`memory_disclosure_not_required`，客户端应取消此平台授权前提，不能据此启用原生平台记忆。
 
 ### 网页注册
 
@@ -330,8 +464,6 @@ Assistant 使用本地数据库管理业务记忆。登录用户可通过 `GET /
 2026-11-11 本机实际通过 `scripts/run_backend.py --env-file <实际 .env 路径>` 统一管理 API、scheduler 和 worker，保持 backend worktree、原配置、数据库及记忆密钥；0028/0029 已迁移，自动 AI、自动天气仍关闭。`scripts/manage_backend.py` 是已有 Docker 管理代码，不代表本机正在使用 Docker。其他机器的 LaunchAgent 名称与目录不作为本机启动依据。
 
 实时定义：`http://127.0.0.1:8010/openapi.json`。前端在Web worktree的3001运行，经`/api/pa`代理访问8010。详细备份、迁移和启动记录见[当前验收文档末尾](../../docs/backend-integration/28-日程与待办独立操作及AI验收.md)。
-
-2026-11-10：已补待办、普通/通勤组合草稿、长期通勤计划及明确重新应用的记忆来源记录，说明见 [05 来源记录](../../docs/backend-integration/05-Agent-工具-记忆运行流程.md#本次新增来源记录实现隐私与启用条件)。AI 选择来源，后端只校验/保存；不增加前端入口或默认展示记忆正文。新增 `0029_business_memory_applications` 创建加密的内部来源表，复用原记忆密钥，不改已有账号或业务行。代码曾在隔离库定向验证。2026-11-11 已备份本机 `data/local-development.db` 至 `data/backups/before-0029-20261111-152748/local-development.db`，执行既有 `scripts/migrate_sqlite.py upgrade --database <实际数据库地址>` 完成 0029，再通过 `scripts/run_backend.py --env-file .env` 整组重启 API、scheduler 和 worker。API 在 `127.0.0.1:8010` 返回健康状态 200，两个后台进程均产生新心跳；原账号、业务和记忆记录数量保持不变，原配置及记忆密钥未改动，自动 AI 仍关闭。此次仅核对迁移与运行状态，未调用模型或增加测试；服务器未在本次操作范围。
 
 2026-11-11：待办记忆来源完成一次 Chrome 真实 AI 验收（隔离数据、两个连续输入、6+1 次模型调用、无重试）。首轮按会议时间和记忆保存 09:30 截止待办、cards=[]；用户追问后才展示记忆与计算解释卡片。真实来源记录与页面结果一致，未重复写入；未扩大重测组合草稿、周期计划或重新应用。范围与限制见 [当前流程的验收记录](../../docs/backend-integration/05-Agent-工具-记忆运行流程.md#2026-11-11-待办来源真实浏览器验收)。
 

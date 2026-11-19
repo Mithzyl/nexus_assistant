@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Annotated, Literal
+from typing import Annotated
 from assistant_api.schemas.preferences import MemoryInputOptions, memory_source_constraints, FIELDS
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -83,7 +83,7 @@ class QuoteValues(BaseModel):
     effective_from: date
     weekdays: list[Annotated[int, Field(ge=1, le=7)]] = Field(min_length=1,max_length=7)
     buffer_minutes: int = Field(ge=0,le=120)
-    mode: Literal['driving','transit'] = 'driving'
+    mode: TransportMode = Field(default='driving', description='driving驾车、transit公共交通、walking步行、bicycling自行车、electrobike电动车；按运行环境支持方式选择。')
     test_only: bool = False
 
 class QuoteRequest(QuoteValues, MemoryInputOptions):
@@ -156,16 +156,19 @@ async def quote(db,runtime,settings,user,draft_id,request,*,execution_run_id=Non
     arrival=datetime.fromisoformat(f"{request.effective_from}T{state['intent']['arrival_local_time']}:00").replace(tzinfo=zone)
     if arrival<=datetime.now(zone):raise InvalidRequestError('arrival_passed','首次到达时间已过去，请选未来日期。')
     inputs={'origin':origin,'destination':dest,'effective_from':str(request.effective_from),'weekdays':sorted(set(request.weekdays)),'buffer_minutes':request.buffer_minutes,'test_only':request.test_only}
-    # Mode changes reuse the same two measurements; never re-call providers to
-    # repaint the preview. An interrupted provider call is not silently retried.
-    if state.get('quote_inputs')!=inputs:
+    # Keep completed same-input measurements when a new transport mode is selected.
+    # Changing coordinates or timing invalidates them; interrupted calls stay explicit.
+    new_inputs = state.get('quote_inputs') != inputs
+    if new_inputs or request.mode not in state.get('routes', {}):
         claim=await db.execute(update(MatterDraft).where(MatterDraft.draft_id==draft_id,MatterDraft.user_id==user.user_id,MatterDraft.version==request.expected_version,MatterDraft.status=='preview').values(version=request.expected_version+1))
         if claim.rowcount!=1:
             await db.rollback();raise ConflictError('preview_stale','已有测算正在处理，请刷新。')
         if state.get('quote_status')=='measuring':raise ConflictError('quote_outcome_unknown','测算尚未完成，不能重复调用。')
-        state.update(quote_inputs=inputs,quote_status='measuring',routes={},route_quote_id=new_id(),expires_at=(datetime.now(UTC)+timedelta(minutes=30)).isoformat())
+        state.update(quote_inputs=inputs,quote_status='measuring',routes={} if new_inputs else dict(state.get('routes', {})),route_quote_id=new_id(),expires_at=(datetime.now(UTC)+timedelta(minutes=30)).isoformat())
         draft.payload_json={**draft.payload_json,'commute':dict(state)};await db.commit()
-        for mode in ['driving','transit']:
+        for mode in dict.fromkeys(['driving','transit',request.mode]):
+            if mode in state['routes']:
+                continue
             state['routes'][mode]=await commute_estimate.estimate(runtime,origin=(origin['latitude'],origin['longitude']),destination=(dest['latitude'],dest['longitude']),mode=mode,depart_at=arrival-timedelta(hours=1),arrive_by=arrival,origin_city=origin['city'],destination_city=dest['city'],origin_coordinate_system='gcj02',destination_coordinate_system='gcj02')
             draft.payload_json={**draft.payload_json,'commute':schedule_routes._jsonable(state)};await db.commit()
         state['quote_status']='complete'

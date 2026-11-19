@@ -118,11 +118,18 @@ async def validation_for_schedule(
             ScheduleRouteResult.user_id == user.user_id,
         )
     )
+    return await validate_saved_route(db, user, schedule, row)
+
+
+async def validate_saved_route(db, user, schedule, row, *, at=None):
+    """Apply the existing freshness and ownership rules to a route already loaded by the caller."""
     if row is None:
         return None, "no_linked_route_result"
     if row.schedule_fingerprint != schedule_fingerprint(schedule):
         return None, "route_result_stale"
-    result = dict(row.result_json or {})
+    if not isinstance(row.result_json, dict):
+        return None, "route_result_stale"
+    result = dict(row.result_json)
     if "_destination_address" in result and result["_destination_address"] != schedule.location_address:
         return None, "route_result_stale"
     max_age = (
@@ -130,7 +137,8 @@ async def validation_for_schedule(
         if result.get("timing_basis") == "planned_time_not_live_forecast"
         else LIVE_RESULT_MAX_AGE
     )
-    if datetime.now(UTC) - ensure_aware(row.calculated_at) > timedelta(seconds=max_age):
+    age = (at or datetime.now(UTC)) - ensure_aware(row.calculated_at)
+    if age < timedelta(0) or age > timedelta(seconds=max_age):
         return None, "route_result_expired"
     origin_schedule_id = result.get("origin_schedule_id")
     if origin_schedule_id:
@@ -142,7 +150,7 @@ async def validation_for_schedule(
             )
         )
         if (
-            origin is None
+            origin is None or origin.status != "scheduled"
             or result.get("origin_schedule_fingerprint")
             != schedule_fingerprint(origin)
         ):

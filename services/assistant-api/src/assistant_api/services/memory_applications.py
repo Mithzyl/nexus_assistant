@@ -31,7 +31,7 @@ def public_request(value):
 def request_identity(request, *, exclude_unset=False):
     """Keep pre-existing replay payloads compatible by omitting only newly introduced unset options."""
     value = request.model_dump(mode='json', exclude_unset=exclude_unset)
-    for key in OPTIONS:
+    for key in OPTIONS | {'priority', 'estimated_duration_minutes', 'available_after', 'place', 'schedule_due'}:
         if key not in request.model_fields_set:
             value.pop(key, None)
     if request.__class__.__name__ == 'MemorySelection' and 'references' not in request.model_fields_set:

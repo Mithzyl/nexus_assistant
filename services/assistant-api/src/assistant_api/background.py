@@ -5,12 +5,12 @@ Run python -m assistant_api.background scheduler|worker [--once]. Uses the same
 """
 import argparse
 import asyncio
-import logging
 import os
 import signal
 from datetime import UTC, datetime
 from assistant_api.main import create_app
 from assistant_api.core.config import get_settings
+from assistant_api.core.observability import emit_event
 from assistant_api.services import follow_ups
 from assistant_api.commute.heartbeat import record_heartbeat
 
@@ -59,7 +59,17 @@ async def run(component, *, once=False):
         active_state={'job':None}
         heartbeat=asyncio.create_task(heartbeat_loop(app.state.session_factory, component=component, instance_id=identity, interval_seconds=settings.commute_heartbeat_interval_seconds, stop=stop, active_job=lambda: active_state['job'], lease_seconds=settings.commute_job_lease_seconds))
         try:
-            await process_loop(app,component,identity,stop,once,active_state)
+            from assistant_api.services import browser_push
+            notifications = (asyncio.create_task(browser_push.run_worker(app, stop))
+                if component == 'worker' and app.state.settings.web_push_enabled and not once else None)
+            if component == 'worker' and once:
+                await browser_push.tick(app)
+            try:
+                await process_loop(app,component,identity,stop,once,active_state)
+            finally:
+                stop.set()
+                if notifications:
+                    await notifications
         finally:
             stop.set()
             await heartbeat
@@ -71,9 +81,9 @@ async def process_loop(app,component,identity,stop,once,active_state):
         try:
             await tick(app,component,identity,active_state=active_state)
         except Exception:
-            logging.getLogger(__name__).exception('assistant background tick failed component=%s',component)
+            emit_event('background_tick_failure',level='error',category='queue_failure',component=component)
             if once:
-                raise
+                raise RuntimeError("Assistant background tick failed") from None
         if once:
             return
         try:

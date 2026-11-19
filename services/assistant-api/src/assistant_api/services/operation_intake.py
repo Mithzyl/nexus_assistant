@@ -130,6 +130,7 @@ def model_context(flow: dict, catalog: OperationCatalog, *, catalog_query: str =
     if flow.get('presentation_only'):
         decision_schema['properties']['decision']['enum'] = ['answer']
     return {'text': flow['text'], 'now': flow['now'], 'timezone': flow['timezone'], 'trigger_source': flow.get('trigger_source', 'chat'),
+            'route_capabilities': flow.get('route_capabilities', {}),
             'agent_budget': flow.get('agent_budget', {}),
             'actor': flow.get('actor'),
             'current_message': {'origin': 'system' if flow.get('trigger_source') == 'follow_up' else 'user', 'text': flow['text']},
@@ -189,6 +190,8 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
             'history': history, 'trigger_source': request.source, 'matter_id': matter_id, 'follow_up_id': request.follow_up_id, 'follow_up_execution_id': request.follow_up_execution_id, 'lease_owner': request.lease_owner, 'receipts': [], 'step': 0, 'state': 'preparing_memory', 'request_key': idempotency_key,
             'memory_prefetch':{'status':'pending','confirmed_empty':False,'cache_valid':False},'memory_sources':[]}
     catalog = OperationCatalog(request.app)
+    from assistant_api.commute.runtime import route_capabilities
+    flow['route_capabilities'] = route_capabilities(request.app.state.commute_runtime)
     flow['agent_budget'] = {'max_model_calls': request.app.state.settings.nexus_business_max_model_calls,
                            'wall_time_limit_ms': request.app.state.settings.nexus_business_wall_time_limit_ms}
     context = model_context(flow, catalog)
@@ -226,8 +229,8 @@ def workflow_configuration(context: dict) -> dict:
     """Freeze per-request protocol, finite call budget and terminal schema before launch.
 
     The user request carries a compact index and only the resolver's full schema.
-    The Agent requests business definitions by URI. The protocol reports
-    uncertain writes without choosing the next action.
+    The Agent requests business definitions by URI. The protocol distinguishes
+    rolled-back conflicts from unknown writes without choosing the next action.
     It never loads every application operation or lets the model select credentials.
     """
     definitions = [{k: op[k] for k in ('operation_id', 'method', 'path', 'summary') if k in op}
@@ -254,7 +257,11 @@ def workflow_configuration(context: dict) -> dict:
                      '业务成功后自主判断回答或必要下一步，不重复成功操作。'
                      '参数校验失败可修正；拒绝或结果未知不得重新提交。'
                      '收到invalid_parameters时按字段路径和格式要求仅修正当前输出，不重做先前成功操作。'
+                     '只有conflict_detected且result.data.error.details.formal_write_status=not_applied才表示本次正式变更已回滚；'
+                     '读取result.data.error.details中的真实conflict、draft和target，调整当前提议或ask_user询问，不能把预览说成已保存。'
+                     '原Agent内保留已成功步骤；不得为解决当前冲突重复创建先前记录，未经用户明确授权不得接受冲突或修改其他日程。'
                      'HTTP409本身不证明未写入；unknown/stop、超时或响应丢失不得换编号重试写入。'
+                     '交通方式以route_capabilities.supported_modes为准；每段遵守用户指定方式，不得擅自更换。'
                      '由你根据本次输入和已检索原文判断哪些记忆适用，不要求用户开启用途、绑定角色或填写偏好表。'
                      '在memory_defaults按目标字段提交entry_id/version/source_quote/value/reason；只选择本任务实际检索到的记忆。'
                      'memory_defaults.source_quote引用当前条目text，不引用provenance或original_source中的旧原话；纠正后重读，不能旧文本配新版本。'
@@ -291,6 +298,7 @@ def workflow_configuration(context: dict) -> dict:
                      'after_answer只代表已入队、applied=false，不得提前说已保存或已删除；回答后后台执行无需再调用模型。'
                      '记忆默认在当前账号通勤、事项、日程共用；来源matter_id不是使用限制，只有用户明确限定才加applicability。'
                      '道路走法由地图供应商计算，你负责选择地点顺序、逐段方式和时间衔接，不虚构耗时。'
+                     '卡片里的提醒偏移引用真实秒数字段并使用format=relative_seconds，-900表示提前15分钟，0表示开始时提醒；耗时使用duration_seconds。不得给原始秒数标注分钟或小时，不编造换算后的结果常量。'
                      '所有输出只返回一个完整JSON对象，首字符必须为{，末字符必须为}；不要Markdown、```json或其他代码围栏，尤其最终回答必须原始JSON。')
     if len(instructions) > 16000:
         raise AssistantError('caller_protocol_too_large', '本次接口说明超出平台限制。', 422)

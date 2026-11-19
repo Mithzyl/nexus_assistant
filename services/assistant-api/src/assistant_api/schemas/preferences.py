@@ -5,14 +5,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-Purpose = Literal['schedule', 'route', 'reminder', 'todo', 'commute_plan', 'commute_draft', 'commute_quote']
+Purpose = Literal['schedule', 'route', 'reminder', 'todo', 'commute_plan', 'commute_draft', 'commute_quote', 'availability']
 LegacyPurpose = Literal['schedule', 'route', 'reminder']
 Role = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 FIELDS = {'commute_draft': {'origin_query', 'destination_query', 'city', 'arrival_local_time', 'weekdays', 'buffer_minutes', 'effective_from'},
           'commute_quote': {'mode', 'buffer_minutes', 'effective_from', 'weekdays'},
           'schedule': {'location', 'starts_at', 'reminder_offset_seconds'},
           'route': {'origin', 'destination', 'mode'}, 'reminder': {'reminder_offset_seconds'},
-          'todo': {'due_at', 'reminder_at'},
+          'todo': {'due_at', 'reminder_at', 'priority', 'estimated_duration_minutes', 'available_after', 'place', 'schedule_due'},
+          'availability': {'windows'},
           'commute_plan': {'origin', 'destination', 'transport_mode', 'weekdays', 'arrival_local_time',
                            'check_local_time', 'buffer_minutes', 'timezone', 'effective_from',
                            'rain_probability_threshold', 'rain_extra_buffer_minutes', 'notify_enabled'}}
@@ -22,6 +23,8 @@ MEMORY_INPUT_GROUPS = {
     'reminder_offset_seconds': {'reminder_offset_seconds', 'reminder_at'},
     'origin': {'origin', 'origin_schedule_id'},
     'reminder_at': {'reminder_at', 'schedule_reminder'},
+    'due_at': {'due_at', 'schedule_due'},
+    'schedule_due': {'due_at', 'schedule_due'},
 }
 
 

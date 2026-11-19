@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, Protocol
+from typing import Literal, Protocol, get_args
 
-TransportMode = Literal["driving", "walking", "transit"]
+TransportMode = Literal["driving", "walking", "transit", "bicycling", "electrobike"]
+TRANSPORT_MODES = get_args(TransportMode)
+TRANSPORT_LABELS = {"driving": "驾车", "walking": "步行", "transit": "公共交通",
+                    "bicycling": "自行车骑行", "electrobike": "电动车骑行"}
 LocationRole = Literal["origin", "destination"]
 RouteShapeStatus = Literal["available", "partial", "missing"]
 
@@ -134,7 +137,7 @@ class RoutePoint:
 
 @dataclass(frozen=True)
 class RouteSegment:
-    kind: Literal["driving", "walking", "transit"]
+    kind: TransportMode
     label: str | None
     points: tuple[RoutePoint, ...]
     coordinate_system: str = "gcj02"

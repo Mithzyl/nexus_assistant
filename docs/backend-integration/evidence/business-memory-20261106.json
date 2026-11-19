@@ -1,0 +1,378 @@
+{
+  "assistant_mode": "real Assistant ASGI routes with isolated SQLite",
+  "upstream": "real Nexus HTTP API at http://127.0.0.1:8000",
+  "model_calls": 0,
+  "existing_assistant_database_modified": false,
+  "steps": [
+    {
+      "label": "新账号无需已有 AI 运行即可读取",
+      "method": "GET",
+      "path": "/api/v1/memory",
+      "input": null,
+      "http_status": 200,
+      "output": {
+        "items": [],
+        "next_offset": null
+      }
+    },
+    {
+      "label": "读取测试账号开关",
+      "method": "GET",
+      "path": "/api/v1/memory/settings",
+      "input": null,
+      "http_status": 200,
+      "output": {
+        "enabled": true,
+        "mode": "entry",
+        "version": 0,
+        "entry_enabled": true,
+        "automatic_native_use": false
+      }
+    },
+    {
+      "label": "保存结构化公司地点",
+      "method": "POST",
+      "path": "/api/v1/memory/commands",
+      "input": {
+        "action": "save",
+        "key": "memory-live-place",
+        "text": "我的公司在测试园区 A 座。",
+        "confirmed_sensitive": true,
+        "confirmed_type": true,
+        "typed_data": {
+          "memory_type": "place",
+          "label": "公司",
+          "address": "测试园区 A 座",
+          "coordinate_system": "GCJ02"
+        },
+        "app_data": {
+          "namespace": "personal_assistant",
+          "schema_version": 1,
+          "fields": {
+            "business_category": "place",
+            "role": "work",
+            "source": {
+              "kind": "user_settings"
+            }
+          }
+        }
+      },
+      "http_status": 200,
+      "output": {
+        "entry_id": "7678b6fe-5337-4101-9f33-18590afffb28",
+        "version": 1,
+        "status": "active",
+        "applied_version": 1
+      }
+    },
+    {
+      "label": "受控工具保存当前用户原话",
+      "method": "POST",
+      "path": "/api/v1/business-memory/facts",
+      "input": {
+        "source_quote": "工作日通常步行上班",
+        "category": "travel_policy"
+      },
+      "http_status": 200,
+      "output": {
+        "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+        "version": 1,
+        "status": "active",
+        "applied_version": 1,
+        "source": {
+          "kind": "user_message",
+          "local_run_id": "f40639bc-c8c1-4465-869f-bd398be1769f",
+          "quote": "工作日通常步行上班"
+        },
+        "category": "travel_policy"
+      }
+    },
+    {
+      "label": "路线任务读取地点和出行偏好",
+      "method": "POST",
+      "path": "/api/v1/business-memory/query",
+      "input": {
+        "purpose": "route",
+        "categories": [
+          "place",
+          "travel_policy"
+        ],
+        "limit": 5
+      },
+      "http_status": 200,
+      "output": {
+        "status": "available",
+        "items": [
+          {
+            "entry_id": "7678b6fe-5337-4101-9f33-18590afffb28",
+            "version": 1,
+            "text": "我的公司在测试园区 A 座。",
+            "typed_data": {
+              "memory_type": "place",
+              "label": "公司",
+              "address": "测试园区 A 座",
+              "latitude": null,
+              "longitude": null,
+              "coordinate_system": "GCJ02"
+            },
+            "business": {
+              "category": "place",
+              "role": "work"
+            },
+            "source": {
+              "kind": "nexus_memory",
+              "entry_id": "7678b6fe-5337-4101-9f33-18590afffb28",
+              "version": 1
+            }
+          },
+          {
+            "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+            "version": 1,
+            "text": "工作日通常步行上班",
+            "typed_data": null,
+            "business": {
+              "category": "travel_policy"
+            },
+            "source": {
+              "kind": "nexus_memory",
+              "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+              "version": 1
+            }
+          }
+        ],
+        "next_offset": null,
+        "scanned": 2,
+        "truncated": false
+      }
+    },
+    {
+      "label": "从 Nexus 读回持久化内容",
+      "method": "GET",
+      "path": "/api/v1/memory",
+      "input": null,
+      "http_status": 200,
+      "output": {
+        "items": [
+          {
+            "entry_id": "7678b6fe-5337-4101-9f33-18590afffb28",
+            "version": 1,
+            "status": "active",
+            "sensitive": true,
+            "text": "我的公司在测试园区 A 座。",
+            "app_data": {
+              "namespace": "personal_assistant",
+              "schema_version": 1,
+              "fields": {
+                "business_category": "place",
+                "role": "work",
+                "source": {
+                  "kind": "user_settings"
+                }
+              }
+            },
+            "typed_data": {
+              "memory_type": "place",
+              "label": "公司",
+              "address": "测试园区 A 座",
+              "latitude": null,
+              "longitude": null,
+              "coordinate_system": "GCJ02"
+            },
+            "memory_type": "place",
+            "schema_version": 1,
+            "business": {
+              "category": "place",
+              "role": "work"
+            }
+          },
+          {
+            "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+            "version": 1,
+            "status": "active",
+            "sensitive": true,
+            "text": "工作日通常步行上班",
+            "app_data": {
+              "namespace": "personal_assistant",
+              "schema_version": 1,
+              "fields": {
+                "business_schema_version": 1,
+                "business_category": "travel_policy",
+                "source": {
+                  "kind": "user_message",
+                  "local_run_id": "f40639bc-c8c1-4465-869f-bd398be1769f",
+                  "quote": "工作日通常步行上班"
+                }
+              }
+            },
+            "memory_type": "free_text",
+            "schema_version": 1,
+            "business": {
+              "category": "travel_policy"
+            }
+          }
+        ],
+        "next_offset": null
+      }
+    },
+    {
+      "label": "纠正出行偏好",
+      "method": "POST",
+      "path": "/api/v1/memory/commands",
+      "input": {
+        "action": "correct",
+        "key": "memory-live-correct",
+        "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+        "expected_version": 1,
+        "text": "工作日通常坐地铁上班",
+        "confirmed_sensitive": true,
+        "app_data": {
+          "namespace": "personal_assistant",
+          "schema_version": 1,
+          "fields": {
+            "business_category": "travel_policy",
+            "source": {
+              "kind": "user_settings",
+              "quote": "工作日通常坐地铁上班"
+            }
+          }
+        }
+      },
+      "http_status": 200,
+      "output": {
+        "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+        "version": 2,
+        "status": "active",
+        "applied_version": 2
+      }
+    },
+    {
+      "label": "后续任务读取最新偏好",
+      "method": "POST",
+      "path": "/api/v1/business-memory/query",
+      "input": {
+        "purpose": "route",
+        "categories": [
+          "travel_policy"
+        ],
+        "limit": 5
+      },
+      "http_status": 200,
+      "output": {
+        "status": "available",
+        "items": [
+          {
+            "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+            "version": 2,
+            "text": "工作日通常坐地铁上班",
+            "typed_data": null,
+            "business": {
+              "category": "travel_policy"
+            },
+            "source": {
+              "kind": "nexus_memory",
+              "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+              "version": 2
+            }
+          }
+        ],
+        "next_offset": null,
+        "scanned": 2,
+        "truncated": false
+      }
+    },
+    {
+      "label": "读取原文版本历史",
+      "method": "GET",
+      "path": "/api/v1/memory/history/f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+      "input": null,
+      "http_status": 200,
+      "output": {
+        "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+        "current_version": 2,
+        "items": [
+          {
+            "version": 2,
+            "status": "active",
+            "text": "工作日通常坐地铁上班",
+            "app_data": {
+              "namespace": "personal_assistant",
+              "schema_version": 1,
+              "fields": {
+                "business_category": "travel_policy",
+                "source": {
+                  "kind": "user_settings",
+                  "quote": "工作日通常坐地铁上班"
+                }
+              }
+            }
+          },
+          {
+            "version": 1,
+            "status": "active",
+            "text": "工作日通常步行上班",
+            "app_data": {
+              "namespace": "personal_assistant",
+              "schema_version": 1,
+              "fields": {
+                "business_schema_version": 1,
+                "business_category": "travel_policy",
+                "source": {
+                  "kind": "user_message",
+                  "local_run_id": "f40639bc-c8c1-4465-869f-bd398be1769f",
+                  "quote": "工作日通常步行上班"
+                }
+              }
+            }
+          }
+        ],
+        "next_offset": null
+      }
+    },
+    {
+      "label": "重复同一纠正命令",
+      "method": "POST",
+      "path": "/api/v1/memory/commands",
+      "input": {
+        "action": "correct",
+        "key": "memory-live-correct",
+        "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+        "expected_version": 1,
+        "text": "工作日通常坐地铁上班",
+        "confirmed_sensitive": true,
+        "app_data": {
+          "namespace": "personal_assistant",
+          "schema_version": 1,
+          "fields": {
+            "business_category": "travel_policy",
+            "source": {
+              "kind": "user_settings",
+              "quote": "工作日通常坐地铁上班"
+            }
+          }
+        }
+      },
+      "http_status": 200,
+      "output": {
+        "status": "active",
+        "version": 2,
+        "entry_id": "f6d3a46e-0af7-44ca-bf9d-fe344e8f8981",
+        "applied_version": 2
+      }
+    }
+  ],
+  "synthetic_external_user_id": "0ce77b49-0990-4fd3-b97b-4adb1a8309b6",
+  "result": "passed",
+  "real_model_autonomous_tool_selection": "not_executed",
+  "current_input_fixture": {
+    "text": "请记住：工作日通常步行上班。",
+    "local_run_id": "f40639bc-c8c1-4465-869f-bd398be1769f"
+  },
+  "normal_config": "/Users/mith/Desktop/superapp-next-worktrees/backend/services/assistant-api/.env",
+  "test_database": "/private/tmp/assistant-memory-live-20261106/memory-test.db",
+  "recorded_at": "2026-11-06T11:39:23.389208+00:00",
+  "normal_api_health": {
+    "nexus_8000": 200,
+    "assistant_8010": 200
+  },
+  "workers_started": false
+}

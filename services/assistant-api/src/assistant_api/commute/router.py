@@ -114,7 +114,7 @@ async def resolved_plan(payload, request, db, user, *, scope):
 @router.get("/commute-plans", response_model=list[CommutePlanRead],
     summary='查询已保存通勤计划',
     description='返回每条计划的id（用于路径plan_id）、revision及周期配置。按用户已知名称唯一选定原计划；修改前继续GET该计划当前配置。',
-    openapi_extra={'x-assistant': {'effect': 'read', 'next': [{'method': 'GET', 'path': '/api/v1/commute-plans/{plan_id}', 'purpose': '用唯一匹配原计划的id读取当前完整配置与revision，随后修改同一计划。'}]}}
+    openapi_extra={'x-assistant': {'effect': 'read', 'keywords': ['查询通勤', '已有通勤计划', '通勤起点', '通勤终点'], 'next': [{'method': 'GET', 'path': '/api/v1/commute-plans/{plan_id}', 'purpose': '用唯一匹配原计划的id读取当前完整配置与revision，随后修改同一计划。'}]}}
 )
 async def list_commute_plans(
     db: DatabaseSession, user: CurrentUser

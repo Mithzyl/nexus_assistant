@@ -2,7 +2,7 @@
 import json
 import pytest
 from sqlalchemy import func, select
-from assistant_api.models import MatterTodo, NexusRun
+from assistant_api.models import MatterDraft, MatterTodo, NexusRun, Reminder
 from assistant_api.services import operation_intake
 from conftest import tool_auth
 
@@ -45,6 +45,46 @@ async def send(h, payload):
     return await h.client.post('/internal/nexus/agent-responses', json=payload, headers=tool_auth(h.settings))
 
 
+async def test_body_executes_once_and_retains_original_proposal(harness):
+    """Replay execution IDs and reject semantic duplicates under new IDs."""
+    h = harness
+    await prepare_run(h)
+    payload = envelope(h)
+    first = await send(h, payload)
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert body['execution_status'] == 'succeeded' and body['disposition'] == 'continue'
+    assert body['result']['data']['status'] == 'preview'
+    assert body['result']['data']['payload']['todos'][0]['reminder_at'].startswith('2030-11-05T10:10:00')
+    assert (await send(h, payload)).json() == body
+    assert (await send(h, dict(payload, content='different'))).status_code == 409
+    repeated = proposal()
+    repeated['call']['body']['idempotency_key'] = 'model-changed-key'
+    repeated['call']['summary'] = '改变summary仍是同一次创建'
+    assert (await send(h, envelope(h, repeated, 'execution-2'))).json()['execution_status'] == 'rejected'
+    from assistant_api.models import AgentResponseReceipt
+    async with h.app.state.session_factory() as db:
+        assert await db.scalar(select(func.count()).select_from(MatterTodo)) == 0
+        assert await db.scalar(select(func.count()).select_from(MatterDraft)) == 1
+        assert await db.scalar(select(func.count()).select_from(Reminder)) == 0
+        receipt = await db.get(AgentResponseReceipt, 'execution-1')
+        assert json.loads(receipt.request_json['content']) == proposal()
+        assert receipt.executed_call_json['body']['idempotency_key'] != 'model-original-key'
+
+
+async def test_invalid_parameters_can_be_corrected_in_same_run(harness):
+    """Schema errors return retryable feedback before any effect."""
+    h = harness
+    await prepare_run(h)
+    bad = proposal()
+    del bad['call']['body']['title']
+    failed = await send(h, envelope(h, bad))
+    assert failed.status_code == 200, failed.text
+    assert failed.json()['execution_status'] == 'failed'
+    assert failed.json()['error']['retryable'] is True
+    assert (await send(h, envelope(h, proposal(), 'corrected'))).json()['execution_status'] == 'succeeded'
+
+
 @pytest.mark.parametrize('change', ['owner', 'workflow', 'application', 'cancelled'])
 async def test_identity_and_cancellation_reject_before_business_dispatch(harness, change):
     """Only the bound active user and workflow can execute new bodies."""
@@ -84,6 +124,17 @@ async def test_complete_waits_for_reviewed_terminal_result(harness):
         assert operation_intake.response_for(row)['answer'] == value['answer']
 
 
+async def test_missing_token_and_model_identity_are_rejected(harness):
+    """Callback auth and operation schema refuse model-controlled identity."""
+    h = harness
+    await prepare_run(h)
+    assert (await h.client.post('/internal/nexus/agent-responses', json=envelope(h))).status_code == 401
+    bad = proposal()
+    bad['call']['body']['user_id'] = h.user_b
+    result = await send(h, envelope(h, bad))
+    assert result.json()['execution_status'] == 'failed' and result.json()['result'] is None
+
+
 async def test_dispatching_receipt_is_never_reexecuted_after_restart(harness):
     """A durable dispatch claim without a response remains unknown under any new ID."""
     from assistant_api.models import AgentResponseReceipt
@@ -100,6 +151,25 @@ async def test_dispatching_receipt_is_never_reexecuted_after_restart(harness):
     assert (await send(h, envelope(h, execution_id='new-execution'))).json()['execution_status'] == 'unknown'
     async with h.app.state.session_factory() as db:
         assert await db.scalar(select(func.count()).select_from(MatterTodo)) == 0
+
+
+async def test_business_denial_stops_new_identifiers(harness):
+    """An actual route permission failure stops further attempts on that run."""
+    from assistant_api.services.api_operations import OperationCatalog
+    h = harness
+    local_id = await prepare_run(h)
+    value = {'decision': 'call', 'call': {'operation_id': 'get_todo', 'path_parameters': {'todo_id': 'not-owned'}}}
+    async with h.app.state.session_factory() as db:
+        row = await db.get(NexusRun, local_id)
+        context = dict(row.context_json)
+        context['api_flow'] = {**context['api_flow'], 'offered_operations': ['get_todo', 'create_todo']}
+        row.context_json = context
+        await db.commit()
+    denied = await send(h, envelope(h, value))
+    assert denied.json()['execution_status'] == 'rejected'
+    assert denied.json()['error']['retryable'] is False
+    next_body = await send(h, envelope(h, execution_id='after-denial'))
+    assert next_body.json()['error']['code'] == 'processing_stopped'
 
 
 async def test_callback_rejects_oversized_envelope_before_dispatch(harness):
@@ -137,3 +207,18 @@ async def test_additive_migration_preserves_existing_app_rows(tmp_path):
         assert await db.scalar(select(func.count()).select_from(AgentResponseReceipt)) == 0
         assert await db.scalar(text("SELECT version FROM schema_migrations WHERE version='0026_agent_response_receipts'")) == '0026_agent_response_receipts'
     await engine.dispose()
+
+
+async def test_unconfirmed_write_proposal_is_rejected_without_creating_business_rows(harness):
+    """A user's text or model proposal cannot replace explicit draft confirmation."""
+    h = harness
+    await prepare_run(h)
+    direct = {'decision': 'call', 'call': {'operation_id': 'create_todo', 'body': {'title': '下班打卡', 'idempotency_key': 'unconfirmed-create'}}}
+    response = await send(h, envelope(h, direct))
+    assert response.status_code == 200, response.text
+    assert response.json()['execution_status'] == 'rejected'
+    assert response.json()['error']['code'] == 'approval_required'
+    assert response.json()['error']['retryable'] is False
+    async with h.app.state.session_factory() as db:
+        assert await db.scalar(select(func.count()).select_from(MatterTodo)) == 0
+        assert await db.scalar(select(func.count()).select_from(Reminder)) == 0

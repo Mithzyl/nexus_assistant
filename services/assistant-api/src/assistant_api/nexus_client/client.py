@@ -19,11 +19,13 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
 from assistant_api.nexus_client.errors import (
     NexusError,
+    NexusMemoryError,
     NexusProtocolError,
     NexusTimeoutError,
     NexusUnavailableError,
@@ -125,9 +127,25 @@ class NexusPilotClient:
         return self._decode(response)
 
     def _decode(self, response: httpx.Response) -> dict[str, Any]:
-        """Return a JSON object or raise the mapped error; never return a bare 200."""
+        """Decode JSON, preserving allowlisted memory errors without returning private details."""
 
         if response.status_code >= 400:
+            memory_codes = {
+                'memory_version_conflict', 'memory_request_conflict', 'memory_scope_conflict',
+                'memory_type_confirmation_required', 'memory_confirmation_required',
+                'memory_disabled', 'memory_not_allowed', 'memory_project_not_allowed',
+                'memory_not_found', 'memory_not_candidate', 'memory_history_unavailable',
+                'memory_key_unavailable', 'memory_storage_unavailable', 'memory_content_unavailable',
+                'memory_credentials_forbidden', 'memory_invalid_operation', 'memory_app_scope_mismatch',
+            }
+            if any(part in response.request.url.path for part in ('/user-memories', '/memory-settings')):
+                try:
+                    detail = response.json().get('detail', {})
+                    code = detail.get('code') if isinstance(detail, dict) else None
+                except (ValueError, AttributeError):
+                    code = None
+                if isinstance(code, str) and code in memory_codes and response.status_code in {404, 409, 422, 503}:
+                    raise NexusMemoryError(code, response.status_code)
             raise error_for_status(response.status_code, _detail_from(response))
         try:
             body = response.json()
@@ -253,6 +271,24 @@ class NexusPilotClient:
             command,
             external_user_id=external_user_id,
         )
+
+    async def list_application_memory(self, external_user_id: str, *, offset: int = 0,
+                                      limit: int = 20, history_entry_id: str | None = None) -> dict:
+        """Read this authenticated App account's memory/history without creating a Run."""
+        parameters = {'offset': offset, 'limit': limit}
+        if history_entry_id is not None:
+            parameters['history_entry_id'] = history_entry_id
+        return await self._get(f'{APPLICATION_PREFIX}/me/user-memories?{urlencode(parameters)}',
+                               external_user_id=external_user_id)
+
+    async def application_memory_settings(self, external_user_id: str) -> dict:
+        """Read the existing App-specific enablement and version, independently of conversations."""
+        return await self._get(f'{APPLICATION_PREFIX}/me/memory-settings', external_user_id=external_user_id)
+
+    async def mutate_application_memory(self, external_user_id: str, command: dict) -> dict:
+        """Forward a versioned owned command; caller identity stays in trusted headers."""
+        return await self._post(f'{APPLICATION_PREFIX}/me/user-memories', command,
+                                external_user_id=external_user_id)
 
     async def stream_events(
         self, external_user_id: str, workflow_id: str, last_event_id: str | None = None

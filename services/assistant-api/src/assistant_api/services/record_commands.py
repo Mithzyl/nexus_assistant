@@ -5,6 +5,7 @@ preview supplies the existing version fencing, history and atomic save; users do
 not need to create a parent, open a draft or confirm a second time.
 """
 from datetime import UTC, datetime
+from pydantic import ValidationError
 from sqlalchemy import select
 from assistant_api.core.errors import ConflictError, InvalidRequestError, NotFoundError
 from assistant_api.models import MatterDraft, MatterTodo, Reminder, ScheduleEvent
@@ -75,6 +76,9 @@ async def create_record(db, runtime, settings, user, kind, request, *, client=No
     parent = {'matter_id': request.matter_id, 'expected_matter_version': request.expected_matter_version}
     fields, receipt = await memory_applications.resolve_input(db, user, kind, request,
         execution_run_id=execution_run_id, excluded={'idempotency_key', 'matter_id', 'expected_matter_version'})
+    if kind == 'todo' and fields.get('schedule_due') and (
+            not fields['schedule_due'].get('schedule_id') or not request.matter_id):
+        raise InvalidRequestError('deadline_schedule_required', '独立待办的相对截止需要已有日程ID和所属事项。')
     parsed = (schemas.TodoPayload if kind == 'todo' else schemas.SchedulePayload).model_validate(fields)
     payload = schemas.StructuredDraftRequest(idempotency_key=request.idempotency_key, **parent,
         title=request.title if request.matter_id is None else None,
@@ -129,6 +133,15 @@ async def edit_record(db, runtime, settings, user, kind, record_id, request, *, 
             raise InvalidRequestError('record_field_null', '必填字段不能设置为空。')
         if kind == 'todo':
             merged = {**body['todos'][0], **changes}
+            if changes.get('due_at') is not None and changes.get('schedule_due') is not None:
+                raise InvalidRequestError('deadline_timing_conflict', '绝对截止和相对截止只能选一种。')
+            if 'due_at' in changes and 'schedule_due' not in changes:
+                merged['schedule_due'] = None
+            if 'schedule_due' in changes:
+                if changes['schedule_due'] is not None and not changes['schedule_due'].get('schedule_id'):
+                    raise InvalidRequestError('deadline_schedule_required', '请提供日程ID。')
+                if 'due_at' not in changes and (changes['schedule_due'] is not None or body['todos'][0].get('schedule_due')):
+                    merged['due_at'] = None
             if 'reminder_at' in changes and changes['reminder_at'] is not None:
                 merged['schedule_reminder'] = None
             if changes.get('schedule_reminder') is not None:

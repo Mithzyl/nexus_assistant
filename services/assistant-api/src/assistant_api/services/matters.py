@@ -224,9 +224,11 @@ def _schedule_snapshot(schedule: ScheduleEvent | None) -> dict | None:
 
 
 def _todo_snapshot(todo: MatterTodo | None) -> dict | None:
+    """Capture schedule dependencies and planning fields for atomic undo."""
     if todo is None:
         return None
     return {
+        **_jsonable(todo_records.planning_snapshot(todo)),
         "todo_id": todo.todo_id,
         "matter_id": todo.matter_id,
         "title": todo.title,
@@ -299,6 +301,7 @@ def _schedule_matches(schedule: ScheduleEvent | None, snapshot: dict) -> bool:
 
 
 def _todo_matches(todo: MatterTodo | None, snapshot: dict) -> bool:
+    """Check both legacy and current fields that were captured in this undo snapshot."""
     if todo is None or snapshot is None:
         return False
     if snapshot.get("updated_at") and _as_utc(todo.updated_at) != _snap_dt(
@@ -306,7 +309,9 @@ def _todo_matches(todo: MatterTodo | None, snapshot: dict) -> bool:
     ):
         return False
     return (
-        todo.title == snapshot.get("title")
+        all(key not in snapshot or value == snapshot[key]
+            for key, value in _jsonable(todo_records.planning_snapshot(todo)).items())
+        and todo.title == snapshot.get("title")
         and todo.status == snapshot.get("status")
         and _as_utc(todo.due_at) == _snap_dt(snapshot.get("due_at"))
         and _as_utc(todo.reminder_at) == _snap_dt(snapshot.get("reminder_at"))
@@ -558,7 +563,9 @@ def _serialize_reminder(reminder: Reminder) -> dict:
 
 
 def _serialize_todo(todo: MatterTodo) -> dict:
+    """Return the saved deadline and its definition, without exposing private memory provenance."""
     return {
+        **todo_records.planning_snapshot(todo),
         "todo_id": todo.todo_id,
         "title": todo.title,
         "status": todo.status,
@@ -2929,6 +2936,7 @@ async def confirm_draft(
             return await _confirm_response(db, user, fresh, replayed=True)
         raise ConflictError("preview_stale", "预览已更新，请刷新后确认。")
 
+    conflict_failure_details = None
     try:
         if payload.get("requires_choice"):
             candidate_ids = {
@@ -3210,6 +3218,11 @@ async def confirm_draft(
             values.pop("matter_id")
             schedule_row = await calendar_records.save_schedule(
                 db, user, matter_id=matter.matter_id, values=values, existing=schedule_row)
+            for dependent_todo in existing_todos.values():
+                if dependent_todo.due_schedule_id == schedule_row.schedule_id:
+                    before_todos.setdefault(dependent_todo.todo_id, _todo_snapshot(dependent_todo))
+                    affected_todos[dependent_todo.todo_id] = dependent_todo
+                    todo_records.refresh_deadline(dependent_todo, schedule_row)
             linked_reminders = await reminder_records.schedule_dependents(db, user, schedule_row.schedule_id)
             for reminder in linked_reminders:
                 before_reminders.setdefault(reminder.reminder_id, _reminder_snapshot(reminder))
@@ -3263,6 +3276,11 @@ async def confirm_draft(
                     "待取消的未来日程已变化，请重新整理。",
                 )
             await db.refresh(schedule)
+            for dependent_todo in existing_todos.values():
+                if dependent_todo.due_schedule_id == schedule.schedule_id:
+                    before_todos.setdefault(dependent_todo.todo_id, _todo_snapshot(dependent_todo))
+                    affected_todos[dependent_todo.todo_id] = dependent_todo
+                    todo_records.refresh_deadline(dependent_todo, schedule, cancelled=True)
             dependent = await reminder_records.schedule_dependents(db, user, schedule.schedule_id)
             for reminder in dependent:
                 before_reminders.setdefault(reminder.reminder_id, _reminder_snapshot(reminder))
@@ -3289,9 +3307,12 @@ async def confirm_draft(
             timing = await reminder_records.todo_timing(
                 db, user, matter_id=matter.matter_id, item=item, timezone=timezone,
                 current_schedule=schedule_row if body.create_schedule else None)
+            planning = await todo_records.deadline_values(
+                db, user, item=item, existing=existing_todo, matter_id=matter.matter_id,
+                timezone=timezone, current_schedule=schedule_row if body.create_schedule else None)
             todo = await todo_records.save_todo(
                 db, user, matter_id=matter.matter_id, position=position, existing=existing_todo,
-                values={"title": item["title"], "due_at": _parse_dt(item.get("due_at"), timezone),
+                values={**planning, "title": item["title"],
                         "reminder_at": timing[0], "status": item.get("status", existing_todo.status if existing_todo else "open")})
             if existing_todo is None:
                 position += 1
@@ -3373,6 +3394,14 @@ async def confirm_draft(
             ),
         )
         if conflict and conflict.get("has_conflict") and not body.acknowledge_conflict:
+            # Snapshot before rollback expires ORM objects. Publish the marker
+            # only in the AssistantError branch after rollback has succeeded.
+            conflict_failure_details = {
+                "draft": {"draft_id": draft_id, "version": body.expected_version, "status": "preview"},
+                "target": {"matter_id": payload.get("matter_id"),
+                           "schedule_id": (payload.get("schedule") or {}).get("schedule_id")},
+                "conflict": _jsonable(conflict),
+            }
             raise ConflictError(
                 "conflict_detected",
                 "本次变更与已有日程冲突，请先选择调整方案或明确接受风险。",
@@ -3467,8 +3496,10 @@ async def confirm_draft(
                 "idempotency_key_reused", "该确认请求标识已用于另一次确认。"
             ) from None
         raise
-    except AssistantError:
+    except AssistantError as exc:
         await db.rollback()
+        if conflict_failure_details is not None and exc.code == "conflict_detected":
+            exc.details = {**conflict_failure_details, "formal_write_status": "not_applied"}
         raise
     except Exception:
         await db.rollback()
@@ -3781,6 +3812,13 @@ async def revert_change(
                 current.title = todo_before["title"]
                 current.status = todo_before["status"]
                 current.due_at = _parse_dt(todo_before.get("due_at"))
+                for field in todo_records.PLANNING_FIELDS:
+                    if field in todo_before:
+                        setattr(current, field, _parse_dt(todo_before[field]) if field == 'available_after' else todo_before[field])
+                if 'schedule_due' in todo_before:
+                    relation = todo_before['schedule_due'] or {}
+                    current.due_schedule_id = relation.get('schedule_id')
+                    current.due_schedule_offset_seconds = relation.get('offset_seconds')
                 current.reminder_at = _parse_dt(todo_before.get("reminder_at"))
                 current.completed_at = _parse_dt(todo_before.get("completed_at"))
                 current.deleted_at = _parse_dt(todo_before.get("deleted_at"))
@@ -4330,8 +4368,13 @@ async def create_structured_draft(db, runtime, settings, user,
         if matter.version != request.expected_matter_version:
             raise ConflictError("matter_changed", "该事项已被修改，请重新读取。")
     body = {key: value for key, value in resolved.items() if key not in {"idempotency_key", "matter_id", "expected_matter_version"}}
+    action='更新' if matter else '创建'
+    if body.get('schedule'):
+        progress_text=f'{action}日程：{body["schedule"]["title"]}'
+    else:
+        progress_text=f'{action}待办：'+ '、'.join(item['title'] for item in body.get('todos') or [])
     body.update(kind="update" if matter else "create", matter_id=request.matter_id,
-                requires_choice=False, source_text="结构化业务请求",
+                requires_choice=False, source_text=progress_text,
                 analysis={"creation_request": original})
     if memory_applications:
         body['analysis']['memory_application_envelope'] = source_records.pack(db, user, memory_applications)
@@ -4461,9 +4504,10 @@ async def create_edit_draft(
         base_todo = todo
         body["todos"] = [
             {
+                **todo_records.planning_snapshot(todo),
                 "todo_id": todo.todo_id,
                 "title": todo.title,
-                "due_at": todo.due_at,
+                "due_at": None if todo.due_schedule_id else todo.due_at,
                 "reminder_at": todo.reminder_at,
                 "status": todo.status,
             }

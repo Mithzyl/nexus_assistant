@@ -26,6 +26,7 @@ from assistant_api.commute.runtime import (
 )
 from assistant_api.core.config import Settings, get_settings
 from assistant_api.core.errors import AssistantError
+from assistant_api.core.observability import RequestObservationMiddleware, safe_error_code
 from assistant_api.infrastructure.database import create_engine_and_factory
 from assistant_api.models import Base
 from assistant_api.nexus_client import NexusError, NexusPilotClient
@@ -36,10 +37,10 @@ from assistant_api.routers import (
     data_sources,
     internal_tools,
     agent_responses,
-    operation_catalog,
     matters,
     memory,
     preferences,
+    operation_catalog,
     sync_ios,
 )
 from assistant_api.services.run_service import shutdown_background_tasks
@@ -95,6 +96,9 @@ def create_app(
     """
 
     resolved = settings or get_settings()
+    if resolved.web_push_enabled and (not resolved.web_push_public_key or not resolved.web_push_private_key_path
+            or not resolved.web_push_private_key_path.is_file()):
+        raise ValueError('Browser push requires a persistent public key and an existing private key file')
     _redact_calendar_tokens()
     validate_commute_configuration(resolved)
 
@@ -149,15 +153,17 @@ def create_app(
         },
     )
     app.state.settings = resolved
+    from assistant_api.routers.browser_push import router as browser_push_router
+    app.include_router(browser_push_router)
 
     app.include_router(auth.router)
     app.include_router(assistant.router)
     app.include_router(memory.router)
     app.include_router(memory.business_router)
     app.include_router(preferences.router)
+    app.include_router(operation_catalog.router)
     app.include_router(internal_tools.router)
     app.include_router(agent_responses.router)
-    app.include_router(operation_catalog.router)
     app.include_router(data_sources.router)
     app.include_router(data_sources.content_router)
     app.include_router(commute_router)
@@ -170,6 +176,8 @@ def create_app(
     app.include_router(follow_ups.router)
     from assistant_api.routers import records
     app.include_router(records.router)
+    from assistant_api.routers import next_actions
+    app.include_router(next_actions.router)
     from assistant_api.routers import places
     app.include_router(places.router)
     app.include_router(matters.router)
@@ -178,17 +186,11 @@ def create_app(
     from assistant_api.routers import supplements
     app.include_router(supplements.router)
 
-    @app.middleware("http")
-    async def request_id_middleware(request: Request, call_next):
-        request_id = str(uuid4())
-        request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+    app.add_middleware(RequestObservationMiddleware, on_unhandled=_unexpected_request_error)
 
     @app.exception_handler(AssistantError)
     async def assistant_error_handler(request: Request, error: AssistantError) -> JSONResponse:
-        """Return the stable error envelope for expected local failures."""
+        """Return expected failures and their explicitly prepared, caller-safe business details."""
 
         return _error_response(
             request,
@@ -196,6 +198,7 @@ def create_app(
             error.code,
             error.message,
             retryable=bool(getattr(error, "retryable", False)),
+            details=error.details,
         )
 
     @app.exception_handler(NexusError)
@@ -236,16 +239,6 @@ def create_app(
             retryable=False,
         )
 
-    @app.exception_handler(Exception)
-    async def unhandled_error_handler(request: Request, _error: Exception) -> JSONResponse:
-        return _error_response(
-            request,
-            500,
-            "internal_error",
-            "服务器暂时无法处理该请求。",
-            retryable=True,
-        )
-
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, Any]:
         """Report liveness plus non-secret provider configuration state."""
@@ -264,6 +257,9 @@ def create_app(
 def _nexus_status(error: NexusError) -> tuple[int, str]:
     """Map a remote failure to a local status that keeps the cause distinguishable."""
 
+    from assistant_api.nexus_client.errors import NexusMemoryError
+    if isinstance(error, NexusMemoryError):
+        return error.status_code, error.code
     if error.code == "nexus_timeout":
         return 504, error.code
     if error.code == "nexus_unavailable":
@@ -273,6 +269,11 @@ def _nexus_status(error: NexusError) -> tuple[int, str]:
     return 502, error.code
 
 
+def _unexpected_request_error(request: Request) -> JSONResponse:
+    """Return a safe 500 without exposing the raw exception, parameters or data."""
+    return _error_response(request, 500, 'internal_error', '服务器暂时无法处理该请求。', retryable=True)
+
+
 def _error_response(
     request: Request,
     status_code: int,
@@ -280,9 +281,11 @@ def _error_response(
     message: str,
     *,
     retryable: bool,
+    details: dict | None = None,
 ) -> JSONResponse:
-    """Build one envelope shape for every error this service returns."""
+    """Build the public error envelope, adding only explicitly supplied safe business details."""
 
+    request.state.observation_error_code = safe_error_code(code)
     request_id = getattr(request.state, "request_id", None) or str(uuid4())
     return JSONResponse(
         status_code=status_code,
@@ -291,6 +294,7 @@ def _error_response(
                 "code": code,
                 "message": message,
                 "retryable": retryable,
+                **({"details": details} if details is not None else {}),
             },
             "request_id": request_id,
         },

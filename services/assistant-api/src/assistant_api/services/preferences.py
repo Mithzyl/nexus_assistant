@@ -116,7 +116,7 @@ No memory text is copied, no upstream settings are widened, and no migration is 
 
 def business_time(request, timezone):
     """Read supplied schedule, todo or commute dates; never turn a habitual time into a new command."""
-    for name in ('starts_at','due_at','reminder_at','depart_at','arrive_by','effective_from'):
+    for name in ('starts_at','due_at','reminder_at','available_after','depart_at','arrive_by','effective_from'):
         stamp=request.values.get(name)
         if isinstance(stamp,str):
             try:
@@ -186,6 +186,49 @@ def selected_value(item, field, selection, request, timezone):
         if field in stored and stored[field] != value:
             raise ValueError('structured_value_mismatch')
         return stamp.isoformat(), 'structured_memory' if field in stored else 'interpretation'
+    if request.purpose == 'todo':
+        from assistant_api.schemas.matters import TodoPlanningFields, TodoPlace, TodoScheduleDue
+        if field == 'available_after':
+            if value is not None:
+                if not isinstance(value, str) or datetime.fromisoformat(value.replace('Z', '+00:00')).tzinfo is None:
+                    raise ValueError('aware_time_required')
+        if field == 'place' and value is not None:
+            candidate = TodoPlace.model_validate(value)
+            stored_place = stored.get('place', typed if typed.get('memory_type') == 'place' else None)
+            if isinstance(stored_place, dict):
+                expected = {key: val for key, val in stored_place.items() if key in TodoPlace.model_fields}
+                if expected.get('coordinate_system'):
+                    expected['coordinate_system'] = expected['coordinate_system'].lower()
+                if candidate != TodoPlace.model_validate(expected):
+                    raise ValueError('structured_value_mismatch')
+                return candidate.model_dump(mode='json'), 'structured_memory'
+            if candidate.latitude is not None:
+                raise ValueError('verified_coordinates_required')
+        if field == 'schedule_due' and value is not None and not TodoScheduleDue.model_validate(value).schedule_id:
+            raise ValueError('business_value_invalid')
+        # Validate constraints on the model as OpenAPI does, not only its Python annotation.
+        normalized = TodoPlanningFields.model_validate({field:value}).model_dump(mode='json')[field]
+        if field in stored:
+            known = TodoPlanningFields.model_validate({field:stored[field]}).model_dump(mode='json')[field]
+            if known != normalized:
+                raise ValueError('structured_value_mismatch')
+        return normalized, 'structured_memory' if field in stored else 'interpretation'
+    if request.purpose == 'availability' and field == 'windows':
+        from pydantic import TypeAdapter
+        from assistant_api.schemas.next_actions import WeeklyWindow
+        from typing import Annotated
+        from pydantic import Field
+        rules = projection.get('applicability', {})
+        known_timezone = stored.get('timezone', typed.get('timezone'))
+        if known_timezone and known_timezone != request.values.get('timezone'):
+            raise ValueError('structured_value_mismatch')
+        if set(rules)-{'purposes'} or stored.get('weekdays') or typed.get('weekdays'):
+            raise ValueError('business_value_invalid')
+        adapter = TypeAdapter(Annotated[list[WeeklyWindow], Field(min_length=1, max_length=28)])
+        normalized = adapter.dump_python(adapter.validate_python(value), mode='json')
+        if 'windows' in stored and normalized != adapter.dump_python(adapter.validate_python(stored['windows']),mode='json'):
+            raise ValueError('structured_value_mismatch')
+        return normalized, 'structured_memory' if 'windows' in stored else 'interpretation'
     weekdays=stored.get('weekdays',typed.get('weekdays'))
     if weekdays is not None:
         if not request.reference_date:
@@ -347,7 +390,7 @@ async def resolve(db, client, user, request, *, execution_run_id=None):
             value,origin=selected_value(item,field,selection,request,timezone)
             from assistant_api.services.memory_applications import reference_snapshot
             detail['references'] = [await reference_snapshot(db, user, reference) for reference in selection.references]
-            target=datetime.fromisoformat(value) if field=='starts_at' else at
+            target=datetime.fromisoformat(value) if field in {'starts_at','available_after'} and value else at
             if not applicable_selection(item,request,timezone,at=target):
                 detail['reason']='not_applicable'
                 continue

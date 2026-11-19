@@ -72,6 +72,16 @@ class NexusProtocolError(NexusError):
     code = "nexus_protocol_error"
 
 
+class NexusMemoryError(NexusError):
+    """Retain a documented memory failure without exposing the upstream response body."""
+
+    def __init__(self, code: str, status_code: int) -> None:
+        """Preserve actionable memory codes and statuses, never arbitrary remote messages."""
+        super().__init__('记忆操作未完成：请根据当前状态刷新或重试。', code=code)
+        self.status_code = status_code
+        self.retryable = status_code == 503
+
+
 STATUS_MAP: dict[int, type[NexusError]] = {
     400: NexusInvalidRequestError,
     401: NexusAuthError,

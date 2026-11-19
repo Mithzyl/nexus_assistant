@@ -1,7 +1,9 @@
 """Import every model so metadata is complete before create_all or migrations run."""
 
 from assistant_api.models.base import Base
+from assistant_api.models.next_actions import UserAvailability, NextActionState, NextActionCommandReceipt
 from assistant_api.models.memory import MemoryEntry, MemoryScope, MemoryVersion, MemoryOperation, BusinessMemoryApplication
+from assistant_api.models.browser_push import BrowserPushSubscription, BrowserPushDelivery
 from assistant_api.models.bark import BarkReminderSetting
 from assistant_api.models.bridge import AgentResponseReceipt, NexusRun, ToolCallReceipt, UserAsk
 from assistant_api.models.business import BusinessRecord, Note, ScheduleEvent, TaskItem
@@ -43,6 +45,7 @@ from assistant_api.models.matter import (
 )
 
 __all__ = [
+    "UserAvailability", "NextActionState", "NextActionCommandReceipt",
     "AdvisoryAction",
     "Base",
     "BarkReminderSetting",

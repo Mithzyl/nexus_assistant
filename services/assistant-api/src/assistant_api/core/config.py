@@ -30,7 +30,13 @@ class Settings(BaseSettings):
     register_invite_code: SecretStr = SecretStr("")
 
     environment: str = "development"
+    web_push_enabled: bool = False
+    web_push_public_key: str | None = None
+    web_push_private_key_path: Path | None = None
+    web_push_contact: str = 'mailto:notifications@example.invalid'
     database_url: str = "sqlite+aiosqlite:///./assistant-dev.db"
+    monitor_interval_seconds: float = Field(default=60, ge=10, le=3600)
+    monitor_queue_stall_seconds: int = Field(default=180, ge=30, le=3600)
 
     # NexusPilot application boundary. The token is an application credential, not
     # a NexusPilot user credential: Personal Assistant users never log in there.

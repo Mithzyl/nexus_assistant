@@ -68,7 +68,7 @@ async def estimate(
     origin_schedule_id: str | None = None,
     schedule_id: str | None = None,
 ) -> dict:
-    """Return one provider measurement or an explicit unavailable state."""
+    """Measure the exact requested mode, preserving unavailable states and time-estimate limitations."""
 
     if getattr(runtime.eta, "provider", None) == "amap" and (
         origin_coordinate_system != "gcj02"
@@ -123,6 +123,8 @@ async def estimate(
         if result.timing_basis == "planned_time_not_live_forecast"
         else None
     )
+    if result.timing_basis == 'static_route_estimate':
+        notice = '路线耗时为地图静态估算，不代表实时交通或指定未来出发时刻的预测。'
     return {
         "status": "available",
         "provider": result.provider,

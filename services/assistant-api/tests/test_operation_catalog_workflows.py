@@ -62,7 +62,7 @@ async def test_append_draft_keeps_original_records_checks_versions_and_replays(h
 
 
 def test_openapi_constraints_and_declared_workflow_links_are_executable(harness):
-    """Conditional inputs and preparatory effects survive retrieval before HTTP dispatch."""
+    """Prefer the direct todo command while retaining draft constraints and declared continuations."""
     catalog = OperationCatalog(harness.app)
     by_path = {(op.method, op.path): op for op in catalog.operations.values()}
     edit = by_path['POST', '/api/v1/matters/{matter_id}/drafts']
@@ -78,7 +78,7 @@ def test_openapi_constraints_and_declared_workflow_links_are_executable(harness)
     assert not any('/push-devices' in op.path or '/commute/bark' in op.path or op.path == '/api/v1/content' for op in catalog.operations.values())
     assert create.definition['next_operations']
     selected = catalog.search('新增待办')
-    assert selected[0] == create
+    assert selected[0] == by_path['POST', '/api/v1/todos']
     assert any(op.path.endswith('/confirm') for op in selected)
     for op in catalog.operations.values():
         assert op.definition.get('description'), op.path
