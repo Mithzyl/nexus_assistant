@@ -23,6 +23,7 @@ import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
 import { ApiOperationCard } from "@/components/mobile/api-operation-card";
 import type {
   IntakePendingContext,
+  IntakeStage,
   IntakeScheduleCandidate,
   MatterDraft,
   MatterIntakeResult,
@@ -30,13 +31,16 @@ import type {
 import { ApiError } from "@/lib/mobile/api";
 import {
   confirmSummary,
+  dismissIntakeReply,
   getIntakeResult,
+  getIntakeStatus,
   streamIntakeMatter,
   IntakeStreamError,
   listDrafts,
   listIntakeResults,
   newOperationKey,
   requestTodayRefresh,
+  TODAY_REFRESH_EVENT,
 } from "@/lib/mobile/matters-api";
 import { mergeIntakeHistory } from "@/lib/mobile/matter-draft.mjs";
 import { formatDateTime } from "@/lib/mobile/format";
@@ -62,6 +66,21 @@ interface IntakeRequestKey {
   text: string;
   key: string;
   continuationRunId: string | null;
+  ignorePendingReply?: boolean;
+  dismissedReplyRunId?: string | null;
+}
+
+const intakeStageLabel: Partial<Record<IntakeStage, string>> = {
+  queued: "已记下，等待后台整理",
+  understanding: "正在理解需求与相关记忆…",
+  fetching_schema: "正在读取接口说明…",
+  executing_tool: "正在查询或校验保存…",
+  generating_reply: "正在整理回复…",
+};
+
+/** Prefer the persisted stage while keeping a fallback for older APIs. */
+function progressLabel(stage: IntakeStage | null | undefined): string {
+  return (stage && intakeStageLabel[stage]) || "助手正在处理…";
 }
 
 /** Turn a server schedule candidate into a continuation message without IDs. */
@@ -290,18 +309,26 @@ export default function AskPage() {
   const [intakeAnswers, setIntakeAnswers] = useState<IntakeAnswer[]>([]);
   const [serverIntakeResults, setServerIntakeResults] = useState<MatterIntakeResult[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [trackedKey, setTrackedKey] = useState<string | null>(null);
+  const [trackedResult, setTrackedResult] = useState<MatterIntakeResult | null>(null);
+  const [linkedReply, setLinkedReply] = useState<MatterIntakeResult | null>(null);
+  const recovering = !processing && trackedResult?.outcome === "processing";
   const [supplementQuestion, setSupplementQuestion] = useState<string | null>(null);
   const [clarificationContext, setClarificationContext] =
     useState<IntakePendingContext>({});
   const [operationFailure, setOperationFailure] = useState<string | null>(null);
   const [continuationRunId, setContinuationRunId] = useState<string | null>(null);
+  const [replyExpiresAt, setReplyExpiresAt] = useState<string | null>(null);
+  const [dismissedReply, setDismissedReply] = useState<string | boolean>(false);
+  const ignorePendingReply = Boolean(dismissedReply);
+  const [dismissingReply, setDismissingReply] = useState(false);
+  const [replyClock, setReplyClock] = useState(() => Date.now());
   const [recoveryRunId, setRecoveryRunId] = useState<string | null>(null);
   const [intakeHistoryLoading, setIntakeHistoryLoading] = useState(false);
   const intakeKey = useRef<IntakeRequestKey | null>(null);
   const hydratedAnswerKey = useRef<string | null>(null);
   const intakeHistorySeq = useRef(0);
-  const { toast, captureSubmission, setCaptureSubmission } = useUI();
-  const handledCapture = useRef<typeof captureSubmission>(null);
+  const { toast } = useUI();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -310,6 +337,30 @@ export default function AskPage() {
   const intakeAnswerStorageKey = accountKey("pa.web.intakeAnswers", user?.user_id ?? null);
   const composerStorageKey = accountKey("pa.web.ask.composer", user?.user_id ?? null);
   const intakeRequestStorageKey = accountKey("pa.web.ask.intakeRequest", user?.user_id ?? null);
+  const dismissedReplyStorageKey = accountKey("pa.web.ask.ignorePendingReply", user?.user_id ?? null);
+  const latestReply = serverIntakeResults.find((item) => item.reply_state === "awaiting_reply");
+  const currentReply = continuationRunId
+    ? serverIntakeResults.find((item) => item.local_run_id === continuationRunId)
+    : latestReply;
+  const closedReply = currentReply?.reply_state && currentReply.reply_state !== "awaiting_reply";
+  const expiresAt = continuationRunId ? replyExpiresAt : currentReply?.reply_expires_at;
+  const isExpired = Boolean(expiresAt && Date.parse(expiresAt) <= replyClock);
+  const automaticReplyRunId = !closedReply && !isExpired && !ignorePendingReply
+    ? continuationRunId ?? (currentReply?.reply_state === "awaiting_reply" ? (currentReply.continuation_run_id ?? currentReply.local_run_id) : null)
+    : null;
+  const activeReplyRunId = linkedReply?.local_run_id ?? automaticReplyRunId;
+  const activeReplyQuestion = linkedReply?.clarification_summary ?? linkedReply?.clarify ??
+    (activeReplyRunId ? supplementQuestion ?? currentReply?.clarification_summary ?? currentReply?.clarify : null);
+  const activeReplyContext = linkedReply?.pending_context ??
+    (continuationRunId ? clarificationContext : currentReply?.pending_context ?? {});
+
+  useEffect(() => {
+    const now = Date.now();
+    setReplyClock(now);
+    if (!expiresAt || Date.parse(expiresAt) <= now) return;
+    const timer = window.setTimeout(() => setReplyClock(Date.now()), Date.parse(expiresAt) - now + 25);
+    return () => window.clearTimeout(timer);
+  }, [expiresAt]);
 
   useEffect(() => {
     restoredComposerKey.current = null;
@@ -369,6 +420,8 @@ export default function AskPage() {
     const controller = new AbortController();
     intakeHistorySeq.current += 1;
     setServerIntakeResults([]);
+    setReplyExpiresAt(null);
+    setDismissedReply(state === "signedIn" && readSession<string | boolean>(dismissedReplyStorageKey, false));
     setPendingDrafts([]);
     setIntakeDraft(null);
     setSupplementQuestion(null);
@@ -376,16 +429,96 @@ export default function AskPage() {
     setOperationFailure(null);
     setContinuationRunId(null);
     setRecoveryRunId(null);
+    setLinkedReply(null);
+    setTrackedResult(null);
     intakeKey.current = state === "signedIn"
       ? readSession<IntakeRequestKey | null>(intakeRequestStorageKey, null)
       : null;
+    setTrackedKey(intakeKey.current?.key ?? null);
     if (state === "signedIn") {
       void refreshServerIntake(controller.signal);
     } else {
       setIntakeHistoryLoading(false);
     }
     return () => controller.abort();
-  }, [intakeRequestStorageKey, refreshServerIntake, state, user?.user_id]);
+  }, [dismissedReplyStorageKey, intakeRequestStorageKey, refreshServerIntake, state, user?.user_id]);
+
+  useEffect(() => {
+    if (state !== "signedIn") return;
+    const requested = new URLSearchParams(window.location.search).get("reply");
+    if (!requested) return;
+    const controller = new AbortController();
+    getIntakeResult(requested, controller.signal).then((result) => {
+      if (!controller.signal.aborted && (result.reply_state === "awaiting_reply" || result.reply_state === "expired")) {
+        setLinkedReply(result);
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) setComposerError("找不到可回复的随手记。");
+    });
+    return () => controller.abort();
+  }, [state, user?.user_id]);
+
+  useEffect(() => {
+    if (!trackedKey || state !== "signedIn") return;
+    const controller = new AbortController();
+    let timer: number | undefined;
+    const poll = async () => {
+      let again = true;
+      try {
+        const result = await getIntakeStatus(trackedKey, controller.signal);
+        if (controller.signal.aborted) return;
+        setTrackedResult(result);
+        if (result.outcome !== "processing") {
+          again = false;
+          if (!processing && intakeKey.current?.key === trackedKey) {
+            setRecoveryRunId(result.local_run_id);
+            if (["answer", "needs_clarification", "draft"].includes(result.outcome)) {
+              const submitted = intakeKey.current.text;
+              setDraft((value) => value.trim() === submitted ? "" : value);
+              if (readSession<string>(composerStorageKey, "").trim() === submitted) writeSession(composerStorageKey, "");
+              intakeKey.current = null;
+              writeSession(intakeRequestStorageKey, null);
+              setDismissedReply(false);
+              writeSession(dismissedReplyStorageKey, false);
+              setOperationFailure(null);
+              setLinkedReply(null);
+              requestTodayRefresh();
+            } else {
+              setOperationFailure(result.outcome === "unknown"
+                ? "暂未确认保存结果。原文还在，可以查看原结果。"
+                : "这次处理未完成，原文还在。");
+            }
+            setServerIntakeResults((items) => [
+              result, ...items.filter((item) => item.local_run_id !== result.local_run_id),
+            ].slice(0, 20));
+            setTrackedKey(null);
+            setTrackedResult(null);
+            await refreshServerIntake();
+          }
+        }
+      } catch (caught) {
+        // A disconnected initial request may never have reached the server.
+        // Keep its saved key and text so an explicit retry can reuse both.
+        if (caught instanceof ApiError && caught.status === 404 && !processing) again = false;
+      } finally {
+        if (again && !controller.signal.aborted) timer = window.setTimeout(poll, 600);
+      }
+    };
+    void poll();
+    return () => {
+      controller.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [composerStorageKey, dismissedReplyStorageKey, intakeRequestStorageKey, processing, refreshServerIntake, state, trackedKey]);
+
+  const hasPendingCapture = serverIntakeResults.some(
+    (item) => item.entry_mode === "async_capture" && item.outcome === "processing",
+  );
+  useEffect(() => {
+    if (!hasPendingCapture || state !== "signedIn") return;
+    const interval = window.setInterval(() => void refreshServerIntake(), 2000);
+    return () => window.clearInterval(interval);
+  }, [hasPendingCapture, refreshServerIntake, state]);
 
   useEffect(() => {
     const refresh = () => {
@@ -395,9 +528,11 @@ export default function AskPage() {
     };
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("focus", refresh);
+    window.addEventListener(TODAY_REFRESH_EVENT, refresh);
     return () => {
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("focus", refresh);
+      window.removeEventListener(TODAY_REFRESH_EVENT, refresh);
     };
   }, [refreshServerIntake, state]);
 
@@ -421,20 +556,50 @@ export default function AskPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newest?.phase, newest?.answer]);
 
-  const canSend = draft.trim().length > 0 && state === "signedIn" && !processing;
+  const canSend = draft.trim().length > 0 && state === "signedIn" && !processing && !recovering &&
+    !dismissingReply && (!intakeHistoryLoading || serverIntakeResults.length > 0);
+
+  /** Dismiss the displayed clarification and treat the next typed submission as a new request. */
+  const dismissReply = async () => {
+    if (!activeReplyRunId || dismissingReply || processing) return;
+    setDismissingReply(true);
+    setComposerError(null);
+    try {
+      await dismissIntakeReply(activeReplyRunId);
+      setDismissedReply(activeReplyRunId);
+      setLinkedReply(null);
+      if (new URLSearchParams(window.location.search).has("reply")) window.history.replaceState(window.history.state, "", "/ask");
+      writeSession(dismissedReplyStorageKey, activeReplyRunId);
+      setContinuationRunId(null);
+      setReplyExpiresAt(null);
+      setSupplementQuestion(null);
+      setClarificationContext({});
+      await refreshServerIntake();
+    } catch (caught) {
+      setComposerError(caught instanceof Error ? caught.message : "暂时无法取消这条追问。");
+    } finally {
+      setDismissingReply(false);
+    }
+  };
 
   /** Submit through the existing intake and retain the original draft until a usable result arrives. */
   const send = useCallback(async (
     text?: string,
     continuationOverride?: string | null,
-    fromCapture = false,
   ) => {
     const original = text ?? draft;
     const value = original.trim();
-    const activeContinuation =
-      continuationOverride === undefined ? continuationRunId : continuationOverride;
-    if (!value) return;
-    if (processing) return;
+    const retry = continuationOverride === undefined && intakeKey.current?.text === value
+      ? intakeKey.current
+      : null;
+    const expiredBeforeSend = Boolean(!linkedReply && expiresAt && Date.parse(expiresAt) <= Date.now());
+    const activeContinuation = retry ? retry.continuationRunId
+      : continuationOverride !== undefined ? continuationOverride
+        : expiredBeforeSend ? null : activeReplyRunId;
+    const skipPendingReply = retry ? Boolean(retry.ignorePendingReply) : !activeContinuation && ignorePendingReply;
+    const dismissedReplyRunId = retry ? retry.dismissedReplyRunId
+      : skipPendingReply && typeof dismissedReply === "string" ? dismissedReply : null;
+    if (!value || processing || recovering || dismissingReply || (intakeHistoryLoading && !serverIntakeResults.length)) return;
     if (state !== "signedIn") {
       setComposerError("登录后就能交给助手，内容先留着。");
       return;
@@ -451,38 +616,57 @@ export default function AskPage() {
     setLiveTurn({ question: value, answer: "" });
     setDraft(original);
     writeSession(composerStorageKey, original);
-    if (fromCapture) {
-      setContinuationRunId(null);
-      setRecoveryRunId(null);
-      setSelectedMemories([]);
-    }
     if (
-      fromCapture ||
       !intakeKey.current ||
       intakeKey.current.text !== value ||
-      intakeKey.current.continuationRunId !== activeContinuation
+      intakeKey.current.continuationRunId !== activeContinuation ||
+      Boolean(intakeKey.current.ignorePendingReply) !== skipPendingReply ||
+      (intakeKey.current.dismissedReplyRunId ?? null) !== (dismissedReplyRunId ?? null)
     ) {
       intakeKey.current = {
         text: value,
         key: newOperationKey("web-intake"),
         continuationRunId: activeContinuation,
+        ignorePendingReply: skipPendingReply,
+        dismissedReplyRunId,
       };
     }
     const requestKey = intakeKey.current;
+    setTrackedResult(null);
+    setTrackedKey(requestKey.key);
     writeSession(intakeRequestStorageKey, requestKey);
     try {
       const result = await streamIntakeMatter(
         value,
         requestKey.key,
         activeContinuation,
-        fromCapture ? [] : selectedMemories,
+        selectedMemories,
         (answer) => setLiveTurn({ question: value, answer }),
+        skipPendingReply,
+        dismissedReplyRunId,
       );
       if (
         (result.outcome === "answer" && result.answer) ||
         result.outcome === "needs_clarification" ||
         (result.outcome === "draft" && result.draft)
       ) {
+        if (ignorePendingReply) {
+          setDismissedReply(false);
+          writeSession(dismissedReplyStorageKey, false);
+        }
+        setTrackedKey(null);
+        setTrackedResult(null);
+        if (linkedReply) {
+          setLinkedReply(null);
+          window.history.replaceState(window.history.state, "", "/ask");
+          requestTodayRefresh();
+        }
+        const closedParent = result.parent_run_id;
+        if (closedParent) {
+          setServerIntakeResults((items) => items.map((item) => item.local_run_id === closedParent && item.reply_state
+            ? { ...item, reply_state: "resolved" }
+            : item));
+        }
         setDraft((current) => current === original ? "" : current);
         if (readSession(composerStorageKey, "") === original) {
           writeSession(composerStorageKey, "");
@@ -523,7 +707,8 @@ export default function AskPage() {
         setSupplementQuestion(
           result.clarify || result.message || "再补一点信息就好。",
         );
-        setContinuationRunId(result.local_run_id);
+        setContinuationRunId(result.reply_state && result.reply_state !== "awaiting_reply" ? null : result.local_run_id);
+        setReplyExpiresAt(result.reply_expires_at ?? null);
         setRecoveryRunId(result.local_run_id);
         void refreshServerIntake();
         return;
@@ -579,33 +764,17 @@ export default function AskPage() {
       setLiveTurn(null);
     }
   }, [
-    composerStorageKey, continuationRunId, draft, intakeRequestStorageKey,
-    processing, refreshServerIntake, selectedMemories, state, toast,
+    activeReplyRunId, composerStorageKey, dismissingReply, dismissedReply, dismissedReplyStorageKey, draft,
+    expiresAt, ignorePendingReply, intakeHistoryLoading, intakeRequestStorageKey, linkedReply, processing, recovering,
+    refreshServerIntake, selectedMemories, serverIntakeResults.length, state, toast,
   ]);
-
-  useEffect(() => {
-    if (!captureSubmission || captureSubmission === handledCapture.current || processing || state === "loading") {
-      return;
-    }
-    handledCapture.current = captureSubmission;
-    setCaptureSubmission(null);
-    if (captureSubmission.userId !== user?.user_id) return;
-    if (state !== "signedIn") {
-      setDraft(captureSubmission.text);
-      setComposerError("暂时无法确认登录状态，原文已保留。");
-      return;
-    }
-    void send(captureSubmission.text, null, true);
-  }, [captureSubmission, processing, send, setCaptureSubmission, state, user?.user_id]);
 
   const recoverResult = async () => {
     setOperationFailure(null);
     try {
-      const result = recoveryRunId
-        ? await getIntakeResult(recoveryRunId)
-        : (await listIntakeResults(20)).find(
-            (item) => item.request_text === draft.trim(),
-          );
+      const result = intakeKey.current
+        ? await getIntakeStatus(intakeKey.current.key)
+        : recoveryRunId ? await getIntakeResult(recoveryRunId) : null;
       if (!result) {
         setOperationFailure(
           "还没找到这次的结果，原内容还留着。",
@@ -621,7 +790,8 @@ export default function AskPage() {
       } else if (result.outcome === "needs_clarification") {
         setClarificationContext(result.pending_context ?? {});
         setSupplementQuestion(result.clarify || "再补一点信息就好。");
-        setContinuationRunId(result.local_run_id);
+        setContinuationRunId(result.reply_state && result.reply_state !== "awaiting_reply" ? null : result.local_run_id);
+        setReplyExpiresAt(result.reply_expires_at ?? null);
       } else if (result.outcome === "answer") {
         setContinuationRunId(null);
         setClarificationContext({});
@@ -652,7 +822,9 @@ export default function AskPage() {
 
   const timeline = [...ask.items].reverse();
   const unifiedHistory = mergeIntakeHistory(
-    serverIntakeResults.filter((item) => item.outcome !== "draft" || item.confirm_status === "confirmed" || (item.target_lifecycle && item.target_lifecycle !== "active")),
+    serverIntakeResults.filter((item) => !(liveTurn && trackedResult?.local_run_id === item.local_run_id && item.outcome === "processing"))
+      .map((item) => trackedResult?.local_run_id === item.local_run_id && item.outcome === "processing" ? trackedResult : item)
+      .filter((item) => item.outcome !== "draft" || item.confirm_status === "confirmed" || (item.target_lifecycle && item.target_lifecycle !== "active")),
     intakeAnswers,
   );
 
@@ -756,14 +928,12 @@ export default function AskPage() {
             const pendingContext = (
               serverItem ? item.pending_context : item.pendingContext ?? null
             ) as IntakePendingContext | null;
-            const serverRunId = serverItem ? item.local_run_id : null;
+            const serverRunId = serverItem ? (item.continuation_run_id ?? item.local_run_id) : null;
             const scheduleCandidates: IntakeScheduleCandidate[] =
               pendingContext?.schedule_candidates ?? [];
-            const hasContinuation = serverItem
-              ? serverIntakeResults.some(
-                  (result) => result.parent_run_id === item.local_run_id,
-                )
-              : false;
+            const hasContinuation = serverItem && (item.reply_state
+              ? item.reply_state === "resolved" || item.reply_state === "cancelled"
+              : serverIntakeResults.some((result) => result.parent_run_id === item.local_run_id));
             const outcome = serverItem ? item.outcome : "answer";
             const lifecycle = serverItem ? item.target_lifecycle : null;
             const confirmed = serverItem && item.confirm_status === "confirmed";
@@ -827,9 +997,9 @@ export default function AskPage() {
                   {answer ? <Markdown source={answer} /> : null}
                   {clarify ? <p className="body-text" style={{ margin: 0 }}>{clarify}</p> : null}
                   {serverRunId && pendingContext ? <ApiOperationCard context={pendingContext} /> : null}
-                  {outcome === "needs_clarification" && !hasContinuation && serverRunId && pendingContext?.choices?.length ? <div className="chip-row mt-8">{pendingContext.choices.map((choice) => <button type="button" className="chip" key={choice} disabled={processing} onClick={() => void send(choice, serverRunId)}>{choice}</button>)}</div> : null}
+                  {outcome === "needs_clarification" && !hasContinuation && serverRunId && pendingContext?.choices?.length ? <div className="chip-row mt-8">{pendingContext.choices.map((choice) => <button type="button" className="chip" key={choice} disabled={processing || dismissingReply} onClick={() => void send(choice, serverRunId)}>{choice}</button>)}</div> : null}
                   {outcome === "processing" && !answer ? (
-                    <p className="ask-message__note">还在处理中，可以稍后刷新。</p>
+                    <p className="ask-message__note" role="status">{serverItem ? progressLabel(item.stage) : "助手正在处理…"}</p>
                   ) : null}
                   {pendingContext?.missing_information?.length ? (
                     <div className="chip-row mt-8">
@@ -873,7 +1043,7 @@ export default function AskPage() {
                       key={candidate.schedule_id}
                       type="button"
                       className="choice-card"
-                      disabled={processing || hasContinuation}
+                      disabled={processing || dismissingReply || hasContinuation}
                       onClick={() => {
                         setContinuationRunId(serverRunId);
                         setClarificationContext(pendingContext ?? {});
@@ -911,7 +1081,7 @@ export default function AskPage() {
       {liveTurn ? <section className="ask-stream" aria-live="polite" ref={latestIntakeRef}>
         <div className="bubble-user">{liveTurn.question}</div>
         <div className="card mt-10">
-          <span className="micro">{liveTurn.answer ? "正在回复…" : "已发送，助手正在理解…"}</span>
+          <span className="micro">{liveTurn.answer ? "正在整理回复…" : progressLabel(trackedResult?.stage)}</span>
           {liveTurn.answer ? <Markdown source={liveTurn.answer} /> : <span className="spinner" />}
         </div>
       </section> : null}
@@ -1020,27 +1190,27 @@ export default function AskPage() {
         </p>
       ) : null}
 
-      {supplementQuestion ? (
+      {activeReplyQuestion ? (
         <div className="composer-operation" role="status">
-          <strong>还需要补充一点</strong>
-          <p>{supplementQuestion}</p>
-          {clarificationContext.missing_information?.length ? (
+          <strong>正在回复追问</strong>
+          <p>{activeReplyQuestion}</p>
+          {activeReplyContext.missing_information?.length ? (
             <div className="chip-row" style={{ marginBottom: 8 }}>
-              {clarificationContext.missing_information.map((item) => (
+              {activeReplyContext.missing_information.map((item) => (
                 <span key={item} className="chip chip--sm">{item}</span>
               ))}
             </div>
           ) : null}
-          {clarificationContext.schedule_candidates?.length ? (
+          {activeReplyContext.schedule_candidates?.length ? (
             <div className="m-stack-8" aria-label="选择要修改的日程">
-              {clarificationContext.schedule_candidates.map((candidate) => (
+              {activeReplyContext.schedule_candidates.map((candidate) => (
                 <button
                   key={candidate.schedule_id}
                   type="button"
                   className="choice-card"
-                  disabled={processing}
+                  disabled={processing || dismissingReply}
                   onClick={() => {
-                    const runId = continuationRunId;
+                    const runId = activeReplyRunId;
                     setSupplementQuestion(null);
                     setClarificationContext({});
                     void send(scheduleCandidatePrompt(candidate), runId);
@@ -1059,19 +1229,25 @@ export default function AskPage() {
               ))}
             </div>
           ) : null}
+          {linkedReply && activeReplyContext.choices?.length ? (
+            <div className="chip-row">
+              {activeReplyContext.choices.map((choice) => (
+                <button type="button" className="chip" key={choice} disabled={processing || recovering}
+                  onClick={() => void send(choice, linkedReply.local_run_id)}>{choice}</button>
+              ))}
+            </div>
+          ) : null}
           <span>
             下方会接续刚才的事项和已填写内容发送，不需要重述背景。
           </span>
           <button
             type="button"
             className="link-button mt-6"
-            onClick={() => {
-              setContinuationRunId(null);
-              setSupplementQuestion(null);
-              setClarificationContext({});
-            }}
+            aria-label="取消回复追问"
+            disabled={processing || dismissingReply}
+            onClick={() => void dismissReply()}
           >
-            改作新的输入
+            {dismissingReply ? "正在取消…" : "× 取消"}
           </button>
         </div>
       ) : null}
@@ -1090,7 +1266,7 @@ export default function AskPage() {
               type="button"
               className="btn btn--quiet btn--small"
               onClick={() => void send(draft)}
-              disabled={!draft.trim() || processing}
+              disabled={!draft.trim() || processing || dismissingReply || (intakeHistoryLoading && !serverIntakeResults.length)}
             >
               继续原操作
             </button>

@@ -844,19 +844,12 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
 
 type ThemeChoice = "system" | "light" | "dark";
 
-interface CaptureSubmission {
-  userId: string;
-  text: string;
-}
-
 interface UIValue {
   theme: ThemeChoice;
   setTheme: (theme: ThemeChoice) => void;
   toast: (message: string) => void;
   openCapture: (preset?: "choose" | "say") => void;
   closeCapture: () => void;
-  captureSubmission: CaptureSubmission | null;
-  setCaptureSubmission: (submission: CaptureSubmission | null) => void;
 }
 
 const UIContext = createContext<UIValue | null>(null);
@@ -874,7 +867,6 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     open: false,
     preset: "choose",
   });
-  const [captureSubmission, setCaptureSubmission] = useState<CaptureSubmission | null>(null);
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -912,8 +904,8 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ theme, setTheme, toast, openCapture, closeCapture, captureSubmission, setCaptureSubmission }),
-    [theme, setTheme, toast, openCapture, closeCapture, captureSubmission],
+    () => ({ theme, setTheme, toast, openCapture, closeCapture }),
+    [theme, setTheme, toast, openCapture, closeCapture],
   );
 
   return (

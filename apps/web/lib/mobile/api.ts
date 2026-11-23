@@ -769,6 +769,13 @@ export interface TodayView {
   deadlines: TodayDeadline[];
   drafts: TodayDraft[];
   changes: TodayChange[];
+  capture_replies?: {
+    local_run_id: string;
+    request_text: string;
+    question: string;
+    choices: string[];
+    draft_id: string | null;
+  }[];
 }
 
 export interface MatterUpdateInput {
@@ -1098,6 +1105,11 @@ export interface FollowUpPatchInput {
   stop_when?: FollowUpStopCondition[];
 }
 
+export type IntakeReplyState = "awaiting_reply" | "resolved" | "expired" | "cancelled";
+
+export type IntakeStage = "queued" | "understanding" | "fetching_schema" | "executing_tool" |
+  "generating_reply" | "completed" | "awaiting_reply" | "failed" | "unknown" | "cancelled";
+
 export interface MatterIntakeResponse {
   source?: IntakeSource;
   matter_id?: string | null;
@@ -1116,6 +1128,14 @@ export interface MatterIntakeResponse {
   pending_context: IntakePendingContext;
   local_run_id: string | null;
   parent_run_id: string | null;
+  reply_state?: IntakeReplyState | null;
+  reply_expires_at?: string | null;
+  continuation_run_id?: string | null;
+  clarification_summary?: string | null;
+  entry_mode?: "sync_chat" | "async_capture";
+  stage?: IntakeStage | null;
+  request_id?: string | null;
+  record_id?: string | null;
 }
 
 export interface MatterIntakeResult {
@@ -1130,6 +1150,14 @@ export interface MatterIntakeResult {
   history_target_id: string | null;
   local_run_id: string;
   parent_run_id: string | null;
+  reply_state?: IntakeReplyState | null;
+  reply_expires_at?: string | null;
+  continuation_run_id?: string | null;
+  clarification_summary?: string | null;
+  entry_mode?: "sync_chat" | "async_capture";
+  stage?: IntakeStage | null;
+  request_id?: string | null;
+  record_id?: string | null;
   request_text: string;
   intent: "matter" | "question";
   outcome:

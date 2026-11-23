@@ -187,12 +187,14 @@ export default function TodayPage() {
     [todayData.data],
   );
 
+  const captureReplies = todayData.data?.capture_replies ?? [];
+
   const overview = (() => {
     if (todayData.loading && !todayData.data) return "正在同步今天的安排…";
     if (todayData.error) return "今天的安排暂时没同步上，稍后再试。";
     if (!todayData.data) return "今天还没有安排。";
     const items =
-      deadlines.length + (todayData.data.drafts.length ?? 0) + dueReminders.length;
+      deadlines.length + todayData.data.drafts.length + dueReminders.length + captureReplies.length;
     if (items > 0) return `先处理 ${items} 项需要确认或跟进的内容。`;
     if (rows.length === 0) return "今天暂时没有安排 · 有想做的事可以随时交代给助手";
     return `今天有 ${todayData.data.schedules.length} 项日程${
@@ -277,6 +279,22 @@ export default function TodayPage() {
           <span className="quick-btn__hint">记下想法或单条待办</span>
         </button>
       </div>
+
+      {signedIn && captureReplies.length > 0 ? (
+        <section style={{ padding: "0 var(--m-gutter)" }}>
+          <SectionHeading title="随手记待确认" />
+          <div className="m-stack-8">
+            {captureReplies.map((item) => (
+              <Link key={item.local_run_id} href={`/ask?reply=${encodeURIComponent(item.local_run_id)}`} className="card card--amber">
+                <p className="card-title">{item.request_text}</p>
+                <p className="caption">{item.question}</p>
+                {item.choices.length ? <p className="caption">{item.choices.join(" · ")}</p> : null}
+                <span className="link-button">回复助手 <ChevronRight size={14} /></span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {signedIn ? <TodayNextActions onReschedule={openSuggestedEdit} /> : null}
       {signedIn ? <TodayCommuteCard /> : null}

@@ -322,6 +322,28 @@ export function intakeMatter(
   });
 }
 
+/** Persist captured text before returning; the Assistant worker continues independently. */
+export function submitCapture(text: string, idempotencyKey: string): Promise<MatterIntakeResponse> {
+  return apiRequest<MatterIntakeResponse>(pa("/matters/intake"), {
+    method: "POST",
+    body: { text, idempotency_key: idempotencyKey, entry_mode: "async_capture" },
+  });
+}
+
+/** Read progress for the original submission without resending its input or starting work. */
+export function getIntakeStatus(idempotencyKey: string, signal?: AbortSignal): Promise<MatterIntakeResult> {
+  return apiRequest<MatterIntakeResult>(pa("/matters/intake/status"), {
+    method: "POST",
+    body: { idempotency_key: idempotencyKey },
+    signal,
+  });
+}
+
+/** Persist dismissal for this account so refresh cannot reopen the same question. */
+export function dismissIntakeReply(localRunId: string): Promise<void> {
+  return apiRequest<void>(pa(`/matters/intake/${id(localRunId)}/dismiss-reply`), { method: "POST" });
+}
+
 export function listIntakeResults(limit = 20, signal?: AbortSignal): Promise<MatterIntakeResult[]> {
   return apiRequest<MatterIntakeResult[]>(pa(`/matters/intake?limit=${limit}`), { signal });
 }
@@ -560,11 +582,14 @@ function readSseFrame(frame: string): { type: string; data: string } | null {
 export async function streamIntakeMatter(text: string, idempotencyKey: string,
   continuationRunId: string | null | undefined,
   memoryDisclosures: import("@/components/mobile/account-memory").SelectedMemory[],
-  onAnswer: (text: string) => void): Promise<MatterIntakeResponse> {
+  onAnswer: (text: string) => void, ignorePendingReply = false, dismissedReplyRunId?: string | null): Promise<MatterIntakeResponse> {
   const response = await fetch(pa("/matters/intake/stream"), {
     method: "POST", headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify({ text, idempotency_key: idempotencyKey,
-      continuation_run_id: continuationRunId, memory_disclosures: memoryDisclosures }),
+    body: JSON.stringify({ text, idempotency_key: idempotencyKey, entry_mode: "sync_chat",
+      continuation_run_id: continuationRunId, memory_disclosures: memoryDisclosures,
+      ...(dismissedReplyRunId
+        ? { ignore_pending_clarification: true, dismissed_reply_run_id: dismissedReplyRunId }
+        : ignorePendingReply ? { ignore_pending_reply: true } : {}) }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);

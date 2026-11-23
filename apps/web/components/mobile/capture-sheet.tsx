@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { newOperationKey, requestTodayRefresh, submitCapture } from "@/lib/mobile/matters-api";
 
 import { PrimaryButton } from "@/components/mobile/buttons";
 import { useAuth, useDemo, useUI } from "@/components/mobile/providers";
-import { accountKey, writeSession } from "@/lib/mobile/storage";
+import { accountKey, readSession, writeSession } from "@/lib/mobile/storage";
 
-/** Send captured text through the existing Ask workflow. */
+/** Accept captured text and keep the sheet available for the next entry. */
 export function CaptureSheet({
   preset,
   onClose,
@@ -17,12 +17,17 @@ export function CaptureSheet({
   preset: "choose" | "say";
   onClose: () => void;
 }) {
-  const router = useRouter();
   const { state, user } = useAuth();
   const { enabled, captureDemo } = useDemo();
-  const { setCaptureSubmission, toast } = useUI();
+  const { toast } = useUI();
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [accepting, setAccepting] = useState(false);
+  const storageKey = accountKey("pa.web.capture.pending", user?.user_id ?? null);
+
+  useEffect(() => {
+    setText(readSession<{ text: string } | null>(storageKey, null)?.text ?? "");
+  }, [storageKey]);
   const title = preset === "say" ? "随手记一条" : "交给助手整理";
 
   useEffect(() => {
@@ -37,11 +42,11 @@ export function CaptureSheet({
     };
   }, [onClose]);
 
-  /** Keep the original text in the account's composer before navigating. */
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  /** Retry the same saved text with its original key until the server acknowledges receipt. */
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const value = text.trim();
-    if (!value) return;
+    if (!value || accepting) return;
     if (value.length > 4000) {
       setError("这段有点长，最多 4000 个字。");
       return;
@@ -57,10 +62,24 @@ export function CaptureSheet({
         : "请先登录再发送，原文已保留。");
       return;
     }
-    writeSession(accountKey("pa.web.ask.composer", user.user_id), text);
-    setCaptureSubmission({ userId: user.user_id, text });
-    onClose();
-    router.push("/ask");
+    const saved = readSession<{ text: string; key: string } | null>(storageKey, null);
+    const key = saved?.text.trim() === value ? saved.key : newOperationKey("web-capture");
+    writeSession(storageKey, { text, key });
+    setAccepting(true);
+    setError(null);
+    try {
+      await submitCapture(value, key);
+      if (readSession<{ key: string } | null>(storageKey, null)?.key === key) {
+        writeSession(storageKey, null);
+      }
+      setText((current) => current === text ? "" : current);
+      toast("已记下，正在后台整理");
+      requestTodayRefresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "提交暂未确认，原文已保留。");
+    } finally {
+      setAccepting(false);
+    }
   };
 
   return (
@@ -90,11 +109,12 @@ export function CaptureSheet({
                 setText(event.target.value);
                 setError(null);
               }}
+              readOnly={accepting}
               autoFocus
             />
           </label>
           {error ? <p className="caption red" role="alert">{error}</p> : null}
-          <PrimaryButton type="submit" disabled={!text.trim()}>发送给助手</PrimaryButton>
+          <PrimaryButton type="submit" disabled={!text.trim() || accepting}>{accepting ? "正在提交…" : "发送给助手"}</PrimaryButton>
         </form>
       </div>
     </div>
