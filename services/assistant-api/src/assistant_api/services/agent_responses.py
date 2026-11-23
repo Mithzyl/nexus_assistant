@@ -77,6 +77,14 @@ def final_projection(text, flow):
     """Project optional cards, text and choices without forcing a presentation or executing business operations."""
     decision = OperationDecision.model_validate_json(text).model_dump(mode='json', exclude_none=True)
     pending = {'execution_result': flow['visible_result']} if flow.get('visible_result') else {}
+    if conflict := flow.get('capture_conflict'):
+        # The trusted rollback result determines the public status, even if the
+        # model mistakenly returns an ordinary or success answer.
+        if decision['decision'] not in {'answer', 'ask_user', 'clarify'}:
+            raise ValueError('终答只能是answer或ask_user。')
+        return {'outcome': 'needs_clarification', 'answer': None, 'clarify': conflict['question'],
+                'pending_context': {**pending, 'cards': [], 'choices': decision.get('choices', []),
+                                    'capture_conflict': conflict}}
     if decision['decision'] == 'answer':
         pending['cards'] = response_cards.prepare_cards(decision.get('cards', []), flow.get('visible_result'), results=flow.get('results'))
         return {'outcome': 'answer', 'answer': decision['answer'], 'clarify': None, 'pending_context': pending}
@@ -138,6 +146,8 @@ async def finish(db, root, receipt, flow, response):
         context['body_processing_stopped'] = True
     context['body_processing_execution_id'] = receipt.execution_id if response.get('execution_status') == 'unknown' else None
     root.context_json = context
+    if root.intake_stage and root.status in {'pending', 'running'} and response.get('disposition') != 'complete':
+        root.intake_stage = 'understanding'
     receipt.status = 'unknown' if response.get('execution_status') == 'unknown' else 'completed'
     receipt.response_json = response
     await db.commit()
@@ -171,9 +181,13 @@ def supplied_definitions(context, receipts):
 
 def definition_matches(operation, definitions, schemas):
     """Compare exact published structures with supplied messages, without hashes or semantic inference."""
-    return (operation is not None
-            and definitions.get(operation.operation_id) == operation.model_description(include_components=False)
-            and all(schemas.get(name) == schema for name, schema in operation.components.items()))
+    if operation is None:
+        return False
+    supplied = definitions.get(operation.operation_id)
+    expected, components = (operation.parameter_description()
+        if supplied and supplied.get('definition_scope') == 'parameters'
+        else (operation.model_description(include_components=False), operation.components))
+    return supplied == expected and all(schemas.get(name) == schema for name, schema in components.items())
 
 
 async def process_response(db, app, payload):
@@ -228,8 +242,15 @@ async def process_response(db, app, payload):
         if kind in {'answer', 'ask_user', 'clarify'}:
             validation_stage = 'cards'
             final_projection(payload['content'], flow)
+            root.intake_stage = 'generating_reply' if root.intake_stage else None
+            # finish refreshes the root before it commits; publish the observed
+            # stage separately from cached callback context.
+            await db.flush()
             return await finish(db, root, receipt, flow, {'protocol_version': '1', 'execution_id': identity, 'disposition': 'complete'})
         if kind == 'search':
+            if root.intake_stage:
+                root.intake_stage = 'fetching_schema'
+                await db.flush()
             from assistant_api.services.operation_intake import model_context
             context = model_context(flow, catalog, catalog_query=decision['search_query'],
                                     catalog_offset=decision.get('search_offset', 0), initial_message=False)
@@ -273,6 +294,13 @@ async def process_response(db, app, payload):
             or not await execution_is_current(db, flow['request_key'], lease_owner=flow.get('lease_owner'))
             or (rule.execution_mode == 'evaluate' and operation.effect == 'write')):
             return await finish(db, root, receipt, flow, outcome(identity, 'rejected', '跟进规则未授权这项业务操作。', code='approval_required'))
+    capture = flow.get('entry_mode') == 'async_capture' or flow.get('capture_review_id')
+    if capture and operation.effect != 'read' and (
+        flow.get('capture_conflict') or (call.body or {}).get('acknowledge_conflict') is True
+    ):
+        return await finish(db, root, receipt, flow, outcome(identity, 'failed',
+            '后台捕获必须等待用户处理时间冲突。请用 ask_user 提供建议；本次未执行此写入。',
+            code='capture_reply_required'))
     if operation.effect != 'read' and any(
         item.executed_call_json and (item.response_json or {}).get('execution_status') == 'succeeded'
         and semantic_call(item.executed_call_json) == semantic_call(call.model_dump(mode='json')) for item in prior
@@ -286,6 +314,8 @@ async def process_response(db, app, payload):
     actual.headers = {k: v for k, v in actual.headers.items() if k.lower() != 'idempotency-key'}
     receipt.executed_call_json = actual.model_dump(mode='json')
     receipt.status = 'dispatching'
+    if root.intake_stage:
+        root.intake_stage = 'fetching_schema' if operation.operation_id == 'resolve_operation_definitions' else 'executing_tool'
     await db.commit()
     await db.refresh(root)
     if root.status not in {'pending', 'running'}:
@@ -353,6 +383,15 @@ async def process_response(db, app, payload):
             and (operation.path == '/api/v1/schedules'
                  or operation.path == '/api/v1/schedules/{schedule_id}'
                  or operation.path == '/api/v1/matters/drafts/{draft_id}/confirm')):
+        if capture:
+            conflicts = (details.get('conflict') or {}).get('conflicts', [])[:3]
+            title = (conflicts[0].get('title') or '')[:120] if conflicts else ''
+            subject = f'「{title}」' if title else '已有日程'
+            flow['capture_conflict'] = {
+                'draft_id': (details.get('draft') or {}).get('draft_id'),
+                'question': f'这条随手记与{subject}冲突，日程未保存。你希望改到什么时候？',
+                'conflicts': conflicts,
+            }
         # This marker is produced only after the shared confirmation transaction
         # rolled back. A preview may persist; it is not a saved calendar event.
         result = {**business, 'executed_arguments': actual.body,

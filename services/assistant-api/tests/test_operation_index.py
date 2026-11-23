@@ -22,7 +22,7 @@ def index_flow():
 
 
 async def index_run(h):
-    """Bind the initial index and only the resolver definition to one trusted local/remote run."""
+    """Bind the initial index and its supported definitions to one trusted local/remote run."""
     flow = index_flow()
     context = model_context(flow, OperationCatalog(h.app))
     context.update(caller_processed=True, api_flow=flow)
@@ -44,8 +44,8 @@ async def deliver(h, value, identity):
     return response.json()
 
 
-async def test_bootstrap_has_wide_compact_index_without_business_definitions(harness):
-    """More than eight indexed operations are visible; only the resolver schema is initially loaded."""
+async def test_bootstrap_has_compact_index_and_only_common_schedule_inputs(harness):
+    """Long-tail operations remain indexed; only the resolver and two schedule inputs are loaded."""
     catalog = OperationCatalog(harness.app)
     flow = index_flow()
     context = model_context(flow, catalog)
@@ -53,7 +53,7 @@ async def test_bootstrap_has_wide_compact_index_without_business_definitions(har
     assert len(page['items']) > 8 and page['total'] == len(catalog.operations)
     assert {catalog.operations[name].uri for name in ('create_todo', 'update_schedule')} <= {item['uri'] for item in page['items']}
     assert context['text'] == flow['text']
-    assert [item['operation_id'] for item in context['api_operations']] == ['resolve_operation_definitions']
+    assert [item['operation_id'] for item in context['api_operations']] == ['resolve_operation_definitions', 'list_schedules', 'create_schedule']
     assert all(set(item) == {'uri', 'summary', 'effect'} for item in page['items'])
     assert all('requestBody' not in item and 'components' not in item for item in page['items'])
     assert 'TodoCreateRequest' not in context['components']['schemas']
@@ -138,10 +138,10 @@ async def test_new_agent_does_not_inherit_definition_cache(harness):
     flow['offered_operations'] = ['resolve_operation_definitions', 'create_todo']
     flow['provided_schema_names'] = ['OperationDefinitionsRequest', 'TodoCreateRequest']
     context = model_context(flow, OperationCatalog(harness.app))
-    assert [operation['operation_id'] for operation in context['api_operations']] == ['resolve_operation_definitions']
+    assert [operation['operation_id'] for operation in context['api_operations']] == ['resolve_operation_definitions', 'list_schedules', 'create_schedule']
     assert 'OperationDefinitionsRequest' in context['components']['schemas']
     assert 'TodoCreateRequest' not in context['components']['schemas']
-    assert flow['offered_operations'] == ['resolve_operation_definitions']
+    assert flow['offered_operations'] == ['resolve_operation_definitions', 'list_schedules', 'create_schedule']
 
 
 async def test_loaded_flag_without_this_agents_definition_does_not_authorize_call(harness):

@@ -30,6 +30,7 @@ class NexusRun(TimestampMixin, Base):
             "user_id", "idempotency_key", name="uq_nexus_runs_user_idempotency"
         ),
         Index("ix_nexus_runs_user_created", "user_id", "created_at"),
+        Index("ix_nexus_runs_intake_queue", "intake_stage", "capture_lease_expires_at", "created_at"),
         Index("ix_nexus_runs_purpose_business", "purpose", "business_ref"),
         Index("ix_nexus_runs_user_purpose_created", "user_id", "purpose", "created_at"),
     )
@@ -53,6 +54,14 @@ class NexusRun(TimestampMixin, Base):
     context_json: Mapped[dict | None] = mapped_column(JSON)
     error_code: Mapped[str | None] = mapped_column(String(64))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # User clarification has its own lifecycle after the model run ends.
+    reply_state: Mapped[str | None] = mapped_column(String(20))
+    reply_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    intake_stage: Mapped[str | None] = mapped_column(String(24))
+    capture_lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    capture_dispatch_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Server-owned task metadata. Nullable only so pre-existing rows can be
     # classified by the migration instead of being guessed at write time.

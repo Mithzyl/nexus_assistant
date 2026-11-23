@@ -450,7 +450,22 @@ class IntakeRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     idempotency_key: str = Field(min_length=8, max_length=128)
     continuation_run_id: str | None = Field(default=None, min_length=8, max_length=36)
+    ignore_pending_reply: bool = False
+    ignore_pending_clarification: bool = False
+    dismissed_reply_run_id: str | None = Field(default=None, min_length=8, max_length=36)
     memory_disclosures: list[MemoryDisclosure] = Field(default_factory=list, max_length=10)
+    entry_mode: Literal["sync_chat", "async_capture"] = "sync_chat"
+
+
+class IntakeStatusRequest(BaseModel):
+    """Recover one task by the original owner's submission key."""
+
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+IntakeStage = Literal["queued", "understanding", "fetching_schema", "executing_tool",
+                      "generating_reply", "completed", "awaiting_reply", "failed", "unknown", "cancelled"]
 
 
 class IntakeResponse(BaseModel):
@@ -473,6 +488,14 @@ class IntakeResponse(BaseModel):
     pending_context: dict = Field(default_factory=dict)
     local_run_id: str | None = None
     parent_run_id: str | None = None
+    reply_state: Literal["awaiting_reply", "resolved", "expired", "cancelled"] | None = None
+    reply_expires_at: UtcDateTime | None = None
+    continuation_run_id: str | None = None
+    clarification_summary: str | None = None
+    entry_mode: Literal["sync_chat", "async_capture"] = "sync_chat"
+    stage: IntakeStage | None = None
+    request_id: str | None = None
+    record_id: str | None = None
 
 
 class IntakeResultRead(BaseModel):
@@ -485,6 +508,14 @@ class IntakeResultRead(BaseModel):
     history_target_id: str | None = None
     local_run_id: str
     parent_run_id: str | None = None
+    reply_state: Literal["awaiting_reply", "resolved", "expired", "cancelled"] | None = None
+    reply_expires_at: UtcDateTime | None = None
+    continuation_run_id: str | None = None
+    clarification_summary: str | None = None
+    entry_mode: Literal["sync_chat", "async_capture"] = "sync_chat"
+    stage: IntakeStage | None = None
+    request_id: str | None = None
+    record_id: str | None = None
     request_text: str
     intent: Literal["matter", "question"] = "matter"
     outcome: Literal[
@@ -683,6 +714,16 @@ class TodayChangeRead(BaseModel):
     summary: str
 
 
+class TodayCaptureReply(BaseModel):
+    """One captured input waiting for the owner's clarification before saving."""
+
+    local_run_id: str
+    request_text: str
+    question: str
+    choices: list[str] = Field(default_factory=list)
+    draft_id: str | None = None
+
+
 class TodayRead(BaseModel):
     date: str
     timezone: str
@@ -692,6 +733,7 @@ class TodayRead(BaseModel):
     deadlines: list[TodayDeadlineRead] = Field(default_factory=list)
     drafts: list[TodayDraftRead] = Field(default_factory=list)
     changes: list[TodayChangeRead] = Field(default_factory=list)
+    capture_replies: list[TodayCaptureReply] = Field(default_factory=list)
 
 
 class EstimateRequest(BaseModel):

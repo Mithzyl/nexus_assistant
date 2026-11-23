@@ -21,7 +21,14 @@ from assistant_api.models import Base
 
 VERSION = "0001_sqlite_baseline"
 NEXT_ACTION_VERSION = "0030_next_actions"
+INTAKE_REPLY_VERSION = "0031_intake_replies"
+CAPTURE_VERSION = "0032_intake_capture"
 COLUMN_MIGRATIONS = (
+    (INTAKE_REPLY_VERSION, "nexus_runs", "reply_state", "VARCHAR(20)"),
+    (INTAKE_REPLY_VERSION, "nexus_runs", "reply_expires_at", "DATETIME"),
+    (CAPTURE_VERSION, "nexus_runs", "intake_stage", "VARCHAR(24)"),
+    (CAPTURE_VERSION, "nexus_runs", "capture_lease_expires_at", "DATETIME"),
+    (CAPTURE_VERSION, "nexus_runs", "capture_dispatch_started_at", "DATETIME"),
     (NEXT_ACTION_VERSION, "matter_todos", "priority", "VARCHAR(8)"),
     (NEXT_ACTION_VERSION, "matter_todos", "estimated_duration_minutes", "INTEGER"),
     (NEXT_ACTION_VERSION, "matter_todos", "available_after", "DATETIME"),
@@ -83,6 +90,10 @@ COLUMN_MIGRATIONS = (
 # are created explicitly and idempotently. The chat association table itself is
 # new and comes from create_all.
 INDEX_MIGRATIONS = (
+    (CAPTURE_VERSION, "ix_nexus_runs_intake_queue",
+     "CREATE INDEX IF NOT EXISTS ix_nexus_runs_intake_queue "
+     "ON nexus_runs (intake_stage, capture_lease_expires_at, created_at)"),
+
     (
         "0025_supplement_relations",
         "ix_supplement_text_relations",
@@ -160,7 +171,7 @@ async def _ensure_table(conn) -> None:
 
 async def _record(conn, version: str, detail: str) -> None:
     await conn.execute(
-        text("INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (:v, :a)"),
+        text("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (:v, :a)"),
         {"v": version, "a": f"{datetime.now(UTC).isoformat()} {detail}"},
     )
 
@@ -199,10 +210,14 @@ async def init(database_url: str) -> None:
 
 
 async def upgrade(database_url: str) -> None:
-    """Add missing tables/columns including 0029 attribution, preserving all existing data without source backfills."""
+    """Apply additive changes atomically, preserving rows and previous migration records."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as conn:
+            # sqlite3's legacy transaction mode does not begin on the first DDL.
+            # Acquire the write transaction before ALTER TABLE so rollback also
+            # restores the schema if a later column or index fails.
+            await conn.exec_driver_sql("BEGIN IMMEDIATE")
             # Create only tables that are still absent; this does not alter
             # existing tables or replace the checked ALTER migrations below.
             await conn.run_sync(Base.metadata.create_all)

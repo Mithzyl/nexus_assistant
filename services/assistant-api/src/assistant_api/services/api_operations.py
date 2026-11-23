@@ -43,6 +43,7 @@ class OperationDecision(BaseModel):
     search_query: str | None = Field(default=None, max_length=300)
     search_offset: int = Field(default=0, ge=0, le=100000)
     choices: list[str] = Field(default_factory=list, max_length=6)
+    pending_reply_disposition: Literal["answered", "new_topic"] | None = None
     notify: bool = True
     cards: list[dict[str, Any]] = Field(default_factory=list, max_length=6)
 
@@ -112,6 +113,34 @@ class PublishedOperation:
         if include_components:
             description['components'] = {'schemas': self.components}
         return description
+
+
+    def parameter_description(self) -> tuple[dict, dict]:
+        """Publish call inputs and result field names without response schemas or repeated index metadata."""
+        full = self.model_description(include_components=False)
+        keys = {'operation_id', 'uri', 'method', 'path', 'effect', 'summary', 'description',
+                'parameters', 'requestBody', 'response_fields'}
+        description = {key: value for key, value in full.items() if key in keys}
+        components = {}
+
+        def collect(value):
+            """Keep every transitive input reference, including shared constraints and oneOf rules."""
+            if isinstance(value, dict):
+                if reference := value.get('$ref'):
+                    name = reference.rsplit('/', 1)[-1]
+                    if name not in components:
+                        components[name] = self.components[name]
+                        collect(components[name])
+                for key, item in value.items():
+                    if key != '$ref':
+                        collect(item)
+            elif isinstance(value, list):
+                for item in value:
+                    collect(item)
+
+        collect(description.get('parameters', []))
+        collect(description.get('requestBody', {}))
+        return {**description, 'definition_scope': 'parameters'}, components
 
 
 class OperationCatalog:

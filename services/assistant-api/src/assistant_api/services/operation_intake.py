@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import Request
@@ -18,12 +18,12 @@ from sqlalchemy import select
 from assistant_api.core.errors import AssistantError, ConflictError, NotFoundError
 from assistant_api.models import NexusRun
 from assistant_api.services.execution_context import ExecutionContext
-from assistant_api.services import ai_tasks, matter_plan, run_service, response_cards, task_memory
+from assistant_api.services import ai_tasks, intake_replies, matter_plan, run_service, response_cards, task_memory
 from assistant_api.services.api_operations import OperationCatalog, OperationDecision, search_terms
 
 
 
-def response_for(row: NexusRun) -> dict:
+def _response_for(row: NexusRun) -> dict:
     """Project the durable result and the IDs of actual memory writes recorded for this chat."""
     if (row.context_json or {}).get('caller_processed'):
         from assistant_api.services.agent_responses import final_projection
@@ -64,46 +64,122 @@ def response_for(row: NexusRun) -> dict:
             'intent': 'question', 'outcome': row.status if row.status in {'unknown', 'failed', 'cancelled'} else 'processing', 'answer': None, 'clarify': None, 'pending_context': {}, **resolution}
 
 
+def response_for(row: NexusRun) -> dict:
+    """Include the public reply state without changing the stored run status."""
+    result = _response_for(row)
+    reply = intake_replies.reply_metadata(row, result)
+    stage = {'answer': 'completed', 'draft': 'completed', 'needs_clarification': 'awaiting_reply',
+             'failed': 'failed', 'unknown': 'unknown', 'cancelled': 'cancelled'}.get(result['outcome'], row.intake_stage)
+    flow = (row.context_json or {}).get('api_flow') or {}
+    mode = flow.get('entry_mode', 'sync_chat')
+    if mode == 'async_capture':
+        result['status'] = 'processing' if result['outcome'] == 'processing' else stage
+    return {**result, **reply, 'stage': stage, 'entry_mode': mode, 'request_id': flow.get('request_key'),
+            'record_id': row.local_run_id}
+
+
+async def get_conversation_run(db, user_id: str, local_run_id: str) -> NexusRun | None:
+    """Look up a conversational turn by its account and local run ID."""
+    return await db.scalar(select(NexusRun).where(
+        NexusRun.local_run_id == local_run_id, NexusRun.user_id == user_id,
+        NexusRun.purpose == matter_plan.PURPOSE,
+        NexusRun.context_json['api_internal'].as_boolean().is_not(True),
+    ))
+
+
 async def message_history(db, user, text: str, continuation_run_id: str | None,
-                          matter_id: str | None = None) -> list[dict]:
-    """Retrieve attributed messages, prior choice questions and business references without reviving old memory results."""
+                          matter_id: str | None = None, *,
+                          ignore_pending_reply: bool = False,
+                          pending_reply: dict | None = None, include_recent: bool = True,
+                          exclude_run_id: str | None = None) -> list[dict]:
+    """Keep the explicit parent, two recent completed turns and lexical matches within five entries."""
     rows = list(await db.scalars(select(NexusRun).where(
         NexusRun.user_id == user.user_id, NexusRun.purpose == matter_plan.PURPOSE,
-    ).order_by(NexusRun.created_at.desc()).limit(30)))
+        NexusRun.context_json['api_internal'].as_boolean().is_not(True),
+        NexusRun.local_run_id != exclude_run_id if exclude_run_id else True,
+    ).order_by(NexusRun.created_at.desc(), NexusRun.local_run_id.desc()).limit(30)))
     if continuation_run_id and not any(r.local_run_id == continuation_run_id for r in rows):
-        parent = await db.scalar(select(NexusRun).where(NexusRun.local_run_id == continuation_run_id, NexusRun.user_id == user.user_id, NexusRun.purpose == matter_plan.PURPOSE))
+        parent = await get_conversation_run(db, user.user_id, continuation_run_id)
         if parent is None:
             raise NotFoundError('intake_result_not_found', '原消息不存在或无权使用。')
-        rows.insert(0, parent)
+        rows.append(parent)
     terms = search_terms(text)
-    selected = []
+    cutoff = datetime.now(UTC) - timedelta(minutes=30)
+    selected, recent, lexical = [], [], []
     for row in rows:
         context = row.context_json or {}
-        if context.get('api_internal'):
-            continue
-        historical_matter = (context.get('api_flow') or {}).get('matter_id')
+        flow = context.get('api_flow') or {}
+        explicit = row.local_run_id == continuation_run_id
+        historical_matter = flow.get('matter_id')
         if matter_id and historical_matter and historical_matter != matter_id:
-            if row.local_run_id == continuation_run_id:
+            if explicit:
                 raise ConflictError('continuation_matter_mismatch', '原消息属于其他事项，不能用于当前安排。')
             continue
-        message = context.get('text', '')
-        if row.local_run_id != continuation_run_id and not (terms & search_terms(message)):
+        if not explicit and flow.get('trigger_source') == 'follow_up':
             continue
-        saved = response_for(row) if context.get('caller_processed') else context.get('unified_intake_result') or {}
-        # This is a historical message reference, not a fresh claim about current
-        # database state. Old execution references help preserve object identity.
-        selected.append({'message': message[:1200], 'answer': (saved.get('answer') or saved.get('clarify') or '')[:1600],
-                         'messages': [{'origin': 'user', 'text': message[:1200]},
-                                      {'origin': 'assistant', 'text': (saved.get('answer') or saved.get('clarify') or '')[:1600]}],
-                         'source_run_id': row.local_run_id,
-                         'clarification': {'question':saved.get('clarify'),
-                             'choices':(saved.get('pending_context') or {}).get('choices',[])} if saved.get('clarify') else None,
-                         'references': [receipt for receipt in (context.get('api_flow') or {}).get('receipts', [])
-                            if receipt.get('operation_id') not in {'recall_business_memory','save_business_memory_fact','mutate_business_memory'}][-2:],
-                         'matter_id': saved.get('matter_id'), 'draft_id': saved.get('draft_id')})
-        if len(selected) >= 5:
-            break
-    return list(reversed(selected))
+        saved = response_for(row)
+        if not explicit and (row.status != 'succeeded' or saved['outcome'] not in {'answer', 'draft', 'needs_clarification'}):
+            continue
+        if explicit and saved.get('reply_state') in {'resolved', 'cancelled'}:
+            raise ConflictError('intake_reply_closed', '这条追问已结束，请发送新的输入。')
+        if not explicit and (
+            (ignore_pending_reply and saved.get('outcome') == 'needs_clarification')
+            or (pending_reply and saved.get('reply_state') == 'awaiting_reply')
+        ):
+            continue
+        if explicit:
+            selected.append((row, saved))
+        elif include_recent and len(recent) < 2 and intake_replies.utc(row.completed_at or row.created_at) >= cutoff and (
+            saved.get('outcome') in {'answer', 'draft'} or saved.get('reply_state') == 'awaiting_reply'
+        ):
+            recent.append((row, saved))
+        else:
+            overlap = len(terms & search_terms(context.get('text') or ''))
+            if overlap:
+                lexical.append((overlap, row, saved))
+    # Input order already breaks equal scores by newest creation time.
+    lexical.sort(key=lambda item: item[0], reverse=True)
+    selected = (selected + recent + [(row, saved) for _, row, saved in lexical])[:5]
+    selected.sort(key=lambda item: (intake_replies.utc(item[0].created_at), item[0].local_run_id))
+    return [history_entry(row, saved) for row, saved in selected]
+
+
+def history_entry(row: NexusRun, saved: dict) -> dict:
+    """Provide attributed text and the latest two actual business receipts, retaining IDs and times."""
+    context = row.context_json or {}
+    message = (context.get('text') or row.request_text or '')[:1200]
+    answer = (saved.get('answer') or saved.get('clarify') or '')[:1600]
+    flow = context.get('api_flow') or {}
+    receipts = flow.get('receipts', [])
+    excluded = {'resolve_operation_definitions', 'recall_business_memory',
+                'save_business_memory_fact', 'mutate_business_memory'}
+    return {'message': message, 'answer': answer,
+            'messages': [{'origin': 'user', 'text': message}, {'origin': 'assistant', 'text': answer}],
+            'source_run_id': row.local_run_id,
+            'clarification': {'question': saved['clarify'],
+                              'choices': (saved.get('pending_context') or {}).get('choices', [])}
+                if saved.get('clarify') else None,
+            'references': [receipt for receipt in receipts if receipt.get('operation_id') not in excluded][-2:],
+            'matter_id': saved.get('matter_id'), 'draft_id': saved.get('draft_id'),
+            **({'capture_conflict': flow['capture_conflict']} if flow.get('capture_conflict') else {})}
+
+
+async def find_pending_reply(db, user_id: str, matter_id: str | None, *,
+                             window: timedelta = intake_replies.IMPLICIT_REPLY_WINDOW) -> dict | None:
+    """Find the latest live clarification globally or in the exact bound matter within the given window."""
+    now = datetime.now(UTC)
+    rows = await db.scalars(select(NexusRun).where(
+        NexusRun.user_id == user_id, NexusRun.purpose == matter_plan.PURPOSE,
+        NexusRun.status == 'succeeded',
+        NexusRun.context_json['api_internal'].as_boolean().is_not(True),
+        NexusRun.completed_at >= now - window,
+        (NexusRun.reply_state.is_(None) | (NexusRun.reply_state == 'awaiting_reply')),
+    ).order_by(NexusRun.completed_at.desc(), NexusRun.created_at.desc(), NexusRun.local_run_id.desc()))
+    for row in rows:
+        saved = response_for(row)
+        if saved.get('reply_state') == 'awaiting_reply' and (matter_id is None or saved.get('matter_id') == matter_id):
+            return history_entry(row, saved)
+    return None
 
 
 def model_context(flow: dict, catalog: OperationCatalog, *, catalog_query: str = '', catalog_offset: int = 0,
@@ -119,12 +195,22 @@ def model_context(flow: dict, catalog: OperationCatalog, *, catalog_query: str =
     if initial_message:
         flow['offered_operations'] = []
         flow['provided_schema_names'] = []
+        if flow.get('trigger_source', 'chat') == 'chat':
+            selected.extend(catalog.operations[name] for name in ('list_schedules', 'create_schedule'))
     previous = set(flow.get('offered_operations', []))
-    new_definitions = [operation for operation in selected if operation.operation_id not in previous]
+    definitions, shared_schemas = [], {}
+    for operation in selected:
+        if operation.operation_id in previous:
+            continue
+        if operation.operation_id == DEFINITION_RESOLVER:
+            description, schemas = operation.model_description(include_components=False), operation.components
+        else:
+            description, schemas = operation.parameter_description()
+        definitions.append(description)
+        shared_schemas.update(schemas)
     flow['catalog_mode'] = 'indexed'
-    flow['offered_operations'] = list(dict.fromkeys([*flow.get('offered_operations', []), DEFINITION_RESOLVER]))
-    shared_schemas = {name: schema for operation in new_definitions for name, schema in operation.components.items()
-                      if name not in flow.get('provided_schema_names', [])}
+    flow['offered_operations'] = list(dict.fromkeys([
+        *flow.get('offered_operations', []), *(item['operation_id'] for item in definitions)]))
     flow['provided_schema_names'] = list(dict.fromkeys([*flow.get('provided_schema_names', []), *shared_schemas]))
     decision_schema = OperationDecision.model_json_schema()
     if flow.get('presentation_only'):
@@ -138,7 +224,11 @@ def model_context(flow: dict, catalog: OperationCatalog, *, catalog_query: str =
             'memory_context': copy.deepcopy(flow.get('memory_prefetch')),
             'follow_up_id': flow.get('follow_up_id'), 'follow_up_execution_id': flow.get('follow_up_execution_id'),
             'history': flow['history'], 'operation_index': index,
-            'api_operations': [op.model_description(include_components=False) for op in new_definitions],
+            'entry_mode': flow.get('entry_mode', 'sync_chat'),
+            'capture_review': bool(flow.get('capture_review_id')),
+            **({'pending_reply': flow['pending_reply']} if flow.get('pending_reply') else {}),
+            **({'reply_to_run_id': flow['reply_to_run_id']} if flow.get('reply_to_run_id') else {}),
+            'api_operations': definitions,
             'components': {'schemas': shared_schemas}, 'decision_schema': decision_schema, 'presentation_only': flow.get('presentation_only', False),
             'presentation_feedback': flow.get('presentation_feedback'),
             'execution_results': [dict(receipt, step=receipt.get('step', i)) for i, receipt in enumerate(flow['receipts'])], 'card_schema': response_cards.presentation_schema(),
@@ -150,32 +240,118 @@ def model_context(flow: dict, catalog: OperationCatalog, *, catalog_query: str =
                 '只有operation_definition_stale才需要重取已失效定义，其他未变化定义继续有效。'}
 
 
+def check_intake_replay(row: NexusRun, text: str, matter_id: str | None,
+                        continuation_run_id: str | None, ignore_pending_reply: bool, entry_mode: str,
+                        ignore_pending_clarification: bool, dismissed_reply_run_id: str | None) -> None:
+    """Prevent a retry key from moving its original request to another matter or clarification."""
+    context = row.context_json or {}
+    flow = context.get('api_flow') or {}
+    if matter_id and flow.get('matter_id') != matter_id:
+        raise ConflictError('idempotency_conflict', '该请求标识已用于其他事项。')
+    if context.get('text') != text:
+        raise ConflictError('idempotency_conflict', '同一请求标识已用于其他输入。')
+    if flow.get('entry_mode', 'sync_chat') != entry_mode:
+        raise ConflictError('idempotency_conflict', '该请求标识已用于另一种提交方式。')
+    if 'reply_to_run_id' in flow and (
+        flow['reply_to_run_id'] != continuation_run_id or flow.get('ignore_pending_reply') != ignore_pending_reply
+        or flow.get('matter_id') != matter_id
+        or flow.get('ignore_pending_clarification', False) != ignore_pending_clarification
+        or flow.get('dismissed_reply_run_id') != dismissed_reply_run_id
+    ):
+        raise ConflictError('idempotency_conflict', '该请求标识已用于另一条追问或输入方式。')
+
+
 async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
                  continuation_run_id: str | None = None, matter_id: str | None = None,
-                 memory_disclosures: list | None = None) -> dict:
+                 memory_disclosures: list | None = None, ignore_pending_reply: bool = False,
+                 entry_mode: str = 'sync_chat', ignore_pending_clarification: bool = False,
+                 dismissed_reply_run_id: str | None = None) -> dict:
     """Claim input once, prefetch bounded owned memory, then launch exactly one existing Nexus Agent."""
     if not isinstance(request, ExecutionContext):
         request = ExecutionContext.from_request(request, user)
     if memory_disclosures:
         raise AssistantError('api_context_scope', '本次接口调用只使用当前输入与相关历史消息，请取消额外记忆选择。', 422)
+    if entry_mode == 'async_capture' and (request.source != 'chat' or continuation_run_id or matter_id):
+        raise AssistantError('capture_scope_invalid', '随手记只接受独立输入。', 422)
+    if (ignore_pending_clarification and (entry_mode != 'sync_chat' or continuation_run_id)
+        or dismissed_reply_run_id and not ignore_pending_clarification):
+        raise AssistantError('intake_reply_scope_invalid', '续接追问和跳过追问不能同时提交。', 422)
+    ignore_pending_reply = ignore_pending_reply or ignore_pending_clarification or entry_mode == 'async_capture'
     key = 'matter-intake:' + idempotency_key
     existing = await db.scalar(select(NexusRun).where(NexusRun.user_id == user.user_id, NexusRun.idempotency_key == key))
-    if existing and matter_id and (existing.context_json or {}).get('api_flow', {}).get('matter_id') != matter_id:
-        raise ConflictError('idempotency_conflict', '该请求标识已用于其他事项。')
     if existing is not None:
-        if (existing.context_json or {}).get('text') != text:
-            raise ConflictError('idempotency_conflict', '同一请求标识已用于其他输入。')
+        check_intake_replay(existing, text, matter_id, continuation_run_id, ignore_pending_reply, entry_mode,
+                            ignore_pending_clarification, dismissed_reply_run_id)
         if (existing.context_json or {}).get('caller_processed'):
             # Re-read only. Unknown starts never create a second Run or new key.
-            if existing.nexus_run_id:
+            if existing.nexus_run_id and entry_mode == 'sync_chat':
                 await run_service.refresh_run(db, request.app.state.nexus_client, user=user, row=existing)
             return response_for(existing)
         from assistant_api.services import matters
         return await matters.get_intake_result(db, user, existing.local_run_id)
+    if entry_mode == 'async_capture':
+        # Store raw text and the unique submission key before building model
+        # context. This request only needs a local database transaction.
+        context = {'caller_processed': True, 'text': text, 'api_flow': {
+            'entry_mode': entry_mode, 'trigger_source': 'chat', 'request_key': idempotency_key,
+            'reply_to_run_id': None, 'ignore_pending_reply': True,
+        }}
+    else:
+        context = await prepare_context(request, db, user, text=text, idempotency_key=idempotency_key,
+                                        continuation_run_id=continuation_run_id, matter_id=matter_id,
+                                        ignore_pending_reply=ignore_pending_reply, entry_mode=entry_mode)
+        context['api_flow'].update(ignore_pending_clarification=ignore_pending_clarification,
+                                   dismissed_reply_run_id=dismissed_reply_run_id)
+
+    async def cancel_selected_reply():
+        """Close the selected owned reply in the same transaction as the new input."""
+        if dismissed_reply_run_id:
+            await intake_replies.dismiss_reply(db, user, dismissed_reply_run_id, commit=False)
+            return
+        pending = await find_pending_reply(db, user.user_id, matter_id, window=intake_replies.REPLY_TTL)
+        if pending:
+            await intake_replies.dismiss_reply(db, user, pending['source_run_id'], commit=False)
+
+    def attach(record):
+        """Persist submitted context and its starting stage before any model or tool work."""
+        record.context_json = copy.deepcopy(context)
+        record.intake_stage = 'queued' if entry_mode == 'async_capture' else 'understanding'
+
+    row, replayed = await run_service.create_ai_task(
+        db, user=user, purpose=matter_plan.PURPOSE,
+        trigger=ai_tasks.TRIGGER_SCHEDULE if request.source == 'follow_up' else ai_tasks.TRIGGER_CHAT,
+        idempotency_key=key, context=context,
+        attach=attach,
+        before_commit=cancel_selected_reply if ignore_pending_clarification else None,
+        strict_input_match=False,
+    )
+    if replayed:
+        check_intake_replay(row, text, matter_id, continuation_run_id, ignore_pending_reply, entry_mode,
+                            ignore_pending_clarification, dismissed_reply_run_id)
+        return response_for(row)
+    if entry_mode == 'async_capture':
+        return response_for(row)
+    return await execute_intake(request, db, user, row, continuation_run_id=continuation_run_id)
+
+
+
+async def prepare_context(request, db, user, *, text, idempotency_key, entry_mode,
+                          continuation_run_id=None, matter_id=None, ignore_pending_reply=False, exclude_run_id=None):
+    """Build one owned conversation and tool context from a checked submission."""
     if matter_id:
         from assistant_api.services.matters import _get_matter
         await _get_matter(db,user,matter_id)
-    history = await message_history(db, user, text, continuation_run_id, matter_id)
+    pending_reply = None
+    if request.source == 'chat' and not continuation_run_id and not ignore_pending_reply:
+        pending_reply = await find_pending_reply(db, user.user_id, matter_id)
+    history = await message_history(db, user, text, continuation_run_id, matter_id,
+                                    ignore_pending_reply=ignore_pending_reply, pending_reply=pending_reply,
+                                    include_recent=request.source == 'chat', exclude_run_id=exclude_run_id)
+    capture_parent = await get_conversation_run(db, user.user_id, continuation_run_id) if continuation_run_id else None
+    parent_flow = ((capture_parent.context_json or {}).get('api_flow') or {}) if capture_parent else {}
+    capture_review_id = parent_flow.get('capture_review_id')
+    if capture_parent and parent_flow.get('entry_mode') == 'async_capture':
+        capture_review_id = capture_parent.local_run_id
     from assistant_api.services import supplements
     supplement_context = await supplements.context_records(db, user.user_id, matter_id) if matter_id else []
     if matter_id:
@@ -187,7 +363,9 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
     flow = {'text': text, 'query': text, 'now': datetime.now(UTC).isoformat(), 'timezone': timezone,
             'actor': {'origin': 'system' if request.source == 'follow_up' else 'user', 'user_id': user.user_id},
             'supplement_context': supplement_context,
-            'history': history, 'trigger_source': request.source, 'matter_id': matter_id, 'follow_up_id': request.follow_up_id, 'follow_up_execution_id': request.follow_up_execution_id, 'lease_owner': request.lease_owner, 'receipts': [], 'step': 0, 'state': 'preparing_memory', 'request_key': idempotency_key,
+            'history': history, 'pending_reply': pending_reply, 'reply_to_run_id': continuation_run_id,
+            'entry_mode': entry_mode, 'capture_review_id': capture_review_id,
+            'ignore_pending_reply': ignore_pending_reply, 'trigger_source': request.source, 'matter_id': matter_id, 'follow_up_id': request.follow_up_id, 'follow_up_execution_id': request.follow_up_execution_id, 'lease_owner': request.lease_owner, 'receipts': [], 'step': 0, 'state': 'preparing_memory', 'request_key': idempotency_key,
             'memory_prefetch':{'status':'pending','confirmed_empty':False,'cache_valid':False},'memory_sources':[]}
     catalog = OperationCatalog(request.app)
     from assistant_api.commute.runtime import route_capabilities
@@ -199,27 +377,28 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
     context['caller_workflow'] = workflow_configuration(context)
     if continuation_run_id:
         context['parent_run_id'] = continuation_run_id
-    row, replayed = await run_service.create_ai_task(
-        db, user=user, purpose=matter_plan.PURPOSE,
-        trigger=ai_tasks.TRIGGER_SCHEDULE if request.source == 'follow_up' else ai_tasks.TRIGGER_CHAT,
-        idempotency_key=key, context=context,
-        attach=lambda record: setattr(record, 'context_json', copy.deepcopy(context)),
-        strict_input_match=False,
-    )
-    if replayed:
-        if matter_id and (row.context_json or {}).get('api_flow',{}).get('matter_id') != matter_id:
-            raise ConflictError('idempotency_conflict','该请求标识已用于其他事项。')
-        if (row.context_json or {}).get('text') != text:
-            raise ConflictError('idempotency_conflict','同一请求标识已用于其他输入。')
-        return response_for(row)
+    return context
+
+
+async def execute_intake(request, db, user, row, *, continuation_run_id=None, claim_expires=None) -> dict:
+    """Launch the committed input once, after checking a background claim when present."""
     if not await task_memory.initialize_task(db,request,user,row):
         return response_for(row)
+    if claim_expires is not None:
+        from assistant_api.services.capture_intake import begin_dispatch
+
+        if not await begin_dispatch(db, row, claim_expires):
+            return response_for(row)
     row = await run_service.launch_ai_task(db, request.app.state.nexus_client,
         request.app.state.settings, request.app.state.session_factory, user=user, row=row)
+    if claim_expires is not None:
+        # The existing observer remains alive in the worker process. Do not hold
+        # up the next queued capture while Nexus finishes this one.
+        return response_for(row)
     row, _ = await run_service.wait_terminal(db, request.app.state.nexus_client,
         user=user, row=row, timeout_seconds=request.app.state.settings.matter_ai_timeout_seconds)
     result = response_for(row)
-    if continuation_run_id:
+    if continuation_run_id and result.get("parent_run_id") == continuation_run_id:
         from assistant_api.services.follow_ups import continue_execution
         await continue_execution(db, user.user_id, continuation_run_id, result)
     return result
@@ -228,7 +407,7 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
 def workflow_configuration(context: dict) -> dict:
     """Freeze per-request protocol, finite call budget and terminal schema before launch.
 
-    The user request carries a compact index and only the resolver's full schema.
+    The first request includes the index, resolver, and the two common schedule input schemas.
     The Agent requests business definitions by URI. The protocol distinguishes
     rolled-back conflicts from unknown writes without choosing the next action.
     It never loads every application operation or lets the model select credentials.
@@ -237,22 +416,27 @@ def workflow_configuration(context: dict) -> dict:
                    for op in context['api_operations']]
     instructions = matter_plan.API_PROMPT.format(payload=json.dumps(
         {'bootstrap_operations': definitions,
-         'schema_location': 'user_request.operation_index是一级简要目录，api_operations及components.schemas是已加载的完整定义。'},
+         'schema_location': 'user_request.operation_index是一级简要目录，api_operations及components.schemas是本轮已提供的调用定义。definition_scope=parameters表示保留完整请求参数，简化响应说明，可以直接调用。'},
         ensure_ascii=False))
     instructions += ('\n原始完整JSON正文交由Assistant同步处理；读取返回的实际结果后在同一个Agent继续。'
                      '先阅读operation_index中的简要说明、uri和effect，自行判断需要哪些接口；方法和路径在完整定义中。'
                      '索引已经直接包含在本Agent首轮消息中，看到索引不增加请求，不强制发起search或解析。'
                      '普通问答直接answer，需求不清楚先ask_user；不为问候、回答或追问而获取业务定义。'
-                     '首次只有resolve_operation_definitions已加载完整定义；仅当你决定使用尚未加载的业务接口时，'
+                     '首轮已提供解析工具和列在bootstrap_operations的接口定义，可直接按这些参数调用；仅当你决定使用尚未加载的业务接口时，'
                      '用decision=call、operation_id=resolve_operation_definitions、body={"uris":["从索引选择的完整uri"]}'
                      '取得完整参数及共享结构，可一次获取本任务需要的多个接口，再自行决定是否调用。'
                      '读取目录和解析定义都不执行业务，也不是要求用户确认；不要因为多了目录就反复问用户是否执行明确请求。'
                      '需要更多目录时decision=search，search_query由你给出关键词；空字符串及search_offset可分页读取全部目录。'
                      '搜索只返回简要目录，不自动加载完整定义。已经加载的定义和共享结构留在本Agent，不重复获取。'
-                     '已加载必须是本Agent初始消息或本运行成功返回的工具结果中确实提供过的完整定义；服务器缓存或上一个Agent看过不算。'
+                     '已加载必须是本Agent初始消息或本运行成功返回的工具结果中确实提供过可调用的参数定义；服务器缓存或上一个Agent看过不算。'
                      '同Agent再次使用相同接口直接调用，发现新能力只取新增定义。只有参数错误而定义未变化时按反馈修正，不重新解析。'
                      '服务端返回operation_definition_stale表示对应定义已变化且本条尚未执行，才重新取得该定义；新返回说明替代同名旧说明。'
                      '历史用户文字和AI回答不是本次要求，只有后端执行结果证明保存成功。'
+                     'reply_to_run_id存在时，输入框可能是自动恢复，也可能由用户点击旧卡片。'
+                     '看history中source_run_id对应的原话、追问及选项，先核对current_message确实在回答它。'
+                     '没有reply_to_run_id或pending_reply时，不要把历史中的追问当作用户正在回答的任务。'
+                     '用户通过历史或短句指代既往日程、待办并要求修改字段、改期、完成、取消或删除时，先按回执的实际编号读取原记录及当前版本。'
+                     '没有唯一可核对的编号时先查询，仍有多个候选则追问；历史回执不能代替当前记录，不能用新建来替代修改。'
                      '创建待办不代表完成待办；保存提醒不代表通知送达。'
                      '业务成功后自主判断回答或必要下一步，不重复成功操作。'
                      '参数校验失败可修正；拒绝或结果未知不得重新提交。'
@@ -301,6 +485,16 @@ def workflow_configuration(context: dict) -> dict:
                      '道路走法由地图供应商计算，你负责选择地点顺序、逐段方式和时间衔接，不虚构耗时。'
                      '卡片里的提醒偏移引用真实秒数字段并使用format=relative_seconds，-900表示提前15分钟，0表示开始时提醒；耗时使用duration_seconds。不得给原始秒数标注分钟或小时，不编造换算后的结果常量。'
                      '所有输出只返回一个完整JSON对象，首字符必须为{，末字符必须为}；不要Markdown、```json或其他代码围栏，尤其最终回答必须原始JSON。')
+    if context.get('entry_mode') == 'async_capture' or context.get('capture_review'):
+        instructions += ('\n本条为后台随手记。如果缺少信息或发生已确认未写入的时间冲突，用ask_user说明并给可选方案。'
+                         '不能自行接受冲突或改动其他安排。用户选择改期后仍必须使用正常业务接口重新执行真实冲突检查；'
+                         '如新时段也冲突，再次询问。未经重新校验的备选时段只能作为建议。')
+    if context.get('pending_reply') or context.get('reply_to_run_id'):
+        instructions += ('\npending_reply或reply_to_run_id给出候选原消息。先判断current_message是否在回答它；'
+                         '只有明确在回答时才可把原用户任务与本次回复合并并执行。'
+                         '独立新话题只处理current_message；有歧义就追问，不执行依赖该判断的写入。'
+                         '终答中通过pending_reply_disposition报告判断，answered为明确回答旧追问，'
+                         'new_topic为独立新话题，无法判断则省略该字段。')
     if len(instructions) > 16000:
         raise AssistantError('caller_protocol_too_large', '本次接口说明超出平台限制。', 422)
     return {'application_response_mode': 'caller_processed',
@@ -313,4 +507,6 @@ def workflow_configuration(context: dict) -> dict:
                                'answer': {'type': 'string'}, 'question': {'type': 'string'},
                                'choices': {'type': 'array', 'items': {'type': 'string'}},
                                'cards': {'type': 'array', 'items': {'type': 'object'}},
-                               'notify': {'type': 'boolean'}}, 'additionalProperties': False}}
+                               'notify': {'type': 'boolean'},
+                               **({'pending_reply_disposition': {'enum': ['answered', 'new_topic']}}
+                                  if (context.get('pending_reply') or context.get('reply_to_run_id')) else {})}, 'additionalProperties': False}}

@@ -1461,7 +1461,10 @@ async def get_intake_result(
     elif inaccessible_draft:
         outcome = "unknown"
     context = run.context_json or {}
+    from assistant_api.services.intake_replies import reply_metadata
+
     return {
+        **reply_metadata(run, {"outcome": outcome, "clarify": resolution.get("clarify")}),
         "local_run_id": run.local_run_id,
         "parent_run_id": context.get("parent_run_id"),
         "request_text": "历史操作" if lifecycle in ("deleted", "source_revoked") else context.get("text") or "",
@@ -2900,6 +2903,16 @@ async def confirm_draft(
     timezone = await user_timezone(db, user, settings.matter_default_timezone)
     now = datetime.now(UTC)
 
+    acknowledge_conflict = body.acknowledge_conflict
+    if acknowledge_conflict:
+        # A capture's saved preview can also be opened through a legacy draft UI.
+        # Its previous conflict acknowledgement cannot skip the fresh check there.
+        captured = await db.scalar(select(NexusRun.local_run_id).where(
+            NexusRun.user_id == user.user_id,
+            NexusRun.context_json['api_flow']['capture_conflict']['draft_id'].as_string() == draft_id,
+        ).limit(1))
+        acknowledge_conflict = captured is None
+
     from assistant_api.services import commute_bundle
     commute_bundle.validate_quote(payload)
     from assistant_api.services import commute_lifecycle
@@ -3393,7 +3406,7 @@ async def confirm_draft(
                 else (proposed or {}).get("schedule_id")
             ),
         )
-        if conflict and conflict.get("has_conflict") and not body.acknowledge_conflict:
+        if conflict and conflict.get("has_conflict") and not acknowledge_conflict:
             # Snapshot before rollback expires ORM objects. Publish the marker
             # only in the AssistantError branch after rollback has succeeded.
             conflict_failure_details = {
@@ -4781,6 +4794,11 @@ async def today_view(
                 "summary": " / ".join(str(part) for part in parts),
             }
         )
+    from assistant_api.services.capture_intake import pending_replies
+
+    capture_replies = await pending_replies(db, user.user_id)
+    capture_draft_ids = {reply['draft_id'] for reply in capture_replies if reply['draft_id']}
+    drafts = [draft for draft in drafts if draft['draft_id'] not in capture_draft_ids]
     return {
         "date": day.isoformat(),
         "timezone": timezone,
@@ -4802,6 +4820,7 @@ async def today_view(
             for row in deadlines
         ],
         "drafts": drafts,
+        "capture_replies": capture_replies,
         "changes": change_items,
     }
 

@@ -16,7 +16,7 @@ from sqlalchemy.exc import ArgumentError
 from assistant_api.core.config import Settings, get_settings
 from assistant_api.core.observability import emit_event
 
-REQUIRED_MIGRATION = '0030_next_actions'
+REQUIRED_MIGRATION = '0032_intake_capture'
 STATUSES = (
     'queued','pending','ready','running','sending','processing','dispatching','awaiting_answer',
     'waiting_user','completed','succeeded','failed','unknown','cancelled','skipped','accepted',

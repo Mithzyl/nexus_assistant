@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -206,6 +206,7 @@ async def create_ai_task(
     business_ref: str | None = None,
     attach: Callable[[NexusRun], None] | None = None,
     strict_input_match: bool | None = None,
+    before_commit: Callable[[], Awaitable[None]] | None = None,
 ) -> tuple[NexusRun, bool]:
     """Return the run for this key, creating the local row exactly once.
 
@@ -260,6 +261,8 @@ async def create_ai_task(
     if attach is not None:
         attach(row)
     try:
+        if before_commit:
+            await before_commit()
         await db.commit()
     except IntegrityError:
         # A concurrent submit won the unique key (or the association). Reuse it
@@ -498,6 +501,12 @@ async def get_chat_run(
     return ask, row
 
 
+def observing_workflow(local_run_id: str) -> bool:
+    """Check whether this process is already observing the stored workflow."""
+    task = _workflow_tasks.get(local_run_id)
+    return task is not None and not task.done()
+
+
 async def refresh_run(
     db: AsyncSession, client: NexusPilotClient, *, user: User, row: NexusRun
 ) -> NexusRun:
@@ -598,14 +607,17 @@ async def record_progress(
     event_sequence: int | None,
     terminal_status: str | None = None,
     error_code: str | None = None,
+    answer_delta: bool = False,
 ) -> None:
-    """Persist the highest observed event sequence and any terminal state."""
+    """Persist observed event sequence, response progress, and confirmed terminal state."""
 
     row = await db.get(NexusRun, local_run_id)
     if row is None:
         return
     if event_sequence is not None and event_sequence > row.last_event_sequence:
         row.last_event_sequence = event_sequence
+    if answer_delta and row.intake_stage == "understanding" and row.status not in TERMINAL_STATUSES:
+        row.intake_stage = "generating_reply"
     if terminal_status and row.status != "cancelled":
         previous = row.status
         row.status = terminal_status
@@ -678,6 +690,7 @@ async def _consume_workflow(
                     local_run_id=local_run_id,
                     event_sequence=sequence,
                     terminal_status=None,
+                    answer_delta=data.get('event_type') == 'agent.answer.delta',
                     error_code=(
                         _event_error_code(data)
                         if event_status in {"failed", "unknown"}
@@ -824,6 +837,11 @@ async def _persist_result(
             row.completed_at = datetime.now(UTC)
             await db.commit()
         return
+    # The callback and stream observer use separate sessions. Read the newest
+    # execution receipts and any cancellation after awaiting Nexus.
+    await db.refresh(row)
+    if row.status == "cancelled":
+        return
     status = map_workflow_status(result.status)
     if status:
         row.status = status
@@ -838,7 +856,11 @@ async def _persist_result(
         payload["error_code"] = error["error_code"]
     row.result_json = payload
     if row.status in TERMINAL_STATUSES:
-        row.completed_at = datetime.now(UTC)
+        row.completed_at = row.completed_at or datetime.now(UTC)
+    if row.status == 'succeeded' and final_text and (row.context_json or {}).get('caller_processed'):
+        from assistant_api.services.intake_replies import record_terminal_reply
+
+        await record_terminal_reply(db, row, final_text)
     await db.commit()
 
 

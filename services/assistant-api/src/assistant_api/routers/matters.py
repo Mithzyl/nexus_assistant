@@ -6,7 +6,7 @@ declared before parameterised ones. Every route scopes by the authenticated user
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
@@ -79,6 +79,14 @@ def _intake_response(
         "pending_context": result.get("pending_context") or {},
         "local_run_id": result["local_run_id"],
         "parent_run_id": result.get("parent_run_id"),
+        "reply_state": result.get("reply_state"),
+        "reply_expires_at": result.get("reply_expires_at"),
+        "continuation_run_id": result.get("continuation_run_id"),
+        "clarification_summary": result.get("clarification_summary"),
+        "entry_mode": result.get("entry_mode", "sync_chat"),
+        "stage": result.get("stage"),
+        "request_id": result.get("request_id"),
+        "record_id": result.get("record_id"),
     }
 
 
@@ -93,6 +101,23 @@ async def list_intake_results(
     return await matters.list_intake_results(db, user, limit=limit)
 
 
+@router.post("/matters/intake/status", response_model=schemas.IntakeResultRead)
+async def get_intake_status(payload: schemas.IntakeStatusRequest, db: DatabaseSession,
+                            user: CurrentUser, client: NexusClient) -> dict:
+    """Restore progress from the authenticated account and its original submission key."""
+    row = await db.scalar(select(NexusRun).where(
+        NexusRun.user_id == user.user_id, NexusRun.purpose == operation_intake.matter_plan.PURPOSE,
+        NexusRun.idempotency_key == f"matter-intake:{payload.idempotency_key}",
+    ))
+    if row is None:
+        raise NotFoundError("intake_result_not_found", "请求尚未受理。")
+    updated_at = operation_intake.intake_replies.utc(row.updated_at)
+    if (not run_service.observing_workflow(row.local_run_id)
+        and datetime.now(UTC) - updated_at >= timedelta(seconds=10)):
+        await run_service.refresh_run(db, client, user=user, row=row)
+    return await matters.get_intake_result(db, user, row.local_run_id)
+
+
 @router.get("/matters/intake/{local_run_id}", response_model=schemas.IntakeResultRead)
 async def get_intake_result(
     local_run_id: str, db: DatabaseSession, user: CurrentUser, client: NexusClient
@@ -103,6 +128,15 @@ async def get_intake_result(
     if (row.context_json or {}).get('caller_processed'):
         await run_service.refresh_run(db, client, user=user, row=row)
     return await matters.get_intake_result(db, user, local_run_id)
+
+
+@router.post("/matters/intake/{local_run_id}/dismiss-reply", status_code=204)
+async def dismiss_intake_reply(local_run_id: str, db: DatabaseSession, user: CurrentUser) -> Response:
+    """Dismiss a pending clarification without changing its completed execution."""
+    from assistant_api.services.intake_replies import dismiss_reply
+
+    await dismiss_reply(db, user, local_run_id)
+    return Response(status_code=204)
 
 
 @router.post("/matters/intake/stream")
@@ -133,6 +167,9 @@ async def intake_stream(request: Request, payload: schemas.IntakeRequest,
                 result = await operation_intake.intake(request, db, user,
                     text=payload.text, idempotency_key=payload.idempotency_key,
                     continuation_run_id=payload.continuation_run_id,
+                    ignore_pending_reply=payload.ignore_pending_reply, entry_mode=payload.entry_mode,
+                    ignore_pending_clarification=payload.ignore_pending_clarification,
+                    dismissed_reply_run_id=payload.dismissed_reply_run_id,
                     memory_disclosures=[item.model_dump() for item in payload.memory_disclosures])
                 if result["outcome"] in {"failed", "unknown", "cancelled"}:
                     queue.put_nowait(("error", {k: result.get(k) for k in ("error", "status", "outcome", "local_run_id", "workflow_execution_id")}))
@@ -194,6 +231,9 @@ async def intake(
         text=payload.text,
         idempotency_key=payload.idempotency_key,
         continuation_run_id=payload.continuation_run_id,
+        ignore_pending_reply=payload.ignore_pending_reply, entry_mode=payload.entry_mode,
+        ignore_pending_clarification=payload.ignore_pending_clarification,
+        dismissed_reply_run_id=payload.dismissed_reply_run_id,
         memory_disclosures=[item.model_dump() for item in payload.memory_disclosures],
     )
     return _intake_response(result=result, response=response)
@@ -222,6 +262,9 @@ async def intake_for_matter(
         idempotency_key=payload.idempotency_key,
         matter_id=matter_id,
         continuation_run_id=payload.continuation_run_id,
+        ignore_pending_reply=payload.ignore_pending_reply, entry_mode=payload.entry_mode,
+        ignore_pending_clarification=payload.ignore_pending_clarification,
+        dismissed_reply_run_id=payload.dismissed_reply_run_id,
         memory_disclosures=[item.model_dump() for item in payload.memory_disclosures],
     )
     return _intake_response(result=result, response=response)

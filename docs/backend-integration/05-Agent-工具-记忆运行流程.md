@@ -71,7 +71,7 @@ Assistant 保存账号、用户原文、业务记忆、权限与业务结果。N
 | 接收输入 | 保存用户原文及可信账号 | 在调用 AI 前完成；历史与 AI 文本分别标注来源 |
 | 首轮启动前 | 一次本地记忆预取，复用 business-memory/query 的检索逻辑 | 有界扫描、时限及返回数量；失败、关闭、未命中与空库分别记录，不发第二个模型请求 |
 | Agent 进行中 | recall_business_memory | 已给候选不足才补查；已确定空库不反复换词查询 |
-| Agent 进行中 | 一级operation_index及resolve_operation_definitions | 首轮只给最多128项简要uri/summary/effect目录和解析工具。Nexus理解意图，按uri取得完整业务定义后自行决定是否调用；search只查目录，不自动展开参数或后续接口。后端不做否定句过滤；同一Agent保留已加载定义及共享结构，地图、天气不因目录或记忆检索自动调用 |
+| Agent 进行中 | 一级operation_index及resolve_operation_definitions | 首轮给最多 128 项简要目录、解析工具及查询和创建日程所需的完整输入约束。Nexus理解意图，按uri取得完整业务定义后自行决定是否调用；search只查目录，不自动展开参数或后续接口。后端不做否定句过滤；同一Agent保留已加载定义及共享结构，地图、天气不因目录或记忆检索自动调用 |
 | Agent 修正与停止 | invalid_parameters 或日程 conflict_detected | 格式错误提供字段/格式修正要求；日程确认事务回滚成功才在 result.data.error.details 返回 formal_write_status=not_applied、真实 conflict/draft/target，并 failed/continue。原 Agent 决定调整或询问，保留先前成功步骤；无回滚依据的错误、超时及提交后丢失响应仍 unknown/stop，不换编号重写。既有临时 SQLite 定向通过；11 月 10 日原 Agent 卡片纠正已真实验证，日程冲突未触发，不能据此视为真实冲突场景通过 |
 | 业务写入前 | memory_defaults 及来源复核 | AI 选择明确参数或记忆来源之一；同字段重复来源（包括 null）在写入前拒绝，不静默选择。校验账号、原文、当前条目版本、状态及明确限制。resolve_business_preferences 是可选提前校验，不必每次重复调用；正式写入仍检查 |
 | 终答前 | mutate_business_memory，execution=before_answer | 用户要求立即保存/纠正/遗忘，或本轮安排依赖这次变更时使用；返回真实结果后模型才能声称成功 |
@@ -208,3 +208,19 @@ AI 可用接口由当前 FastAPI OpenAPI 自动提供，无需 Nexus 增加静�
 ![实际保存后的日程与提醒结果](evidence/browser-memory-20261109/06-schedule-created.jpg)
 
 本轮仅验收默认桌面 Chrome 窗口；未做窄屏、完整键盘或读屏验收，不能据截图宣称无障碍合规。没有验证到点通知送达，也不把日程提醒保存等同于推送成功。以上问题本轮只记录，没有实施修复；后续优先处理 B01、B02 后再复验。隔离浏览器标签及临时服务已关闭，证据和数据保留；正常 3001/8000/8010 仍为原进程。
+
+
+## 连续提问和刷新后回复追问
+
+- **连续提问**：每次新提交创建一次 Nexus 运行。Assistant 在首轮历史中保留显式选定的原消息、最近 30 分钟内至多两条已完成或待回复记录，再从最近 30 条中按原话的词项重合数降序补足，最终最多五条，按时间正序发送。每条包含用户原话、助手回答或追问，以及最近两条业务执行回执，回执保留实际保存的记录编号与时间。模型修改、改期、完成、取消或删除既往日程和待办前，须按回执编号读取现行记录与版本。
+- **刷新后的回复**：追问产生时，Assistant 按运行完成时间保存 30 分钟的有效期。HTTP 响应沿用原本的执行 `status` 与 `outcome`，并另返回 `reply_state`（`awaiting_reply`、`resolved`、`expired` 或 `cancelled`）、`reply_expires_at`、`continuation_run_id` 和 `clarification_summary`。Web 读取最近 20 条记录恢复当前追问。打字回复时通过 `continuation_run_id` 指向原消息；过期后不再自动绑定，仍允许点选过期卡片的选项。
+- **取消和自动续接**：用户点击取消时，Web 请求 `POST /api/v1/matters/intake/{local_run_id}/dismiss-reply`，Assistant 核对账号并持久保存取消状态。下一次请求通过 `ignore_pending_clarification: true` 和 `dismissed_reply_run_id` 表明跳过的具体追问。旧参数 `ignore_pending_reply` 继续支持忽略提示。缺少原消息编号且未禁用提示时，通用聊天从本账号全局取得最近 10 分钟的待回复问题；事项详情只在当前事项中查找。无论候选来自自动检索还是浏览器恢复的输入框，Nexus 都可通过终答的 `pending_reply_disposition` 报告判断。明确回答时 Assistant 关闭旧追问并关联新消息；切换新话题时关闭旧追问，新消息独立保存。无法判断时保留旧问题，由模型向用户澄清。
+
+
+## 随手记后台受理和问助手进度恢复
+
+- `POST /api/v1/matters/intake` 默认按照 `sync_chat` 执行。传 `entry_mode: "async_capture"` 时，首次提交在同一事务保存原话和队列状态，返回 HTTP 202，包含 `request_id`、`record_id`、`status: "processing"`。同账号同提交编号只保留一条任务。
+- Assistant worker 用有效期领取任务，在联系 Nexus 前记录开始派发时间。仅领取且尚未派发的任务可再领取；已派发任务只能沿已有 Nexus 运行核对。后端对不确定的写入停止追加业务操作。
+- 真实日程冲突事务确认回滚后，随手记等待用户回复。「今天」的 `capture_replies` 及助手历史指向同一记录。选择调整时段再次走正式日程冲突检查。发生新冲突仍保留待回复；被替代的未确认预览保留历史并结束预览状态。
+- `POST /api/v1/matters/intake/status` 在请求体接收原 `idempotency_key`，按登录账号读取同一任务。`stage` 反映准备上下文、获取接口定义、执行业务、整理回复和最终状态。Web 查询状态时不会重新发原任务。
+- 查询及创建日程的首轮定义省略完整响应模型，保留路径、请求字段、共享输入约束和响应字段提示；其余操作继续按需获取。Assistant 仍以当前发布结构校验调用。
