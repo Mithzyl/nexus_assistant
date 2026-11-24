@@ -383,6 +383,8 @@ export interface AskVerifyResponse {
 export interface BarkStatus {
   configured: boolean;
   auto_reminders_enabled: boolean;
+  assistant_notifications_enabled?: boolean;
+  web_links_available?: boolean;
   available: boolean;
   state: "unconfigured" | "disabled" | "enabled" | string;
   base_url_host: string;

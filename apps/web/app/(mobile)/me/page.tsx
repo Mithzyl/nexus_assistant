@@ -261,8 +261,8 @@ export default function MePage() {
           <Row
             href="/me/commute/bark"
             icon={<Bell size={14} strokeWidth={1.5} />}
-            title="提醒方式"
-            detail="绑定 Bark，接收通勤提醒"
+            title="Bark 提醒"
+            detail="在手机接收通勤、助手追问和到期提醒"
           />
         </div>
       </section>

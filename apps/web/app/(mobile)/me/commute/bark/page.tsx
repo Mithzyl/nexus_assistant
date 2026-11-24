@@ -36,6 +36,8 @@ export default function BarkPage() {
   const data = bark.data;
   const configured = Boolean(data?.configured);
   const auto = Boolean(data?.auto_reminders_enabled);
+  const assistantNotifications = Boolean(data?.assistant_notifications_enabled);
+  const linksAvailable = Boolean(data?.web_links_available);
 
   const bind = async () => {
     if (!key.trim()) {
@@ -77,14 +79,15 @@ export default function BarkPage() {
     }
   };
 
-  const toggleAuto = async () => {
+  /** Update one Bark subscription without changing the other switch. */
+  const updateNotifications = async (setting: "auto_reminders_enabled" | "assistant_notifications_enabled", enabled: boolean) => {
     if (!configured) return;
-    setBusy("toggle");
+    setBusy(setting);
     setError(null);
     try {
       const updated = await apiRequest<BarkStatus>("/api/pa/commute/bark", {
         method: "PATCH",
-        body: { auto_reminders_enabled: !auto },
+        body: { [setting]: enabled },
       });
       bark.setData(updated);
     } catch (caught) {
@@ -114,9 +117,9 @@ export default function BarkPage() {
   };
 
   return (
-    <PageShell title="Bark 提醒" subtitle="在 Bark 客户端接收通勤提醒。">
+    <PageShell title="Bark 提醒" subtitle="在 Bark 接收通勤、助手追问和到期提醒。">
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后绑定 Bark" body="绑定账号后，通勤提醒会发送到你的 Bark。">
+        <EmptyState title="登录后绑定 Bark" body="绑定设备后，可选择这个账号要接收的提醒。">
           <LoginLink className="btn btn--primary">登录</LoginLink>
         </EmptyState>
       ) : null}
@@ -126,19 +129,19 @@ export default function BarkPage() {
 
       {signedIn && data ? (
         <>
-          <div className={`card ${configured && auto ? "card--green" : configured ? "card--amber" : ""}`}>
+          <div className={`card ${auto || assistantNotifications ? "card--green" : configured ? "card--amber" : ""}`}>
             <div className="flex items-center gap-8" style={{ flexWrap: "wrap" }}>
               <Bell size={16} className={configured ? "green" : "faint"} />
               <strong style={{ fontSize: 15 }}>
                 {!configured
                   ? "还没有绑定 Bark"
-                  : auto
+                  : auto || assistantNotifications
                     ? "已开启自动提醒"
                     : "已绑定 Bark，自动提醒关闭"}
               </strong>
               <span className="grow" />
-              <Pill tone={configured && auto ? "green" : configured ? "amber" : "neutral"}>
-                {data.state === "enabled"
+              <Pill tone={auto || assistantNotifications ? "green" : configured ? "amber" : "neutral"}>
+                {auto || assistantNotifications
                   ? "自动提醒"
                   : data.state === "disabled"
                     ? "仅手动测试"
@@ -147,8 +150,8 @@ export default function BarkPage() {
             </div>
             <p className="caption" style={{ margin: "8px 0 0" }}>
               {configured
-                ? `通勤检查完成后，会通过 ${data.base_url_host} 发送提醒。密钥只保存在账号中，不会再次显示。`
-                : "绑定后，通勤检查完成时会发一条提醒到你的 Bark 客户端。"}
+                ? `已绑定 ${data.base_url_host}。请在下方选择需要的自动提醒。`
+                : "绑定后，先发送一条测试提醒，确认设备可以接收。"}
             </p>
             {configured && data.available === false ? (
               <p className="caption amber" style={{ margin: "6px 0 0" }}>
@@ -171,9 +174,20 @@ export default function BarkPage() {
                   : "先绑定 Key 才能开启自动提醒。"
               }
               checked={auto}
-              disabled={!configured}
-              busy={busy === "toggle"}
-              onChange={() => void toggleAuto()}
+              disabled={!configured || busy !== null}
+              busy={busy === "auto_reminders_enabled"}
+              onChange={() => void updateNotifications("auto_reminders_enabled", !auto)}
+            />
+            <hr className="divider" />
+            <SwitchRow
+              title="助手追问与到期提醒"
+              detail={linksAvailable
+                ? "点击追问可回到原问题，点击待办或日程提醒可打开「今天」。"
+                : "服务端尚未配置 Web 跳转地址。"}
+              checked={assistantNotifications}
+              disabled={!configured || (!linksAvailable && !assistantNotifications) || busy !== null}
+              busy={busy === "assistant_notifications_enabled"}
+              onChange={() => void updateNotifications("assistant_notifications_enabled", !assistantNotifications)}
             />
             <hr className="divider" />
             <button
