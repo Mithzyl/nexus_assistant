@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Bell, ChevronRight, KeyRound } from "lucide-react";
 
 import type { BarkStatus, BarkTest } from "@/lib/mobile/api";
@@ -10,6 +9,7 @@ import { formatDateTime } from "@/lib/mobile/format";
 import { useApiResource, errorText } from "@/lib/mobile/use-api-resource";
 import { useAuth } from "@/components/mobile/providers";
 import {
+  LoginLink,
   ConfirmDialog,
   EmptyState,
   ErrorCard,
@@ -117,7 +117,7 @@ export default function BarkPage() {
     <PageShell title="Bark 提醒" subtitle="在 Bark 客户端接收通勤提醒。">
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录后绑定 Bark" body="绑定账号后，通勤提醒会发送到你的 Bark。">
-          <Link href="/login" className="btn btn--primary">登录</Link>
+          <LoginLink className="btn btn--primary">登录</LoginLink>
         </EmptyState>
       ) : null}
 

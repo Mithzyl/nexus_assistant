@@ -8,6 +8,7 @@ import Link from "next/link";
 import { ArrowLeft, Eye, EyeOff } from "lucide-react";
 
 import { ApiError, registrationOptions, type RegistrationOptions } from "@/lib/mobile/api";
+import { loginDestinationFromSearch } from "@/lib/mobile/login-return.mjs";
 import { useAuth } from "@/components/mobile/providers";
 import { PrimaryButton } from "@/components/mobile/buttons";
 import { NexusLogin } from "@/components/mobile/nexus-login";
@@ -36,7 +37,7 @@ export function LoginScreen() {
 
   useEffect(() => {
     if (state === "signedIn" && user) {
-      router.replace("/today");
+      router.replace(loginDestinationFromSearch(window.location.search));
     }
   }, [state, user, router]);
 
@@ -66,7 +67,6 @@ export function LoginScreen() {
     try {
       if (creating) await register({ email, password, display_name: displayName, invite_code: inviteCode });
       else await login(email, password);
-      router.replace("/today");
     } catch (caught) {
       if (caught instanceof ApiError) {
         setError(

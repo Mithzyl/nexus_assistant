@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Clock, Trash2 } from "lucide-react";
 
@@ -42,6 +41,7 @@ import { CommuteForm } from "@/components/mobile/commute-form";
 import { CommuteDayPanel } from "@/components/mobile/commute-day-panel";
 import { HistoryAdvisoryCard } from "@/components/mobile/history-advisory-card";
 import {
+  LoginLink,
   ConfirmDialog,
   EmptyState,
   ErrorCard,
@@ -784,7 +784,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     >
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录后才能查看" body="通勤计划会同步到你的账号。">
-          <Link href="/login" className="btn btn--primary">登录</Link>
+          <LoginLink className="btn btn--primary">登录</LoginLink>
         </EmptyState>
       ) : null}
 

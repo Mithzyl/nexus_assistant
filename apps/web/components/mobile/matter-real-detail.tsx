@@ -69,6 +69,7 @@ import {
   EmptyState,
   ErrorCard,
   LoadingCard,
+  LoginRequired,
   PageShell,
   Pill,
   Sheet,
@@ -176,7 +177,7 @@ function localInputToIso(value: string): string | null {
 /** Display real matter data and the results of API operations from progress input. */
 export function MatterRealDetail({ id }: { id: string }) {
   const router = useRouter();
-  const { user } = useAuth();
+  const { state, user } = useAuth();
   const { toast } = useUI();
   const [matter, setMatter] = useState<MatterDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -321,8 +322,8 @@ export function MatterRealDetail({ id }: { id: string }) {
   };
 
   useEffect(() => {
-    void load();
-  }, [load, user?.user_id]);
+    if (state !== "loading" && state !== "anonymous") void load();
+  }, [load, state, user?.user_id]);
 
   useEffect(
     () => () => {
@@ -706,6 +707,13 @@ export function MatterRealDetail({ id }: { id: string }) {
     if (draftId) void cancelDraft(draftId).catch(() => undefined);
   };
 
+  if (state === "anonymous") {
+    return (
+      <PageShell title="事项详情" fallbackHref="/matters">
+        <LoginRequired title="登录后查看事项详情" body="登录账号后可以查看此事项的进展和安排。" />
+      </PageShell>
+    );
+  }
   if (loading && !matter) {
     return <PageShell title="事项详情" fallbackHref="/matters"><div style={{ padding: "0 var(--m-gutter)" }}><LoadingCard label="正在读取事项…" /></div></PageShell>;
   }

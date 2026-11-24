@@ -11,6 +11,7 @@ import { formatDuration, formatTime } from "@/lib/mobile/format";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
 import { advisoryApplicability } from "@/lib/mobile/advisory";
 import { useAuth } from "./providers";
+import { LoginLink } from "./ui";
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 
@@ -91,7 +92,7 @@ export function TodayCommuteCard() {
           <>
             <p className="today-commute__title">登录后查看出行方案</p>
             <p className="today-commute__body">登录账号后，这里会显示常用路线与出发建议。</p>
-            <Link href="/login" className="btn btn--primary btn--small mt-10">登录账号</Link>
+            <LoginLink className="btn btn--primary btn--small mt-10">登录账号</LoginLink>
           </>
         ) : null}
 

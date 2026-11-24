@@ -7,6 +7,7 @@ import { formatDateTime } from "@/lib/mobile/format";
 import { useApiResource, errorText } from "@/lib/mobile/use-api-resource";
 import { useAuth } from "@/components/mobile/providers";
 import {
+  LoginLink,
   EmptyState,
   ErrorCard,
   LoadingCard,
@@ -37,7 +38,7 @@ export default function ContentDetailPage({ params }: { params: { id: string } }
       {item.error ? <ErrorCard message={errorText(item.error)} onRetry={item.reload} /> : null}
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录后查看已同步内容" body="这些内容属于你的账号。">
-          <Link href="/login" className="btn btn--primary">登录</Link>
+          <LoginLink className="btn btn--primary">登录</LoginLink>
         </EmptyState>
       ) : null}
 

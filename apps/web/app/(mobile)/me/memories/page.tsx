@@ -5,17 +5,26 @@ import Link from "next/link";
 import { Brain, Pencil, Trash2 } from "lucide-react";
 
 import { MemoryManagement } from "@/components/mobile/memory-management";
-import { useDemo } from "@/components/mobile/providers";
-import { ConfirmDialog, PageShell, SwitchRow } from "@/components/mobile/ui";
+import { useAuth, useDemo } from "@/components/mobile/providers";
+import { ConfirmDialog, LoginRequired, PageShell, SwitchRow } from "@/components/mobile/ui";
 
 /** Keep demo memories separate from authenticated Assistant-owned memory management. */
 export default function MemoriesPage() {
   const demo = useDemo();
+  const { state } = useAuth();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
   const touchX = useRef<number | null>(null);
   const enabledCount = demo.memories.filter((memory) => memory.enabled).length;
+
+  if (!demo.enabled && state === "anonymous") {
+    return (
+      <PageShell title="个人记忆" fallbackHref="/me">
+        <LoginRequired title="登录后管理个人记忆" body="登录账号后可以查看和修改你的记忆。" />
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell

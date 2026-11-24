@@ -8,6 +8,7 @@ import type { CommutePlan } from "@/lib/mobile/api";
 import { useApiResource, errorText } from "@/lib/mobile/use-api-resource";
 import { useAuth } from "@/components/mobile/providers";
 import {
+  LoginLink,
   EmptyState,
   ErrorCard,
   LoadingCard,
@@ -51,7 +52,7 @@ export default function CommutePage() {
       >
         {!signedIn && state !== "loading" ? (
           <EmptyState title="登录生活助手" body="跨设备同步你的通勤计划与提醒。">
-            <Link href="/login" className="btn btn--primary">登录账号</Link>
+            <LoginLink className="btn btn--primary">登录账号</LoginLink>
           </EmptyState>
         ) : null}
 

@@ -10,7 +10,7 @@ import { ApiError, apiRequest } from "@/lib/mobile/api";
 import { sha256Hex, uuid } from "@/lib/mobile/format";
 import { installationId, readSession, writeSession } from "@/lib/mobile/storage";
 import { useAuth } from "@/components/mobile/providers";
-import { EmptyState, Notice, PageShell } from "@/components/mobile/ui";
+import { LoginLink, EmptyState, Notice, PageShell } from "@/components/mobile/ui";
 import { PrimaryButton, SecondaryButton } from "@/components/mobile/buttons";
 
 interface Draft {
@@ -171,9 +171,9 @@ export default function ImportNotePage() {
     >
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录生活助手" body="跨设备保存你的笔记。">
-          <Link href="/login" className="btn btn--primary">
+          <LoginLink className="btn btn--primary">
             登录账号
-          </Link>
+          </LoginLink>
         </EmptyState>
       ) : null}
 

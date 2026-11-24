@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import type { CommutePlan, CommutePlanDraft } from "@/lib/mobile/api";
@@ -9,7 +8,7 @@ import { ApiError, apiRequest } from "@/lib/mobile/api";
 import { useAuth } from "@/components/mobile/providers";
 import { CommuteForm, type SavedPlace } from "@/components/mobile/commute-form";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
-import { EmptyState, PageShell } from "@/components/mobile/ui";
+import { LoginLink, EmptyState, PageShell } from "@/components/mobile/ui";
 
 export default function NewCommutePage() {
   const router = useRouter();
@@ -58,7 +57,7 @@ export default function NewCommutePage() {
     <PageShell title="新建通勤计划" subtitle="选好起点和终点，助手会据此测算路线。">
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录生活助手" body="跨设备同步你的通勤计划与提醒。">
-          <Link href="/login" className="btn btn--primary">登录</Link>
+          <LoginLink className="btn btn--primary">登录</LoginLink>
         </EmptyState>
       ) : null}
       {signedIn ? (

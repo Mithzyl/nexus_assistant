@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { loginDestinationFromSearch } from "@/lib/mobile/login-return.mjs";
 
 /** Add optional Nexus login and explicit association without replacing local authentication. */
 export function NexusLogin({link=false}:{link?:boolean}) {
@@ -10,7 +11,20 @@ export function NexusLogin({link=false}:{link?:boolean}) {
   /** User confirmation starts only the selected login/link operation. */
   async function start() {
     setBusy(true);setError("");
-    try {const r=await fetch("/api/auth/nexus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:link?"link":"start"})});const b=await r.json();if(!r.ok)throw Error(b.error?.message||"请求失败。");window.location.assign(b.url);}
+    try {
+      const request = link ? { action: "link" } : {
+        action: "start",
+        next: loginDestinationFromSearch(window.location.search),
+      };
+      const response = await fetch("/api/auth/nexus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error?.message || "请求失败。");
+      window.location.assign(result.url);
+    }
     catch(e){setError(e instanceof Error?e.message:"请求失败。");setBusy(false);}
   }
   if(!enabled)return null;

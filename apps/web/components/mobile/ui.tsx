@@ -6,11 +6,13 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
+  type MouseEvent,
   type ReactNode,
 } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { loginHref } from "@/lib/mobile/login-return.mjs";
 
 export function ScreenHeader({
   title,
@@ -152,6 +154,36 @@ export function EmptyState({
   );
 }
 
+/** Keep the current page, query and fragment when opening the login page. */
+export function LoginLink({ children, className }: { children: ReactNode; className: string }) {
+  const pathname = usePathname();
+  const [href, setHref] = useState(() => loginHref(pathname));
+
+  useEffect(() => {
+    const update = () => {
+      const { pathname, search, hash } = window.location;
+      setHref(loginHref(pathname + search + hash));
+    };
+    update();
+    window.addEventListener("hashchange", update);
+    window.addEventListener("popstate", update);
+    return () => {
+      window.removeEventListener("hashchange", update);
+      window.removeEventListener("popstate", update);
+    };
+  }, [pathname]);
+
+  /** Read the live URL when a page has changed its query without navigating. */
+  function preserveDestination(event: MouseEvent<HTMLAnchorElement>) {
+    const { pathname, search, hash } = window.location;
+    event.currentTarget.href = loginHref(pathname + search + hash);
+  }
+
+  return <a href={href} className={className} onClick={preserveDestination} onAuxClick={preserveDestination}>
+    {children}
+  </a>;
+}
+
 export function LoginRequired({
   title = "登录后同步你的安排",
   body = "登录账号后，今天的日程、提醒和通勤建议会同步到这里。",
@@ -166,9 +198,9 @@ export function LoginRequired({
       <p className="empty__title">{title}</p>
       <p className="empty__body">{body}</p>
       <div className="login-required__actions">
-        <Link href="/login" className="btn btn--primary">
+        <LoginLink className="btn btn--primary">
           {actionLabel}
-        </Link>
+        </LoginLink>
       </div>
     </div>
   );

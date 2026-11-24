@@ -8,7 +8,7 @@ import type { MemoryResults } from "@/lib/mobile/api";
 import { ApiError, apiRequest } from "@/lib/mobile/api";
 import { uuid } from "@/lib/mobile/format";
 import { useAuth } from "@/components/mobile/providers";
-import { EmptyState, Notice, PageShell, Pill } from "@/components/mobile/ui";
+import { LoginLink, EmptyState, Notice, PageShell, Pill } from "@/components/mobile/ui";
 import { PrimaryButton } from "@/components/mobile/buttons";
 
 export default function MemorySearchPage() {
@@ -64,7 +64,7 @@ export default function MemorySearchPage() {
     >
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录生活助手" body="跨设备检索你的个人记忆。">
-          <Link href="/login" className="btn btn--primary">登录</Link>
+          <LoginLink className="btn btn--primary">登录</LoginLink>
         </EmptyState>
       ) : null}
 

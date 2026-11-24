@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { paFetch, readToken, sessionCookieOptions, errorResponse, upstreamError } from "@/lib/mobile/server";
 import { sameOriginFailure } from "@/lib/mobile/origin";
 import { normalizeUtcTimestamp } from "@/lib/mobile/session";
+import { loginDestination } from "@/lib/mobile/login-return.mjs";
 
 export const dynamic = "force-dynamic";
 const FLOW_COOKIE = "pa_nexus_login";
@@ -46,7 +47,9 @@ export async function POST(request: NextRequest) {
         redirect_uri:config.callback_url, state, response_mode:"fragment",
         code_challenge:createHash("sha256").update(verifier).digest("base64url")}).toString();
       const result = NextResponse.json({url:url.toString()}, {headers:{"Cache-Control":"no-store"}});
-      result.cookies.set(FLOW_COOKIE, JSON.stringify({state,verifier,expires:Date.now()+300000}), flowOptions);
+      result.cookies.set(FLOW_COOKIE, JSON.stringify({
+        state, verifier, expires: Date.now() + 300000, next: loginDestination(body.next),
+      }), flowOptions);
       return result;
     }
     if (body.action !== "exchange" || typeof body.state !== "string" || typeof body.code !== "string"
@@ -67,7 +70,9 @@ export async function POST(request: NextRequest) {
       body:JSON.stringify({code:body.code,code_verifier:flow.verifier})}, "");
     if (!upstream.ok) {
       const e = await upstreamError(upstream);
-      const result = NextResponse.json({error:{code:e.code,message:e.message}}, {status:e.status});
+      const result = NextResponse.json({
+        error: {code: e.code, message: e.message}, next: loginDestination(flow.next),
+      }, {status: e.status});
       result.cookies.set(FLOW_COOKIE,"",{...flowOptions,maxAge:0});
       result.headers.set("Cache-Control","no-store");
       return result;
@@ -75,7 +80,7 @@ export async function POST(request: NextRequest) {
     const session = await upstream.json();
     const expires = normalizeUtcTimestamp(session.expires_at);
     if (!expires || typeof session.token !== "string") return errorResponse(502,"invalid_session","会话响应无效。");
-    const result = NextResponse.json({ok:true}, {headers:{"Cache-Control":"no-store"}});
+    const result = NextResponse.json({ok:true, next:loginDestination(flow.next)}, {headers:{"Cache-Control":"no-store"}});
     const cookies = sessionCookieOptions(expires,session.token);
     result.cookies.set(cookies.token); result.cookies.set(cookies.expires);
     result.cookies.set(FLOW_COOKIE,"",{...flowOptions,maxAge:0});

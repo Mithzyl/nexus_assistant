@@ -11,6 +11,7 @@ import { formatDateTime } from "@/lib/mobile/format";
 import { uploadFailureText } from "@/lib/mobile/source-labels";
 import { useAuth } from "@/components/mobile/providers";
 import {
+  LoginLink,
   EmptyState,
   ErrorCard,
   LoadingCard,
@@ -86,9 +87,9 @@ export default function SourcesPage() {
             title="登录生活助手"
             body="跨设备查看内容来源与同步状态。"
           >
-            <Link href="/login" className="btn btn--primary">
+            <LoginLink className="btn btn--primary">
               登录账号
-            </Link>
+            </LoginLink>
           </EmptyState>
         ) : null}
 

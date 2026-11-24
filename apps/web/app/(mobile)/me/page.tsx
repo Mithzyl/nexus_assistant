@@ -23,7 +23,7 @@ import {
 import { DataConnections } from "@/components/mobile/data-connections";
 import { NexusLogin } from "@/components/mobile/nexus-login";
 import { useAuth, useUI } from "@/components/mobile/providers";
-import { ConfirmDialog, ScreenHeader } from "@/components/mobile/ui";
+import { LoginLink, ConfirmDialog, ScreenHeader } from "@/components/mobile/ui";
 import { formatDateTime } from "@/lib/mobile/format";
 import { useMatters } from "@/lib/mobile/use-matters";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
@@ -153,9 +153,9 @@ export default function MePage() {
 
           <div className="flex items-center gap-12 mt-12" style={{ flexWrap: "wrap" }}>
             {state === "anonymous" ? (
-              <Link href="/login" className="btn btn--primary btn--small">
+              <LoginLink className="btn btn--primary btn--small">
                 登录
-              </Link>
+              </LoginLink>
             ) : null}
             {state === "offline" ? (
               <button
@@ -193,6 +193,7 @@ export default function MePage() {
       </section>
 
       <DataConnections
+        key={user?.user_id ?? "signed-out"}
         signedIn={signedIn}
         mattersLoading={matters.loading}
         mattersError={Boolean(matters.error)}

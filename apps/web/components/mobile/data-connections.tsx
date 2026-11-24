@@ -92,6 +92,7 @@ export function DataConnections({
   const [openedSubscription, setOpenedSubscription] = useState(false);
 
   const [shortcutSourceId, setShortcutSourceId] = useState("");
+  const [shortcutName, setShortcutName] = useState("");
   const [newSourceType, setNewSourceType] = useState<"calendar" | "reminders">("calendar");
   const [newSourceName, setNewSourceName] = useState("快捷指令上传");
   const [shortcutCredential, setShortcutCredential] =
@@ -102,7 +103,8 @@ export function DataConnections({
 
   const currentSubscription = subscription.data?.subscription ?? null;
   const shortcutSources = sources.filter(
-    (source) => source.source_type === "calendar" || source.source_type === "reminders",
+    (source) => source.sync_enabled &&
+      (source.source_type === "calendar" || source.source_type === "reminders"),
   );
   const recentSync = shortcutSources
     .map((source) => source.last_sync_at)
@@ -136,9 +138,16 @@ export function DataConnections({
   }, [currentSubscription?.subscription_id, currentSubscription?.matter_ids, matters]);
 
   useEffect(() => {
-    if (shortcutSourceId || shortcutSources.length === 0) return;
-    setShortcutSourceId(shortcutSources[0].source_id);
+    if (shortcutSources.some((source) => source.source_id === shortcutSourceId)) return;
+    setShortcutSourceId(shortcutSources[0]?.source_id ?? "");
   }, [shortcutSourceId, shortcutSources]);
+
+  useEffect(() => {
+    if (!signedIn) {
+      setShortcutCredential(null);
+      setShortcutName("");
+    }
+  }, [signedIn]);
 
   const copySecret = async (
     kind: "feed" | "credential",
@@ -150,7 +159,11 @@ export function DataConnections({
       setCopiedSecret(kind);
       window.setTimeout(() => setCopiedSecret(null), 1600);
     } catch {
-      setCalendarError("复制失败，请长按选择链接。");
+      if (kind === "credential") {
+        setShortcutError("复制失败，请手动选择连接码。");
+      } else {
+        setCalendarError("复制失败，请长按选择链接。");
+      }
     }
   };
 
@@ -214,6 +227,7 @@ export function DataConnections({
     }
   };
 
+  /** Generate a credential for exactly one active upload source. */
   const createShortcut = async () => {
     setShortcutBusy("create");
     setShortcutError(null);
@@ -232,7 +246,7 @@ export function DataConnections({
       }
       const created = await createShortcutToken(
         sourceId,
-        "手动上传快捷指令",
+        shortcutName.trim(),
       );
       setShortcutCredential(created);
       shortcutTokens.reload();
@@ -248,6 +262,7 @@ export function DataConnections({
     setShortcutError(null);
     try {
       const revoked = await revokeShortcutToken(tokenId);
+      if (shortcutCredential?.token_id === revoked.token_id) setShortcutCredential(null);
       shortcutTokens.setData(
         (shortcutTokens.data ?? []).map((token) =>
           token.token_id === revoked.token_id ? revoked : token,
@@ -430,7 +445,7 @@ export function DataConnections({
           <summary>
             <span className="tile tile--sm"><Smartphone size={15} /></span>
             <span className="grow">
-              <span className="connection-card__title">快捷指令连接</span>
+              <span className="connection-card__title">快捷指令接入</span>
               <span className="connection-card__detail">
                 {recentSync
                   ? `最近成功上传 ${formatDateTime(recentSync)}`
@@ -444,7 +459,7 @@ export function DataConnections({
           <div className="connection-card__body">
             <ol className="connection-steps">
               <li>选择允许读取的日历与提醒清单。</li>
-              <li>生成一次性设备连接码，按提示填入快捷指令。</li>
+              <li>为选中的上传来源生成连接码。完整连接码只在生成后显示。</li>
               <li>手动上传一次，看到“最近成功上传”即完成。</li>
               <li>确认结果后，可按需设置定时运行。</li>
             </ol>
@@ -488,16 +503,26 @@ export function DataConnections({
                 </label>
               </div>
             )}
+            <label className="field">
+              <span className="field__label">连接码备注</span>
+              <input
+                className="input"
+                value={shortcutName}
+                placeholder="例如 iPhone 快捷指令"
+                maxLength={120}
+                onChange={(event) => setShortcutName(event.target.value)}
+              />
+            </label>
             <button
               type="button"
               className="btn btn--primary btn--small"
               onClick={() => void createShortcut()}
-              disabled={shortcutBusy !== null}
+              disabled={!signedIn || sourcesLoading || sourcesError || !shortcutName.trim() || shortcutBusy !== null}
             >
               {shortcutBusy === "create"
                 ? "正在生成连接码…"
                 : shortcutSources.length > 0
-                  ? "生成一次性连接码"
+                  ? "生成连接码"
                   : "建立连接并生成连接码"}
             </button>
             {shortcutError ? <p className="danger-text">{shortcutError}</p> : null}

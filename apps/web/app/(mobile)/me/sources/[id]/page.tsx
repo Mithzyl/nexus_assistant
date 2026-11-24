@@ -15,6 +15,7 @@ import {
   ConfirmDialog,
   ErrorCard,
   LoadingCard,
+  LoginRequired,
   Notice,
   PageShell,
   Pill,
@@ -130,6 +131,9 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
       title={data?.display_name || "来源详情"}
       subtitle={data ? `${TYPE_LABEL[data.source_type]} · ${data.item_count} 条副本` : undefined}
     >
+      {state === "anonymous" ? (
+        <LoginRequired title="登录后查看来源详情" body="登录账号后可以查看和管理此来源。" />
+      ) : null}
       {source.loading ? <LoadingCard label="正在读取来源…" /> : null}
       {source.error ? (
         <ErrorCard message={errorText(source.error)} onRetry={source.reload} />
