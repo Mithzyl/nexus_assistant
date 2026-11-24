@@ -60,17 +60,22 @@ async def run(component, *, once=False):
         active_state={'job':None}
         heartbeat=asyncio.create_task(heartbeat_loop(app.state.session_factory, component=component, instance_id=identity, interval_seconds=settings.commute_heartbeat_interval_seconds, stop=stop, active_job=lambda: active_state['job'], lease_seconds=settings.commute_job_lease_seconds))
         try:
-            from assistant_api.services import browser_push
+            from assistant_api.services import bark_notifications, browser_push
             notifications = (asyncio.create_task(browser_push.run_worker(app, stop))
                 if component == 'worker' and app.state.settings.web_push_enabled and not once else None)
+            bark_worker = (asyncio.create_task(bark_notifications.run_worker(app, stop))
+                if component == 'worker' and settings.bark_web_origin and not once else None)
             if component == 'worker' and once:
                 await browser_push.tick(app)
+                await bark_notifications.tick(app)
             try:
                 await process_loop(app,component,identity,stop,once,active_state)
             finally:
                 stop.set()
                 if notifications:
                     await notifications
+                if bark_worker:
+                    await bark_worker
         finally:
             stop.set()
             await heartbeat

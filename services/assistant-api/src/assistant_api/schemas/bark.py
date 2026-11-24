@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -15,6 +15,8 @@ def _iso(value: datetime | None) -> str | None:
 class BarkStatusRead(BaseModel):
     configured: bool
     auto_reminders_enabled: bool
+    assistant_notifications_enabled: bool = False
+    web_links_available: bool = False
     available: bool
     state: Literal["unconfigured", "disabled", "enabled"]
     base_url_host: str = "api.day.app"
@@ -34,7 +36,15 @@ class BarkBindingWrite(BaseModel):
 
 class BarkSettingUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    auto_reminders_enabled: bool
+    auto_reminders_enabled: bool | None = None
+    assistant_notifications_enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def require_setting(self):
+        """Require at least one explicit switch value for a partial update."""
+        if self.auto_reminders_enabled is None and self.assistant_notifications_enabled is None:
+            raise ValueError("At least one Bark notification setting is required")
+        return self
 
 
 class BarkTestRequest(BaseModel):

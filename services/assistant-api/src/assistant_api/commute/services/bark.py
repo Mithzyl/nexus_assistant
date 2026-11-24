@@ -1,10 +1,8 @@
-"""Per-account Bark binding, sender and explicit test. Keys never leave the DB."""
+"""Per-account Bark binding, sender and explicit test. Keys are never returned."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from urllib.parse import quote
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,11 +35,15 @@ class BarkNotifier:
     def configured(self) -> bool:
         return bool(self._key)
 
-    async def send(self, *, title: str, body: str, group: str = "PA") -> BarkDelivery:
+    async def send(self, *, title: str, body: str, group: str = "PA", url: str | None = None) -> BarkDelivery:
+        """Send one message to Bark with an optional Web destination for a tap."""
+        payload = {"device_key": self._key, "title": title, "body": body, "group": group}
+        if url:
+            payload["url"] = url
         try:
             response = await self._client.post(
-                f"{self._base_url}/{quote(self._key, safe='')}",
-                json={"title": title, "body": body, "group": group},
+                f"{self._base_url}/push",
+                json=payload,
             )
         except (httpx.TimeoutException, httpx.RequestError):
             return BarkDelivery("unknown", "发送结果暂不确定，请稍后重试。", "bark_network_unknown")
@@ -70,13 +72,16 @@ async def _row(db: AsyncSession, user_id: str, *, create: bool = False) -> BarkR
     return row
 
 
-def _status(row: BarkReminderSetting | None) -> BarkStatusRead:
+def _status(row: BarkReminderSetting | None, web_origin: str | None) -> BarkStatusRead:
+    """Report account settings and deployment link availability without returning the key."""
     configured = bool(row and row.device_key)
     enabled = bool(configured and row and row.auto_reminders_enabled)
     state = "enabled" if enabled else ("disabled" if configured else "unconfigured")
     return BarkStatusRead(
         configured=configured,
         auto_reminders_enabled=enabled,
+        assistant_notifications_enabled=bool(configured and row and row.assistant_notifications_enabled_at),
+        web_links_available=bool(web_origin),
         available=configured,
         state=state,
         last_test_status=row.last_test_status if row else None,
@@ -84,11 +89,13 @@ def _status(row: BarkReminderSetting | None) -> BarkStatusRead:
     )
 
 
-async def status(db: AsyncSession, user_id: str) -> BarkStatusRead:
-    return _status(await _row(db, user_id))
+async def status(db: AsyncSession, user_id: str, *, web_origin: str | None = None) -> BarkStatusRead:
+    """Read the signed-in account's Bark settings."""
+    return _status(await _row(db, user_id), web_origin)
 
 
-async def bind(db: AsyncSession, user_id: str, device_key: str) -> BarkStatusRead:
+async def bind(db: AsyncSession, user_id: str, device_key: str, *, web_origin: str | None = None) -> BarkStatusRead:
+    """Bind a device and require fresh opt-in before it receives account notifications."""
     key = device_key.strip()
     if len(key) < 8:
         raise InvalidRequestError("bark_key_invalid", "Bark Device Key 不完整。")
@@ -99,40 +106,56 @@ async def bind(db: AsyncSession, user_id: str, device_key: str) -> BarkStatusRea
     row.device_key = key
     # Saving a key never enables timed reminders or sends a message.
     row.auto_reminders_enabled = False
+    row.assistant_notifications_enabled_at = None
     await db.commit()
-    return await status(db, user_id)
+    return await status(db, user_id, web_origin=web_origin)
 
 
-async def unbind(db: AsyncSession, user_id: str) -> BarkStatusRead:
+async def unbind(db: AsyncSession, user_id: str, *, web_origin: str | None = None) -> BarkStatusRead:
+    """Clear the binding and stop future notifications for both switches."""
     row = await _row(db, user_id)
     if row is None or not row.device_key:
         raise NotFoundError("bark_not_configured", "当前账号尚未绑定 Bark。")
     row.device_key = None
     row.auto_reminders_enabled = False
+    row.assistant_notifications_enabled_at = None
     row.last_test_status = None
     row.last_test_at = None
     await db.commit()
-    return await status(db, user_id)
+    return await status(db, user_id, web_origin=web_origin)
 
 
-async def set_auto_reminders(db: AsyncSession, user_id: str, enabled: bool) -> BarkStatusRead:
+async def update_settings(
+    db: AsyncSession, user_id: str, *, auto_reminders_enabled: bool | None,
+    assistant_notifications_enabled: bool | None, web_origin: str | None,
+) -> BarkStatusRead:
+    """Update only the supplied switches and retain the first opt-in time."""
     row = await _row(db, user_id)
     if row is None or not row.device_key:
         raise ConflictError("bark_not_configured", "请先绑定 Bark Key。")
-    row.auto_reminders_enabled = enabled
+    if assistant_notifications_enabled and not web_origin:
+        raise ConflictError("bark_web_links_unavailable", "服务端尚未配置通知跳转地址。")
+    if auto_reminders_enabled is not None:
+        row.auto_reminders_enabled = auto_reminders_enabled
+    if assistant_notifications_enabled is not None:
+        row.assistant_notifications_enabled_at = (
+            (row.assistant_notifications_enabled_at or utc_now()) if assistant_notifications_enabled else None
+        )
     await db.commit()
-    return await status(db, user_id)
+    return await status(db, user_id, web_origin=web_origin)
 
 
-async def send_test(db: AsyncSession, user_id: str, transport=None) -> BarkTestRead:
+async def send_test(db: AsyncSession, user_id: str, transport=None, *, web_origin: str | None = None) -> BarkTestRead:
+    """Send one explicitly requested test with a link to Today when configured."""
     row = await _row(db, user_id)
     if row is None or not row.device_key:
         raise ConflictError("bark_not_configured", "请先绑定 Bark Key。")
     notifier = BarkNotifier(row.device_key, transport=transport)
     try:
         delivery = await notifier.send(
-            title="PA 通勤通知测试",
+            title="生活助手通知测试",
             body="这是一条由你主动触发的 Bark 测试通知。",
+            url=f"{web_origin}/today" if web_origin else None,
         )
     finally:
         await notifier.aclose()

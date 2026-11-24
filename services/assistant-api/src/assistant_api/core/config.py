@@ -8,6 +8,7 @@ app without mutating global state.
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -126,8 +127,26 @@ class Settings(BaseSettings):
     commute_ai_timeout_seconds: float = Field(default=90.0, ge=10, le=180)
 
     # Bark is bound per authenticated account and stored in the PA database.
-    # This timeout is the only global Bark setting; no owner/key env fallback.
+    # The public Web origin is deployment-wide; there is no owner/key env fallback.
     bark_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+    bark_web_origin: str | None = None
+
+    @field_validator("bark_web_origin")
+    @classmethod
+    def _validate_bark_web_origin(cls, value: str | None) -> str | None:
+        """Use a deployment-controlled HTTPS origin for links sent to phones."""
+        if not value or not value.strip():
+            return None
+        value = value.strip()
+        parts = urlsplit(value)
+        if (
+            parts.scheme != "https" or not parts.hostname or parts.username is not None
+            or parts.path not in {"", "/"} or any(char in value for char in "\\?#")
+            or any(char.isspace() or ord(char) < 32 for char in value)
+        ):
+            raise ValueError("Bark links require a plain HTTPS Web origin")
+        _ = parts.port
+        return value.rstrip("/")
 
     commute_check_interval_minutes: int = Field(default=10, ge=5, le=60)
     commute_max_auto_reminders_per_day: int = Field(default=2, ge=1, le=2)

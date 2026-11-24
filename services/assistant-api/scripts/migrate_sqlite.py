@@ -23,12 +23,14 @@ VERSION = "0001_sqlite_baseline"
 NEXT_ACTION_VERSION = "0030_next_actions"
 INTAKE_REPLY_VERSION = "0031_intake_replies"
 CAPTURE_VERSION = "0032_intake_capture"
+BARK_NOTIFICATION_VERSION = "0033_bark_notifications"
 COLUMN_MIGRATIONS = (
     (INTAKE_REPLY_VERSION, "nexus_runs", "reply_state", "VARCHAR(20)"),
     (INTAKE_REPLY_VERSION, "nexus_runs", "reply_expires_at", "DATETIME"),
     (CAPTURE_VERSION, "nexus_runs", "intake_stage", "VARCHAR(24)"),
     (CAPTURE_VERSION, "nexus_runs", "capture_lease_expires_at", "DATETIME"),
     (CAPTURE_VERSION, "nexus_runs", "capture_dispatch_started_at", "DATETIME"),
+    (BARK_NOTIFICATION_VERSION, "bark_reminder_settings", "assistant_notifications_enabled_at", "DATETIME"),
     (NEXT_ACTION_VERSION, "matter_todos", "priority", "VARCHAR(8)"),
     (NEXT_ACTION_VERSION, "matter_todos", "estimated_duration_minutes", "INTEGER"),
     (NEXT_ACTION_VERSION, "matter_todos", "available_after", "DATETIME"),

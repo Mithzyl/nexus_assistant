@@ -11,9 +11,10 @@ Bark 是服务器端通知渠道。账号归属只来自当前登录会话；App
 - `user_id`：当前登录 PA 用户；
 - `device_key`：开发阶段**明文**存储。已知风险，不是生产级方案；后续加密。
 - `auto_reminders_enabled`：默认 `false`；
+- `assistant_notifications_enabled_at`：账号开启助手追问和到期提醒的时间，默认空。开启后只处理这个时间之后产生的通知；
 - `last_test_status` / `last_test_at`。
 
-Key 不进入查询响应、日志、异常或 Git。状态响应只有是否绑定、是否开启和测试结果。
+Key 放在 Bark POST 请求体中，查询响应、日志和点击链接均不包含 Key。
 
 ## API
 
@@ -26,9 +27,25 @@ POST   /api/v1/commute/bark/test      {"confirm_send": true}
 ```
 
 - 保存 Key 不自动开启定时提醒，也不发送消息。
-- 替换 Key 覆盖当前账号的旧 Key；解绑清空 Key 并关闭自动提醒。
+- 同一设置接口也接受 `{"assistant_notifications_enabled": true}`，可单独更新一个开关。返回状态包含 `web_links_available` 和 `assistant_notifications_enabled`。
+- 替换 Key 覆盖当前账号的旧 Key。替换或解绑均关闭两个自动通知开关。
 - 测试发送只在账号已绑定且显式确认时执行；自动提醒关闭也可以测试。
 - 返回 `accepted` 只代表 Bark 接受 HTTP 请求，不代表手机收到。
+
+## 点击打开 Web
+
+先备份 Assistant 数据库并执行增量迁移 `0033_bark_notifications`。在 Assistant 统一启动入口使用的环境文件中配置 `ASSISTANT_BARK_WEB_ORIGIN`，值为 iPhone 能访问的 Web HTTPS 源，例如 `https://assistant.example.com`。通勤自动提醒仍由原调度器和发送队列处理。未配置地址时，原通勤提醒继续发送，助手追问和到期提醒暂不可开启。
+
+| 后台触发条件 | Bark 点击地址 |
+|---|---|
+| 账号开启助手通知，助手保存仍待回复且未过期的追问 | `/ask?reply=<local_run_id>` |
+| 账号开启通勤自动提醒，通勤自动检查产生一条提醒 | `/me/commute/<plan_id>` |
+| 账号开启助手通知，待办或日程提醒到期 | `/today` |
+| 已绑定设备并手动确认测试发送 | `/today` |
+
+助手工作进程直接读取已保存的业务状态。待办与日程共用浏览器通知的到期与取消判断，无需浏览器订阅。工作进程恢复后补发最近 30 分钟内仍有效的提醒，且不早于账号开启时间。追问内容、事项标题和地址不会写进新增助手通知的正文。接收者未登录时，可以从目标页进入登录并回到原链接。页面继续按登录账号验证记录归属。
+
+助手通知每个账号、每次业务发生只领取一次，用 `bark_notification_deliveries` 记录发出后的结果。连接中断或发送进程中止时保留未知状态，不自动重发。已有通勤通知继续记录在 `notification_outbox`。
 
 ## 发送状态
 
@@ -36,14 +53,13 @@ POST   /api/v1/commute/bark/test      {"confirm_send": true}
 |---|---|
 | Bark accepted | `accepted_by_bark` |
 | Bark 明确失败 | `failed / bark_failed` |
-| 超时/连接中断/无法解析 | `unknown / bark_unknown`，不重试 |
+| 超时或连接中断 | `unknown`，不重试 |
 | 未绑定/自动提醒关闭 | `cancelled / bark_not_configured` 或 `bark_not_enabled` |
 
 不启用 APNs 回退。APNs 代码保留但当前不可达。
 
-## App
+## 使用入口
 
-“我的 → 通知设置”读取当前账号状态，提供保存/替换/解绑、自动提醒开关和
-真实测试发送。Key 用 SecureField 提交，不在 App 持久化；重启后从后端恢复。
+Web「我的 → Bark 提醒」可绑定、替换、解绑设备，分别启用通勤和助手通知，并确认发送测试提醒。iOS 原生设置继续支持原有通勤开关。
 
 未知 Key、手机是否收到必须由用户真实验证；MockTransport 测试不能替代。

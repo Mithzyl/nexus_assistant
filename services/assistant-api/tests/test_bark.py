@@ -1,5 +1,7 @@
 """Per-account Bark binding, status, redaction and sender outcomes."""
 
+import json
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -88,7 +90,9 @@ async def test_replace_and_unbind_clear_previous_key(bark_app):
     await client.post("/api/v1/commute/bark/binding", headers=auth(token), json={"device_key": first})
     await client.post("/api/v1/commute/bark/binding", headers=auth(token), json={"device_key": second})
     await client.post("/api/v1/commute/bark/test", headers=auth(token), json={"confirm_send": True})
-    assert calls[-1].url.path.endswith(second)
+    assert calls[-1].url.path == "/push"
+    assert json.loads(calls[-1].content)["device_key"] == second
+    assert second not in str(calls[-1].url)
     await client.delete("/api/v1/commute/bark/binding", headers=auth(token))
     missing = await client.post("/api/v1/commute/bark/test", headers=auth(token), json={"confirm_send": True})
     assert missing.status_code == 409

@@ -1,4 +1,4 @@
-"""Outbox delivery worker for APNs."""
+"""Deliver the commute notification outbox through the account's Bark binding."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import hashlib
 import json
 import random
 from datetime import datetime, timedelta
+from urllib.parse import quote
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -156,7 +157,9 @@ async def deliver_outbox(
     if outbox is None or outbox.status != "sending" or outbox.lease_owner != worker_id:
         return outbox
     now = ensure_aware(runtime.now())
-    plan = await db.scalar(select(CommutePlan).where(CommutePlan.plan_id == outbox.plan_id))
+    plan = await db.scalar(select(CommutePlan).where(
+        CommutePlan.plan_id == outbox.plan_id, CommutePlan.user_id == outbox.user_id,
+    ))
     instance = await db.scalar(
         select(CommuteInstance).where(CommuteInstance.instance_id == outbox.instance_id)
     )
@@ -226,6 +229,8 @@ async def deliver_outbox(
         return await finish_early("cancelled", "bark_not_enabled")
 
     alert = (outbox.payload_json.get("aps") or {}).get("alert") or {}
+    origin = runtime.settings.bark_web_origin
+    web_link = {"url": f"{origin}/me/commute/{quote(plan.plan_id, safe='')}"} if origin else {}
     # End the read transaction before the network wait; SQLite must never stay
     # locked while Bark is slow or unreachable.
     await db.commit()
@@ -235,6 +240,7 @@ async def deliver_outbox(
         delivery = await bark.send(
             title=str(alert.get("title") or "PA 通勤提醒"),
             body=str(alert.get("body") or "通勤建议已更新。"),
+            **web_link,
         )
     except Exception:  # noqa: BLE001 - an uncertain send must not be retried blindly
         send_error = "bark_send_unknown"
