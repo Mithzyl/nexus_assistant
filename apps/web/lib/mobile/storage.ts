@@ -120,6 +120,8 @@ export function clearAccountCaches(accountId: string | null): void {
     // Ignore storage failures in private mode.
   }
   try {
+    window.sessionStorage.removeItem(accountKey("pa.web.ask.history", accountId));
+    window.sessionStorage.removeItem(accountKey("pa.web.ask.previews", accountId));
     window.sessionStorage.removeItem("pa.web.ask.composer");
     window.sessionStorage.removeItem("pa.web.ask.draft");
   } catch {

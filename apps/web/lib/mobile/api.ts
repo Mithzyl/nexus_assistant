@@ -1012,6 +1012,8 @@ export interface EmbeddedCard {
 }
 
 export interface IntakePendingContext {
+  write_state?: "applied" | "not_applied" | "uncertain";
+  applied_receipts?: { operation_id: string; summary: string }[];
   /** An explicit empty array suppresses cards; older responses without a list may display their execution receipt. */
   cards?: EmbeddedCard[];
   choices?: string[];

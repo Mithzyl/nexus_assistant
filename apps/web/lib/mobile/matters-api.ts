@@ -539,10 +539,12 @@ export class IntakeStreamError extends ApiError {
   workflowExecutionId: string | null;
   outcome: string;
   workflowError: WorkflowError;
-  constructor(data: {error: WorkflowError; local_run_id?: string | null; workflow_execution_id?: string | null; outcome?: string}) {
+  pendingContext?: import("./api").IntakePendingContext;
+  constructor(data: {pending_context?: import("./api").IntakePendingContext; error: WorkflowError; local_run_id?: string | null; workflow_execution_id?: string | null; outcome?: string}) {
     const e = data.error;
     super(e.outcome_is_known ? 502 : 504, e.error_code, e.public_message, e.is_retryable);
     this.workflowError = e;
+    this.pendingContext = data.pending_context;
     this.localRunId = data.local_run_id ?? null;
     this.workflowExecutionId = data.workflow_execution_id ?? null;
     this.outcome = data.outcome ?? (e.outcome_is_known ? "failed" : "unknown");

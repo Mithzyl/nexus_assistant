@@ -20,6 +20,7 @@ import { useAuth, useUI } from "@/components/mobile/providers";
 import { LoadingCard, LoginRequired, ScreenHeader } from "@/components/mobile/ui";
 import { MemoryCandidates, type SelectedMemory } from "@/components/mobile/account-memory";
 import { MatterDraftSheet } from "@/components/mobile/matter-draft-sheet";
+import { IntakeFailureActions } from "@/components/mobile/intake-failure-actions";
 import { ApiOperationCard } from "@/components/mobile/api-operation-card";
 import type {
   IntakePendingContext,
@@ -297,17 +298,26 @@ function StatusCard({
 
 /** Restore intake replies and cards, placing clarification choices after their supporting card. */
 export default function AskPage() {
+  const { user } = useAuth();
+  return <AccountAskPage key={user?.user_id ?? "guest"} />;
+}
+
+/** Restore only the signed-in account's cached history on mount. */
+function AccountAskPage() {
   const { state, user, renewing, renewMessage } = useAuth();
+  const accountId = user?.user_id ?? null;
+  const historyKey = accountKey("pa.web.ask.history", accountId);
+  const draftsKey = accountKey("pa.web.ask.previews", accountId);
   const ask = useAskStore();
   const [draft, setDraft] = useState("");
   const [composerError, setComposerError] = useState<string | null>(null);
   const [selectedMemories, setSelectedMemories] = useState<SelectedMemory[]>([]);
   const [memoryRefresh, setMemoryRefresh] = useState(0);
   const [intakeDraft, setIntakeDraft] = useState<MatterDraft | null>(null);
-  const [pendingDrafts, setPendingDrafts] = useState<MatterDraft[]>([]);
+  const [pendingDrafts, setPendingDrafts] = useState<MatterDraft[]>(() => accountId ? readSession(draftsKey, []) : []);
   const [liveTurn, setLiveTurn] = useState<{ question: string; answer: string } | null>(null);
   const [intakeAnswers, setIntakeAnswers] = useState<IntakeAnswer[]>([]);
-  const [serverIntakeResults, setServerIntakeResults] = useState<MatterIntakeResult[]>([]);
+  const [serverIntakeResults, setServerIntakeResults] = useState<MatterIntakeResult[]>(() => accountId ? readSession(historyKey, []) : []);
   const [processing, setProcessing] = useState(false);
   const [trackedKey, setTrackedKey] = useState<string | null>(null);
   const [trackedResult, setTrackedResult] = useState<MatterIntakeResult | null>(null);
@@ -316,6 +326,7 @@ export default function AskPage() {
   const [supplementQuestion, setSupplementQuestion] = useState<string | null>(null);
   const [clarificationContext, setClarificationContext] =
     useState<IntakePendingContext>({});
+  const [streamFailureContext, setStreamFailureContext] = useState<IntakePendingContext | null>(null);
   const [operationFailure, setOperationFailure] = useState<string | null>(null);
   const [continuationRunId, setContinuationRunId] = useState<string | null>(null);
   const [replyExpiresAt, setReplyExpiresAt] = useState<string | null>(null);
@@ -324,7 +335,9 @@ export default function AskPage() {
   const [dismissingReply, setDismissingReply] = useState(false);
   const [replyClock, setReplyClock] = useState(() => Date.now());
   const [recoveryRunId, setRecoveryRunId] = useState<string | null>(null);
-  const [intakeHistoryLoading, setIntakeHistoryLoading] = useState(false);
+  const [intakeHistoryLoading, setIntakeHistoryLoading] = useState(true);
+  const [intakeHistoryError, setIntakeHistoryError] = useState("");
+  const [draftsError, setDraftsError] = useState("");
   const intakeKey = useRef<IntakeRequestKey | null>(null);
   const hydratedAnswerKey = useRef<string | null>(null);
   const intakeHistorySeq = useRef(0);
@@ -401,28 +414,29 @@ export default function AskPage() {
     if (state !== "signedIn") return;
     const requestId = ++intakeHistorySeq.current;
     setIntakeHistoryLoading(true);
-    const [draftResult, historyResult] = await Promise.allSettled([
-      listDrafts("preview", null, signal),
-      listIntakeResults(20, signal),
+    const current = () => !signal?.aborted && requestId === intakeHistorySeq.current;
+    await Promise.all([
+      listDrafts("preview", null, signal).then((rows) => {
+        if (!current()) return;
+        setPendingDrafts(rows);
+        writeSession(draftsKey, rows);
+        setDraftsError("");
+      }).catch(() => { if (current()) setDraftsError("待确认草稿同步失败"); }),
+      listIntakeResults(20, signal).then((rows) => {
+        if (!current()) return;
+        setServerIntakeResults(rows);
+        writeSession(historyKey, rows);
+        setIntakeHistoryError("");
+      }).catch(() => { if (current()) setIntakeHistoryError("问答历史同步失败"); })
+        .finally(() => { if (current()) setIntakeHistoryLoading(false); }),
     ]);
-    if (!signal?.aborted && requestId === intakeHistorySeq.current) {
-      if (draftResult.status === "fulfilled") {
-        setPendingDrafts(draftResult.value);
-      }
-      if (historyResult.status === "fulfilled") {
-        setServerIntakeResults(historyResult.value);
-      }
-      setIntakeHistoryLoading(false);
-    }
-  }, [state]);
+  }, [state, draftsKey, historyKey]);
 
   useEffect(() => {
     const controller = new AbortController();
     intakeHistorySeq.current += 1;
-    setServerIntakeResults([]);
     setReplyExpiresAt(null);
     setDismissedReply(state === "signedIn" && readSession<string | boolean>(dismissedReplyStorageKey, false));
-    setPendingDrafts([]);
     setIntakeDraft(null);
     setSupplementQuestion(null);
     setClarificationContext({});
@@ -440,7 +454,7 @@ export default function AskPage() {
     } else {
       setIntakeHistoryLoading(false);
     }
-    return () => controller.abort();
+    return () => { controller.abort(); intakeHistorySeq.current += 1; };
   }, [dismissedReplyStorageKey, intakeRequestStorageKey, refreshServerIntake, state, user?.user_id]);
 
   useEffect(() => {
@@ -462,6 +476,7 @@ export default function AskPage() {
     if (!trackedKey || state !== "signedIn") return;
     const controller = new AbortController();
     let timer: number | undefined;
+    let missingAttempts = 0;
     const poll = async () => {
       let again = true;
       try {
@@ -499,9 +514,12 @@ export default function AskPage() {
       } catch (caught) {
         // A disconnected initial request may never have reached the server.
         // Keep its saved key and text so an explicit retry can reuse both.
-        if (caught instanceof ApiError && caught.status === 404 && !processing) again = false;
+        if (caught instanceof ApiError && caught.status === 404 && !processing && ++missingAttempts >= 5) {
+          again = false;
+          setOperationFailure("暂时查不到原请求，原文已保留。");
+        }
       } finally {
-        if (again && !controller.signal.aborted) timer = window.setTimeout(poll, 600);
+        if (again && !controller.signal.aborted) timer = window.setTimeout(poll, 600 * (1 + missingAttempts));
       }
     };
     void poll();
@@ -557,7 +575,7 @@ export default function AskPage() {
   }, [newest?.phase, newest?.answer]);
 
   const canSend = draft.trim().length > 0 && state === "signedIn" && !processing && !recovering &&
-    !dismissingReply && (!intakeHistoryLoading || serverIntakeResults.length > 0);
+    !dismissingReply;
 
   /** Dismiss the displayed clarification and treat the next typed submission as a new request. */
   const dismissReply = async () => {
@@ -599,7 +617,7 @@ export default function AskPage() {
     const skipPendingReply = retry ? Boolean(retry.ignorePendingReply) : !activeContinuation && ignorePendingReply;
     const dismissedReplyRunId = retry ? retry.dismissedReplyRunId
       : skipPendingReply && typeof dismissedReply === "string" ? dismissedReply : null;
-    if (!value || processing || recovering || dismissingReply || (intakeHistoryLoading && !serverIntakeResults.length)) return;
+    if (!value || processing || recovering || dismissingReply) return;
     if (state !== "signedIn") {
       setComposerError("登录后就能交给助手，内容先留着。");
       return;
@@ -613,6 +631,7 @@ export default function AskPage() {
     setClarificationContext({});
     setOperationFailure(null);
     setProcessing(true);
+    setStreamFailureContext(null);
     setLiveTurn({ question: value, answer: "" });
     setDraft(original);
     writeSession(composerStorageKey, original);
@@ -741,8 +760,8 @@ export default function AskPage() {
     } catch (caught) {
       if (caught instanceof IntakeStreamError) {
         if (caught.localRunId) setRecoveryRunId(caught.localRunId);
-        if (caught.workflowError.outcome_is_known) setComposerError(caught.message);
-        else setOperationFailure(caught.message);
+        setStreamFailureContext(caught.pendingContext ?? {});
+        setOperationFailure(caught.message);
         void refreshServerIntake();
         return;
       }
@@ -765,14 +784,15 @@ export default function AskPage() {
     }
   }, [
     activeReplyRunId, composerStorageKey, dismissingReply, dismissedReply, dismissedReplyStorageKey, draft,
-    expiresAt, ignorePendingReply, intakeHistoryLoading, intakeRequestStorageKey, linkedReply, processing, recovering,
-    refreshServerIntake, selectedMemories, serverIntakeResults.length, state, toast,
+    expiresAt, ignorePendingReply, intakeRequestStorageKey, linkedReply, processing, recovering,
+    refreshServerIntake, selectedMemories, state, toast,
   ]);
 
-  const recoverResult = async () => {
+  /** Reconcile the selected history row or the currently tracked submission. */
+  const recoverResult = async (selectedId?: string) => {
     setOperationFailure(null);
     try {
-      const result = intakeKey.current
+      const result = selectedId ? await getIntakeResult(selectedId) : intakeKey.current
         ? await getIntakeStatus(intakeKey.current.key)
         : recoveryRunId ? await getIntakeResult(recoveryRunId) : null;
       if (!result) {
@@ -918,6 +938,11 @@ export default function AskPage() {
         </section>
       ) : null}
 
+      {intakeHistoryLoading && unifiedHistory.length === 0 ? <LoadingCard label="正在同步历史…" /> : null}
+      {intakeHistoryError || draftsError ? <div role="alert">
+        {[intakeHistoryError, draftsError].filter(Boolean).join("、")}。
+        <button type="button" onClick={() => void refreshServerIntake()}>重试</button>
+      </div> : null}
       {unifiedHistory.length > 0 ? (
         <section className="ask-stream" style={{ marginBottom: 16 }}>
           {unifiedHistory.map((item, index) => {
@@ -967,25 +992,14 @@ export default function AskPage() {
                   {isFailure ? (
                     <div className="ask-failure">
                       <p className="ask-failure__title">{isFollowUp ? "这次跟进没处理完" : "这次没处理完"}</p>
-                      <p className="ask-failure__body">
-                        {isFollowUp
-                          ? "这次跟进没跑完，内容已经存好，晚点再看看。"
-                          : `你刚才那条「${question}」我收到了，但这次没能跑完。内容我先存着。`}
-                      </p>
+                      <IntakeFailureActions context={pendingContext} onEdit={isFollowUp ? undefined : () => {
+                        setDraft(question);
+                        inputRef.current?.focus();
+                      }} onCheck={serverItem ? () => void recoverResult(item.local_run_id) : undefined} />
                       <div className="ask-failure__actions">
-                        <button
-                          type="button"
-                          className="btn btn--secondary btn--small"
-                          onClick={() => {
-                            if (!isFollowUp) setDraft(question);
-                            inputRef.current?.focus();
-                          }}
-                        >
-                          重新编辑
-                        </button>
                         <details className="ask-stored">
                           <summary>查看已存内容</summary>
-                          <p>原话还留着，可以改了再发。</p>
+                          <p>原话已保留。</p>
                           {serverItem && item.error?.details_reference_id ? (
                             <p>问题编号：{item.error.details_reference_id}</p>
                           ) : null}
@@ -1074,7 +1088,6 @@ export default function AskPage() {
             </div>
             );
           })}
-          {intakeHistoryLoading ? <LoadingCard label="正在同步历史…" /> : null}
         </section>
       ) : null}
 
@@ -1086,7 +1099,7 @@ export default function AskPage() {
         </div>
       </section> : null}
 
-      {timeline.length === 0 && unifiedHistory.length === 0 ? (
+      {state === "signedIn" && !liveTurn && !intakeHistoryLoading && !intakeHistoryError && timeline.length === 0 && unifiedHistory.length === 0 ? (
         <section style={{ padding: "0 var(--m-gutter)" }}>
           <div className="card">
             <p className="card-title" style={{ fontSize: 18 }}>
@@ -1252,25 +1265,20 @@ export default function AskPage() {
         </div>
       ) : null}
 
-      {operationFailure ? (
+      {operationFailure && !(recoveryRunId && serverIntakeResults.some((row) => row.local_run_id === recoveryRunId && ["failed", "unknown"].includes(row.outcome))) ? (
         <div className="composer-operation composer-operation--amber" role="alert">
           <strong>
             {operationFailure.includes("正在核实") ? "正在核实结果" : "还没拿到确定结果"}
           </strong>
           <p>{operationFailure}</p>
+          {streamFailureContext ? <IntakeFailureActions context={streamFailureContext}
+            onEdit={() => inputRef.current?.focus()} onCheck={() => void recoverResult()} /> :
           <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
             <button type="button" className="btn btn--secondary btn--small" onClick={() => void recoverResult()}>
               查询原结果
             </button>
-            <button
-              type="button"
-              className="btn btn--quiet btn--small"
-              onClick={() => void send(draft)}
-              disabled={!draft.trim() || processing || dismissingReply || (intakeHistoryLoading && !serverIntakeResults.length)}
-            >
-              继续原操作
-            </button>
-          </div>
+
+          </div>}
         </div>
       ) : null}
 

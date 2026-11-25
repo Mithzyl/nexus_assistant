@@ -62,3 +62,16 @@ test("legacy response without cards still renders its execution receipt", () => 
   assert.match(html, /会前整理报销资料/);
   assert.deepEqual(context, before);
 });
+
+/** Check available failure actions for committed, uncommitted and partially unknown business effects. */
+test("failed final answers only offer editing after confirmed non-write", () => {
+  const { IntakeFailureActions } = loadTypeScriptModule(new URL("../components/mobile/intake-failure-actions.tsx", import.meta.url));
+  for (const state of ["applied", "uncertain", "not_applied"]) {
+    const context = {write_state: state, applied_receipts: state === "not_applied" ? [] : [{summary: "创建评审日程"}]};
+    const html = renderToStaticMarkup(createElement(IntakeFailureActions, {context, onEdit() {}, onCheck() {}}));
+    assert.equal(html.includes("重新编辑"), state === "not_applied");
+    assert.equal(html.includes("/today"), state !== "not_applied");
+    assert.equal(html.includes("创建评审日程"), state !== "not_applied");
+    assert.equal(html.includes("查询原结果"), state === "uncertain");
+  }
+});
