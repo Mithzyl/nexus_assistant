@@ -359,7 +359,7 @@ async def process_response(db, app, payload):
             for item in business['data'].get('items', []):
                 dependencies[item['entry_id']] = item['source']
             flow['memory_sources'] = list(dependencies.values())
-        result = {**business, 'executed_arguments': actual.body, 'executed_call': actual.model_dump(mode='json'),
+        result = {**business, 'effect': operation.effect, 'executed_arguments': actual.body, 'executed_call': actual.model_dump(mode='json'),
                   'proposed_summary': call.summary}
         flow['receipts'].append(result)
         return await finish(db, root, receipt, flow, outcome(identity, 'succeeded', result=result))
@@ -399,7 +399,7 @@ async def process_response(db, app, payload):
             }
         # This marker is produced only after the shared confirmation transaction
         # rolled back. A preview may persist; it is not a saved calendar event.
-        result = {**business, 'executed_arguments': actual.body,
+        result = {**business, 'effect': operation.effect, 'executed_arguments': actual.body,
                   'executed_call': actual.model_dump(mode='json'), 'proposed_summary': call.summary,
                   'recovery_guidance': '本次正式变更未保存，预览草稿仍保留；此前成功操作保持有效。'
                       '按真实冲突选择调整当前提议或用 ask_user 询问，不重做已成功操作，'

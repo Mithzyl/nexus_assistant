@@ -170,7 +170,8 @@ async def intake_stream(request: Request, payload: schemas.IntakeRequest,
                     ignore_pending_reply=payload.ignore_pending_reply, entry_mode=payload.entry_mode,
                     ignore_pending_clarification=payload.ignore_pending_clarification,
                     dismissed_reply_run_id=payload.dismissed_reply_run_id,
-                    memory_disclosures=[item.model_dump() for item in payload.memory_disclosures])
+                    memory_disclosures=[item.model_dump() for item in payload.memory_disclosures],
+                    on_committed=lambda: queue.put_nowait(("accepted", {})))
                 if result["outcome"] in {"failed", "unknown", "cancelled"}:
                     row = await db.get(NexusRun, result["local_run_id"]) if result.get("local_run_id") else None
                     queue.put_nowait(("error", stream_failure(result, row)))
@@ -200,7 +201,6 @@ async def intake_stream(request: Request, payload: schemas.IntakeRequest,
     task.add_done_callback(active.discard)
     async def events():
         """Send accepted, cumulative answers and the final persisted public result."""
-        yield 'event: accepted\ndata: {}\n\n'
         while True:
             try:
                 item = await asyncio.wait_for(queue.get(), 10)

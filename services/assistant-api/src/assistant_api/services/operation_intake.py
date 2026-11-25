@@ -64,9 +64,30 @@ def _response_for(row: NexusRun) -> dict:
             'intent': 'question', 'outcome': row.status if row.status in {'unknown', 'failed', 'cancelled'} else 'processing', 'answer': None, 'clarify': None, 'pending_context': {}, **resolution}
 
 
+def write_summary(row):
+    """Describe confirmed writes separately from outstanding or unclassified operations."""
+    context = row.context_json or {}
+    flow = context.get('api_flow') or {}
+    applied = []
+    uncertain = (row.status == 'unknown' or bool(context.get('body_processing_execution_id'))
+                 or not flow.get('write_tracking'))
+    for receipt in flow.get('receipts', []):
+        if receipt.get('effect') != 'write' or receipt.get('status') != 'succeeded':
+            continue
+        data = receipt.get('data')
+        if isinstance(data, dict) and data.get('applied') is False:
+            continue
+        applied.append({'operation_id': receipt['operation_id'],
+                        'summary': receipt.get('proposed_summary') or receipt['operation_id']})
+    return {'write_state': 'uncertain' if uncertain else 'applied' if applied else 'not_applied',
+            'applied_receipts': applied}
+
+
 def response_for(row: NexusRun) -> dict:
     """Include the public reply state without changing the stored run status."""
     result = _response_for(row)
+    if result['outcome'] in {'failed', 'unknown', 'cancelled'}:
+        result['pending_context'].update(write_summary(row))
     reply = intake_replies.reply_metadata(row, result)
     stage = {'answer': 'completed', 'draft': 'completed', 'needs_clarification': 'awaiting_reply',
              'failed': 'failed', 'unknown': 'unknown', 'cancelled': 'cancelled'}.get(result['outcome'], row.intake_stage)
@@ -265,7 +286,7 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
                  continuation_run_id: str | None = None, matter_id: str | None = None,
                  memory_disclosures: list | None = None, ignore_pending_reply: bool = False,
                  entry_mode: str = 'sync_chat', ignore_pending_clarification: bool = False,
-                 dismissed_reply_run_id: str | None = None) -> dict:
+                 dismissed_reply_run_id: str | None = None, on_committed=None) -> dict:
     """Claim input once, prefetch bounded owned memory, then launch exactly one existing Nexus Agent."""
     if not isinstance(request, ExecutionContext):
         request = ExecutionContext.from_request(request, user)
@@ -282,6 +303,8 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
     if existing is not None:
         check_intake_replay(existing, text, matter_id, continuation_run_id, ignore_pending_reply, entry_mode,
                             ignore_pending_clarification, dismissed_reply_run_id)
+        if on_committed:
+            on_committed()
         if (existing.context_json or {}).get('caller_processed'):
             # Re-read only. Unknown starts never create a second Run or new key.
             if existing.nexus_run_id and entry_mode == 'sync_chat':
@@ -289,19 +312,12 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
             return response_for(existing)
         from assistant_api.services import matters
         return await matters.get_intake_result(db, user, existing.local_run_id)
-    if entry_mode == 'async_capture':
-        # Store raw text and the unique submission key before building model
-        # context. This request only needs a local database transaction.
-        context = {'caller_processed': True, 'text': text, 'api_flow': {
-            'entry_mode': entry_mode, 'trigger_source': 'chat', 'request_key': idempotency_key,
-            'reply_to_run_id': None, 'ignore_pending_reply': True,
-        }}
-    else:
-        context = await prepare_context(request, db, user, text=text, idempotency_key=idempotency_key,
-                                        continuation_run_id=continuation_run_id, matter_id=matter_id,
-                                        ignore_pending_reply=ignore_pending_reply, entry_mode=entry_mode)
-        context['api_flow'].update(ignore_pending_clarification=ignore_pending_clarification,
-                                   dismissed_reply_run_id=dismissed_reply_run_id)
+    context = {'caller_processed': True, 'text': text, 'api_flow': {
+        'entry_mode': entry_mode, 'trigger_source': request.source, 'request_key': idempotency_key,
+        'matter_id': matter_id, 'reply_to_run_id': continuation_run_id, 'ignore_pending_reply': ignore_pending_reply,
+        'ignore_pending_clarification': ignore_pending_clarification, 'dismissed_reply_run_id': dismissed_reply_run_id,
+        'receipts': [], 'write_tracking': True,
+    }}
 
     async def cancel_selected_reply():
         """Close the selected owned reply in the same transaction as the new input."""
@@ -328,9 +344,29 @@ async def intake(request: Request, db, user, *, text: str, idempotency_key: str,
     if replayed:
         check_intake_replay(row, text, matter_id, continuation_run_id, ignore_pending_reply, entry_mode,
                             ignore_pending_clarification, dismissed_reply_run_id)
+    if on_committed:
+        on_committed()
+    if replayed or entry_mode == 'async_capture':
         return response_for(row)
-    if entry_mode == 'async_capture':
-        return response_for(row)
+    local_run_id = row.local_run_id
+    try:
+        context = await prepare_context(request, db, user, text=text, idempotency_key=idempotency_key,
+                                        continuation_run_id=continuation_run_id, matter_id=matter_id,
+                                        ignore_pending_reply=ignore_pending_reply, entry_mode=entry_mode,
+                                        exclude_run_id=local_run_id)
+        context['api_flow'].update(ignore_pending_clarification=ignore_pending_clarification,
+                                   dismissed_reply_run_id=dismissed_reply_run_id, write_tracking=True)
+        row.context_json = context
+        row.request_text = matter_plan.prepare_input(context)
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        row = await db.get(NexusRun, local_run_id)
+        row.status = row.intake_stage = 'failed'
+        row.completed_at = datetime.now(UTC)
+        row.error_code = getattr(exc, 'code', 'intake_context_failed')
+        await db.commit()
+        raise
     return await execute_intake(request, db, user, row, continuation_run_id=continuation_run_id)
 
 
@@ -365,7 +401,7 @@ async def prepare_context(request, db, user, *, text, idempotency_key, entry_mod
             'supplement_context': supplement_context,
             'history': history, 'pending_reply': pending_reply, 'reply_to_run_id': continuation_run_id,
             'entry_mode': entry_mode, 'capture_review_id': capture_review_id,
-            'ignore_pending_reply': ignore_pending_reply, 'trigger_source': request.source, 'matter_id': matter_id, 'follow_up_id': request.follow_up_id, 'follow_up_execution_id': request.follow_up_execution_id, 'lease_owner': request.lease_owner, 'receipts': [], 'step': 0, 'state': 'preparing_memory', 'request_key': idempotency_key,
+            'ignore_pending_reply': ignore_pending_reply, 'trigger_source': request.source, 'matter_id': matter_id, 'follow_up_id': request.follow_up_id, 'follow_up_execution_id': request.follow_up_execution_id, 'lease_owner': request.lease_owner, 'receipts': [], 'write_tracking': True, 'step': 0, 'state': 'preparing_memory', 'request_key': idempotency_key,
             'memory_prefetch':{'status':'pending','confirmed_empty':False,'cache_valid':False},'memory_sources':[]}
     catalog = OperationCatalog(request.app)
     from assistant_api.commute.runtime import route_capabilities

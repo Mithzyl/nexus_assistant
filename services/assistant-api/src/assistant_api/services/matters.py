@@ -1430,29 +1430,68 @@ async def get_intake_result(
     )
     if run is None:
         raise NotFoundError("intake_result_not_found", "统一输入结果不存在。")
+    return (await _project_history(db, user, [run]))[0]
+
+
+async def _project_history(db, user, runs):
+    """Project owned runs in order, preloading only the relations required by legacy previews."""
+    legacy_ids = [r.local_run_id for r in runs if not (
+        (r.context_json or {}).get('api_flow') or 'api_operations' in (r.context_json or {}))]
+    drafts = list(await db.scalars(select(MatterDraft).where(
+        MatterDraft.user_id == user.user_id, MatterDraft.ai_run_id.in_(legacy_ids)))) if legacy_ids else []
+    by_run = {d.ai_run_id: d for d in drafts}
+    matter_ids = {d.matter_id or (d.result_json or {}).get('matter_id') for d in drafts}
+    matter_ids.update(c.get('matter_id') for d in drafts for c in d.candidates_json or [] if isinstance(c, dict))
+    schedule_ids = {d.base_schedule_id or (d.result_json or {}).get('schedule_id') for d in drafts}
+
+    async def owned_rows(model, key, ids):
+        """Fetch only owned referenced rows; omit empty IN queries."""
+        ids = ids - {None}
+        if not ids:
+            return {}
+        rows = await db.scalars(select(model).where(model.user_id == user.user_id, key.in_(ids)))
+        return {getattr(row, key.key): row for row in rows}
+
+    matters = await owned_rows(Matter, Matter.matter_id, matter_ids)
+    schedules = await owned_rows(ScheduleEvent, ScheduleEvent.schedule_id, schedule_ids)
+    sources = await owned_rows(ContentSource, ContentSource.source_id, {r.data_source_id for r in schedules.values()})
+    return [_project_intake_run(r, by_run.get(r.local_run_id), matters, schedules, sources) for r in runs]
+
+
+def _project_intake_run(run, historical, matters, schedules, sources):
+    """Apply lifecycle and source visibility to prefetched rows without issuing SQL."""
     if (run.context_json or {}).get('api_flow') or 'api_operations' in (run.context_json or {}):
         from assistant_api.services.operation_intake import response_for
         return {**response_for(run), 'request_text': (run.context_json or {}).get('text', ''),
                 'created_at': run.created_at, 'completed_at': run.completed_at}
-    draft = await _visible_intake_draft(db, user, run.local_run_id)
+    draft = historical
     resolution = _intake_resolution(run)
-    outcome = _resolved_outcome(run, resolution, draft)
-    historical = await _intake_draft(db, user, run.local_run_id)
     confirm_status = ("confirmed" if historical.status == "confirmed" else "unconfirmed") if historical else "unknown"
     target_id = (historical.matter_id or (historical.result_json or {}).get("matter_id")) if historical else None
-    target = await db.scalar(select(Matter).where(Matter.matter_id == target_id, Matter.user_id == user.user_id)) if target_id else None
+    target = matters.get(target_id)
     lifecycle = None
     title = None
+    candidates = None
     if target_id:
         lifecycle = "deleted" if not target or target.deleted_at or target.status == "deleted" else "archived" if target.status == "archived" else "active"
         title = target.title if lifecycle in ("active", "archived") else None
+        if not target or target.deleted_at:
+            draft = None
     if historical:
         schedule_id = historical.base_schedule_id or (historical.result_json or {}).get("schedule_id")
-        schedule = await db.scalar(select(ScheduleEvent).where(ScheduleEvent.schedule_id == schedule_id, ScheduleEvent.user_id == user.user_id)) if schedule_id else None
+        schedule = schedules.get(schedule_id)
+        if schedule_id and (not schedule or schedule.deleted_at):
+            draft = None
         if schedule and schedule.data_source_id:
-            source = await db.scalar(select(ContentSource).where(ContentSource.source_id == schedule.data_source_id, ContentSource.user_id == user.user_id))
+            source = sources.get(schedule.data_source_id)
             if not source or not source.assistant_enabled:
-                lifecycle, title = "source_revoked", None
+                lifecycle, title, draft = "source_revoked", None, None
+        if historical.candidates_json:
+            candidates = [c for c in historical.candidates_json if isinstance(c, dict)
+                          and (m := matters.get(c.get("matter_id"))) and not m.deleted_at and m.status in ("active", "waiting")]
+            if (historical.payload_json or {}).get("requires_choice") and not candidates:
+                draft = None
+    outcome = _resolved_outcome(run, resolution, draft)
     inaccessible_draft = resolution.get("outcome") == "draft" and draft is None
     # Historical confirmation survives lifecycle changes; never serialize a
     # revoked/deleted draft's body merely to prove that it was confirmed.
@@ -1495,7 +1534,7 @@ async def get_intake_result(
         "draft": (
             _serialize_draft(
                 draft,
-                candidates=await _visible_draft_candidates(db, user, draft),
+                candidates=candidates,
             )
             if draft
             else None
@@ -1520,7 +1559,7 @@ async def list_intake_results(
             .limit(limit)
         )
     ).all()
-    return [await get_intake_result(db, user, run.local_run_id) for run in runs]
+    return await _project_history(db, user, runs)
 
 
 async def _continuation_context(

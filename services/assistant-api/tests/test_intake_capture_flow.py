@@ -86,6 +86,8 @@ async def test_stream_reports_invalid_final_answer_without_losing_saved_write(ha
     assert failure['error']['error_code'] == 'final_output_invalid'
     assert failure['error']['outcome_is_known'] is True
     assert failure['error']['is_retryable'] is False
+    assert failure['pending_context']['write_state'] == 'applied'
+    assert failure['pending_context']['applied_receipts'][0]['operation_id'] == 'create_schedule'
     assert failure['local_run_id'] and failure['outcome'] == 'failed'
     replay = await h.client.post('/api/v1/matters/intake/stream', headers=auth(h.token_a), json=payload)
     assert failure['local_run_id'] in replay.text
@@ -305,3 +307,88 @@ async def test_worker_does_not_redispatch_an_interrupted_capture(harness):
     assert (await status(h, payload['idempotency_key']))['stage'] == 'unknown'
     assert not await capture_intake.worker_tick(h.app)
     assert h.fake.run_seq == 0
+
+
+async def test_disconnect_after_acceptance_recovers_before_context_is_ready(harness, monkeypatch):
+    """Disconnect the ASGI client at accepted while context preparation is blocked."""
+    from assistant_api.services import operation_intake
+
+    entered, release, accepted, disconnect = (asyncio.Event() for _ in range(4))
+    original = operation_intake.prepare_context
+
+    async def slow_context(*args, **kwargs):
+        """Hold context assembly beyond the first browser status read."""
+        entered.set()
+        await release.wait()
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(operation_intake, 'prepare_context', slow_context)
+    key = 'disconnect-after-accepted'
+    body = json.dumps({'text': '你好', 'idempotency_key': key}).encode()
+    path = '/api/v1/matters/intake/stream'
+    scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
+             'scheme': 'http', 'method': 'POST', 'path': path, 'raw_path': path.encode(),
+             'query_string': b'', 'headers': [(b'content-type', b'application/json'),
+             (b'authorization', f'Bearer {harness.token_a}'.encode())],
+             'server': ('local', 80), 'client': ('test', 1001)}
+    delivered = False
+
+    async def receive():
+        """Read the payload once and propagate the browser disconnect."""
+        nonlocal delivered
+        if not delivered:
+            delivered = True
+            return {'type': 'http.request', 'body': body}
+        await disconnect.wait()
+        return {'type': 'http.disconnect'}
+
+    async def send(message):
+        """Detect the actual public server-sent event on the wire."""
+        if b'event: accepted' in message.get('body', b''):
+            accepted.set()
+            disconnect.set()
+
+    harness.fake.final_text = '{"decision":"answer","answer":"好"}'
+    task = asyncio.create_task(harness.app(scope, receive, send))
+    try:
+        await asyncio.wait_for(accepted.wait(), 4)
+        await asyncio.wait_for(entered.wait(), 4)
+        row = await status(harness, key)
+        assert row and row['stage'] == 'understanding'
+    finally:
+        release.set()
+        disconnect.set()
+        await asyncio.wait_for(task, 4)
+    final = await await_stage(harness, key, 'completed')
+    assert final['local_run_id'] == row['local_run_id']
+
+
+async def test_context_failure_is_saved_before_nexus_dispatch(harness, monkeypatch):
+    """A rejected context stays recoverable and records a known non-write."""
+    from assistant_api.services import operation_intake
+
+    async def unavailable(*args, **kwargs):
+        """Fail between local acceptance and the first remote dispatch."""
+        raise RuntimeError('fixture')
+
+    monkeypatch.setattr(operation_intake, 'prepare_context', unavailable)
+    key = 'context-failure-before-model'
+    reply = await harness.client.post('/api/v1/matters/intake/stream', headers=auth(harness.token_a),
+                                      json={'text': '你好', 'idempotency_key': key})
+    assert 'event: accepted' in reply.text and 'event: error' in reply.text
+    row = await status(harness, key)
+    assert row['status'] == 'failed' and row['pending_context']['write_state'] == 'not_applied'
+    assert harness.fake.workflow_seq == 0
+
+
+def test_uncertain_subsequent_write_preserves_earlier_saved_receipt():
+    """A later unconfirmed dispatch cannot erase an earlier successful business write."""
+    from types import SimpleNamespace
+    from assistant_api.services.operation_intake import write_summary
+
+    receipt = {'effect': 'write', 'status': 'succeeded', 'operation_id': 'create_schedule',
+               'proposed_summary': '创建评审日程', 'data': {'applied': True}}
+    row = SimpleNamespace(status='unknown', context_json={'body_processing_execution_id': 'pending',
+        'api_flow': {'write_tracking': True, 'receipts': [receipt, dict(receipt, effect='read')]}})
+    assert write_summary(row) == {'write_state': 'uncertain', 'applied_receipts': [
+        {'operation_id': 'create_schedule', 'summary': '创建评审日程'}]}

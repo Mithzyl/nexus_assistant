@@ -33,7 +33,9 @@ def public_failure(row=None, exc=None) -> dict:
             is_retryable=bool(getattr(exc, "retryable", False)) if known else False,
             outcome_is_known=known,
         ).model_dump()
-    return {"error": error, "status": status, "outcome": outcome,
+    from assistant_api.services.operation_intake import write_summary
+    pending = write_summary(row) if row is not None else {"write_state": "uncertain", "applied_receipts": []}
+    return {"pending_context": pending, "error": error, "status": status, "outcome": outcome,
             "local_run_id": row.local_run_id if row is not None else None,
             "workflow_execution_id": row.workflow_execution_id if row is not None else None}
 
