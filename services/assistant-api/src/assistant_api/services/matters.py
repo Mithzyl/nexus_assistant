@@ -1018,6 +1018,7 @@ async def set_status(
                 await db.execute(update(Reminder).where(
                     Reminder.user_id == user.user_id,
                     Reminder.schedule_id == schedule.schedule_id,
+                    or_(Reminder.todo_id.is_(None), Reminder.schedule_offset_seconds.is_not(None)),
                     Reminder.status == "pending",
                     Reminder.trigger_at > now,
                     Reminder.deleted_at.is_(None),
@@ -3372,14 +3373,18 @@ async def confirm_draft(
                 existing_todos[todo.todo_id] = todo
             memory_target_todos.append(todo)
             affected_todos[todo.todo_id] = todo
-            pending = await db.scalar(select(Reminder).where(
-                Reminder.user_id == user.user_id, Reminder.todo_id == todo.todo_id,
-                Reminder.status == "pending", Reminder.deleted_at.is_(None)))
-            if pending is not None:
-                before_reminders.setdefault(pending.reminder_id, _reminder_snapshot(pending))
+            previous = None
+            if existing_todo is not None:
+                previous = await db.scalar(select(Reminder).where(
+                    Reminder.user_id == user.user_id, Reminder.matter_id == matter.matter_id,
+                    Reminder.todo_id == todo.todo_id, Reminder.deleted_at.is_(None),
+                ).order_by((Reminder.status == "pending").desc(), Reminder.created_at.desc(),
+                           Reminder.reminder_id.desc()).limit(1))
+            if previous is not None and previous.status == "pending":
+                before_reminders.setdefault(previous.reminder_id, _reminder_snapshot(previous))
             reminder, created = await reminder_records.sync_todo_reminder(
                 db, user, matter_id=matter.matter_id, todo=todo, timing=timing,
-                pending=pending, sync_to_ios=body.sync_to_ios)
+                previous=previous, sync_to_ios=body.sync_to_ios)
             if reminder is not None:
                 affected_reminders[reminder.reminder_id] = reminder
                 if created:

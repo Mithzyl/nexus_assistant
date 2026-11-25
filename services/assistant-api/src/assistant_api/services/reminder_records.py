@@ -1,7 +1,7 @@
 """Reminder persistence with explicit owner and optional schedule-time dependency.
 
-Sharing a matter or transaction never implies a schedule association. Only a
-schedule's own reminder or an explicit relative request writes schedule_id.
+A todo reminder may retain its previous schedule association at a fixed time.
+Only an explicit offset makes that todo reminder depend on the schedule time.
 These functions flush as needed but leave commit/rollback to the business caller.
 """
 from datetime import UTC, datetime, timedelta
@@ -41,14 +41,19 @@ async def todo_timing(db, user, *, matter_id, item, timezone, current_schedule=N
     return ensure_aware(schedule.starts_at) + timedelta(seconds=offset), schedule.schedule_id, offset
 
 
-async def sync_todo_reminder(db, user, *, matter_id, todo, timing, pending, sync_to_ios=False):
-    """Save a todo-owned reminder; an unrelated calendar record is never attached implicitly."""
+async def sync_todo_reminder(db, user, *, matter_id, todo, timing, previous, sync_to_ios=False):
+    """Keep a pending or completed predecessor’s schedule on a fixed-time edit, without copying its offset."""
     trigger_at, schedule_id, offset = timing
+    pending = previous if previous is not None and previous.status == "pending" else None
     if trigger_at is None or todo.status == 'done':
         if pending is not None:
             pending.status = 'cancelled'
             pending.cancelled_at = datetime.now(UTC)
         return pending, False
+    if schedule_id is None and previous is not None and previous.schedule_id and previous.status in ('pending', 'completed'):
+        schedule_id = await db.scalar(select(ScheduleEvent.schedule_id).where(
+            ScheduleEvent.schedule_id == previous.schedule_id, ScheduleEvent.user_id == user.user_id,
+            ScheduleEvent.matter_id == matter_id, ScheduleEvent.deleted_at.is_(None)))
     if pending is None:
         pending = Reminder(user_id=user.user_id, matter_id=matter_id, todo_id=todo.todo_id,
                            trigger_at=trigger_at, title=f'提醒：{todo.title}', status='pending',

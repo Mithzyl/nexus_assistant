@@ -223,3 +223,37 @@ async def test_schedule_own_relative_reminder_moves_without_creating_todo(harnes
     assert updated.json()['reminders'][0]['trigger_at'] == '2030-10-02T08:30:00Z'
     detail = (await h.client.get(f"/api/v1/matters/{result['matter']['matter_id']}", headers=auth(h.token_a))).json()
     assert detail['todos'] == []
+
+
+@pytest.mark.asyncio
+async def test_fixed_time_edit_keeps_schedule_reference_across_reschedule(harness):
+    """Switch a pending relative reminder to a fixed clock time, then move its meeting."""
+    client = harness.client
+    headers = auth(harness.token_a)
+    meeting = await client.post('/api/v1/schedules', headers=headers, json={
+        'idempotency_key': 'fixed-link-meeting', 'title': '项目评审',
+        'starts_at': '2030-07-01T15:00:00+08:00'})
+    assert meeting.status_code == 201, meeting.text
+    schedule = meeting.json()['schedule']
+    matter = meeting.json()['matter']
+    created = await client.post('/api/v1/todos', headers=headers, json={
+        'idempotency_key': 'fixed-link-todo', 'matter_id': matter['matter_id'],
+        'expected_matter_version': matter['version'], 'title': '带上材料',
+        'schedule_reminder': {'schedule_id': schedule['schedule_id'], 'offset_seconds': -1800}})
+    assert created.status_code == 201, created.text
+    todo = created.json()['todo']
+    updated = await client.patch(f"/api/v1/todos/{todo['todo_id']}", headers=headers, json={
+        'idempotency_key': 'fixed-link-change', 'expected_matter_version': created.json()['matter']['version'],
+        'reminder_at': '2030-07-01T14:00:00+08:00'})
+    assert updated.status_code == 200, updated.text
+    moved = await client.patch(f"/api/v1/schedules/{schedule['schedule_id']}", headers=headers, json={
+        'idempotency_key': 'fixed-link-move', 'expected_matter_version': updated.json()['matter']['version'],
+        'starts_at': '2030-07-01T16:00:00+08:00'})
+    assert moved.status_code == 200, moved.text
+    detail = await client.get(f"/api/v1/matters/{matter['matter_id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    reminder, = [r for r in detail.json()['reminders'] if r['todo_id'] == todo['todo_id']]
+    assert reminder['schedule_id'] == schedule['schedule_id']
+    assert reminder.get('schedule_offset_seconds') is None
+    assert reminder['trigger_at'] == '2030-07-01T06:00:00Z'
+    assert reminder['reminder_id'] == created.json()['reminders'][0]['reminder_id']

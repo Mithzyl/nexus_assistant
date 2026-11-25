@@ -43,6 +43,7 @@ async def test_revoked_source_keeps_confirmation_without_private_details(harness
 
 @pytest.mark.asyncio
 async def test_rescheduled_acknowledged_reminder_preserves_calendar_link(harness):
+    """Rescheduling a completed alert creates a new fixed-time reminder with the same schedule reference."""
     from datetime import timedelta
     from sqlalchemy import select
     from assistant_api.models import ScheduleEvent, MatterTodo, Reminder
@@ -62,7 +63,9 @@ async def test_rescheduled_acknowledged_reminder_preserves_calendar_link(harness
     assert result.status_code==200,result.text
     async with h.app.state.session_factory() as db:
         reminder=await db.scalar(select(Reminder).where(Reminder.todo_id==tid,Reminder.status=='pending'))
-        assert reminder.schedule_id==sid
+        assert reminder.schedule_id==sid and reminder.schedule_offset_seconds is None
+        completed = await db.scalar(select(Reminder).where(Reminder.todo_id == tid, Reminder.status == 'completed'))
+        assert completed.schedule_id == sid and completed.reminder_id != reminder.reminder_id
 
 @pytest.mark.asyncio
 async def test_scheduler_filters_lifecycle_effective_date_and_account(harness, monkeypatch):
