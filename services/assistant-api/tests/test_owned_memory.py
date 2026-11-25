@@ -232,7 +232,8 @@ async def test_model_body_dispatches_shared_memory_and_schedule(owned):
     from assistant_api.services.run_service import workflow_request
     configured=workflow_request(h.app.state.settings,'memory-loop-budget',{
         'application_response_mode':'caller_processed','wall_time_limit_ms':600000})
-    assert configured.role_bindings['controller'].timeout_seconds==600
+    assert configured.wall_time_limit_ms == 600000
+    assert {'role_bindings', 'reasoning'}.isdisjoint(configured.model_dump())
     from assistant_api.services.operation_intake import model_context
     discovery={'query':'记忆 保存 纠正','text':'通勤习惯','timezone':'Asia/Shanghai',
         'now':'2030-11-10T08:00:00+08:00','history':[],'receipts':[],'step':0}

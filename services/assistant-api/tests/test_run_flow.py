@@ -51,7 +51,7 @@ async def test_run_request_has_no_client_identity_and_uses_current_workflow_body
     assert workflow_body["stream"] is True
     assert workflow_body["review_policy"] == "never"
     assert "agent_profile" not in workflow_body
-    assert workflow_body["role_bindings"]["controller"]["provider"]
+    assert {"role_bindings", "reasoning"}.isdisjoint(workflow_body)
     assert "user_id" not in json.dumps(workflow_body)
     assert "principal_id" not in json.dumps(workflow_body)
 

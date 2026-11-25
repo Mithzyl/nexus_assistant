@@ -405,6 +405,8 @@ API 和统一 worker 需要加载相同版本；不需要新增定时器，也�
 `ASSISTANT_NEXUS_BUSINESS_MAX_MODEL_CALLS` 默认 24（1–64），
 `ASSISTANT_NEXUS_BUSINESS_WALL_TIME_LIMIT_MS` 默认 600000（最多 10 分钟）。
 预算在任务创建时保存并传入 Nexus，由同一个 Agent 使用，终答也计一次调用。
+Assistant 的工作流请求由 Nexus 按 `personal_assistant` 的 App 配置选定模型。
+Nexus 在创建工作流时保存该绑定，重连或查询同一运行继续使用原绑定。
 普通非业务调用保留原默认；Assistant 不自行创建下一轮 Agent 或强制改为回答。
 运行验证状态见[当前接口与 AI 调用说明](../../docs/backend-integration/27-接口复核与AI业务调用说明.md)。
 

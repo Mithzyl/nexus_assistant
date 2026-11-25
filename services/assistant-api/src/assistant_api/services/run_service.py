@@ -36,7 +36,6 @@ from assistant_api.nexus_client import (
     NexusPilotClient,
     NexusProtocolError,
     NexusTimeoutError,
-    RoleBinding,
     RunCreateRequest,
     WorkflowCreateRequest,
     WorkflowView,
@@ -50,7 +49,6 @@ WORKFLOW_STATUS_MAP = {
     "cancelled": "cancelled",
     "outcome_unknown": "unknown",
 }
-ALLOWED_ROLES = {"controller", "planner", "researcher", "reviewer", "verifier"}
 
 _background_tasks: set[asyncio.Task] = set()
 _workflow_tasks: dict[str, asyncio.Task] = {}
@@ -102,45 +100,19 @@ def answer_text(row: NexusRun) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def workflow_request(settings: Settings, idempotency_key: str, caller_configuration: dict | None = None) -> WorkflowCreateRequest:
-    """Build model bindings with the caller Agent-loop budget and reuse the frozen task protocol."""
-
-    try:
-        raw = json.loads(settings.nexus_role_bindings_json.get_secret_value())
-        if not isinstance(raw, dict) or not raw:
-            raise ValueError("role bindings must be a non-empty object")
-        bindings: dict[str, RoleBinding] = {}
-        for role, value in raw.items():
-            if role not in ALLOWED_ROLES:
-                raise ValueError("unknown role")
-            bindings[role] = RoleBinding.model_validate(value)
-        if "controller" not in bindings:
-            raise ValueError("controller binding is required")
-        if settings.nexus_review_policy != "never" and "reviewer" not in bindings:
-            raise ValueError("reviewer binding is required by the review policy")
-        if (caller_configuration or {}).get('application_response_mode')=='caller_processed':
-            # Nexus uses this duration for the entire role's tool loop. Leaving
-            # its default 60s contradicts our longer declared workflow budget.
-            seconds=max(1,min(600,((caller_configuration or {}).get('wall_time_limit_ms',
-                settings.nexus_business_wall_time_limit_ms)+999)//1000))
-            bindings={role:binding if binding.timeout_seconds is not None else
-                binding.model_copy(update={'timeout_seconds':seconds}) for role,binding in bindings.items()}
-        return WorkflowCreateRequest(
-            workflow_name=settings.nexus_workflow_name,
-            workflow_version=settings.nexus_workflow_version,
-            execution_profile=settings.nexus_execution_profile,
-            idempotency_key=idempotency_key,
-            role_bindings=bindings,
-            review_policy=settings.nexus_review_policy,
-            stream=True,
-            **(caller_configuration or {}),
-        )
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
-        raise AssistantError(
-            "nexus_workflow_configuration_invalid",
-            "服务端模型配置无效。",
-            500,
-        ) from exc
+def workflow_request(
+    settings: Settings, idempotency_key: str, caller_configuration: dict | None = None
+) -> WorkflowCreateRequest:
+    """Send execution limits and the task protocol, leaving all model selection to Nexus."""
+    return WorkflowCreateRequest(
+        workflow_name=settings.nexus_workflow_name,
+        workflow_version=settings.nexus_workflow_version,
+        execution_profile=settings.nexus_execution_profile,
+        idempotency_key=idempotency_key,
+        review_policy=settings.nexus_review_policy,
+        stream=True,
+        **(caller_configuration or {}),
+    )
 
 
 async def _find_by_key(

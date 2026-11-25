@@ -146,10 +146,9 @@ class FakeNexus:
                 "workflow_version",
                 "execution_profile",
                 "idempotency_key",
-                "role_bindings",
                 "stream",
             }
-            if not required <= set(payload) or "agent_profile" in payload:
+            if not required <= set(payload) or {"agent_profile", "role_bindings", "reasoning"} & payload.keys():
                 return httpx.Response(422, json={"detail": "invalid workflow body"})
             run_id = path.split("/")[6]
             self.workflow_seq += 1

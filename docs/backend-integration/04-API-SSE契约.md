@@ -67,7 +67,7 @@ idempotency_key；重复提交由 PA 的 `(user_id, idempotency_key)` 唯一约�
 
 ### 2.2 启动工作流
 
-当前 `AgentWorkflowCreate` 要求显式 general-agent 定义和 `role_bindings`：
+Assistant 提交 general-agent 定义和任务策略。Nexus 根据认证的 App 选定模型。
 
 ```http
 POST /api/v1/app/runs/{run_id}/agent-workflows
@@ -80,16 +80,12 @@ Accept: text/event-stream
   "workflow_version": "1.0.0",
   "execution_profile": "general_tools_v1",
   "idempotency_key": "ask-key:workflow",
-  "role_bindings": {
-    "controller": {"provider": "openai", "model": "gpt-4o-mini"}
-  },
   "review_policy": "never",
   "stream": true
 }
 ```
 
-`role_bindings` 来自 `ASSISTANT_NEXUS_ROLE_BINDINGS_JSON`，是 assistant-api 的部署配置；
-**不是**客户端字段。若 `review_policy != never`，还必须配置 `reviewer`。
+Nexus 部署为 `personal_assistant` 配置 `workflow_role_bindings`。Assistant 省略 `role_bindings` 和 `reasoning`。若启用审阅，应在 Nexus 配置 `reviewer`。重新连接同一运行沿用已保存的模型绑定。
 API 返回 201 和 SSE 流；第一帧携带 `workflow_execution_id`。PA 在后台持续消费到终态，
 POST /asks 只等到首个工作流帧即返回 202。
 

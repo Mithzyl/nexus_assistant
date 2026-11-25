@@ -124,9 +124,9 @@ class CurrentAppApiFake:
             payload = json.loads(body)
             required = {
                 "workflow_name", "workflow_version", "execution_profile",
-                "idempotency_key", "role_bindings", "stream",
+                "idempotency_key", "stream",
             }
-            if not required <= set(payload) or "agent_profile" in payload:
+            if not required <= set(payload) or {"agent_profile", "role_bindings", "reasoning"} & payload.keys():
                 return httpx.Response(422, json={"detail": "wrong workflow body"})
             if payload["workflow_name"] != "general_agent":
                 return httpx.Response(422, json={"detail": "workflow name"})
@@ -258,7 +258,7 @@ async def test_client_uses_current_headers_and_request_bodies(current_harness):
     assert workflow_body["workflow_version"] == "1.0.0"
     assert workflow_body["execution_profile"] == "general_tools_v1"
     assert workflow_body["stream"] is True
-    assert workflow_body["role_bindings"]["controller"]["provider"]
+    assert {"role_bindings", "reasoning"}.isdisjoint(workflow_body)
     assert "agent_profile" not in workflow_body
     assert "provider" not in json.dumps(
         (await h.client.get(f"/api/v1/asks/{local_run_id}", headers=auth(h.token_a))).json()

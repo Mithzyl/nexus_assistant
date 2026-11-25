@@ -50,9 +50,8 @@ def test_business_agent_explicitly_uses_caller_tools_only():
     from assistant_api.nexus_client.models import WorkflowCreateRequest
     from assistant_api.services.operation_intake import workflow_configuration
 
-    bindings={'controller': {'provider': 'test', 'model': 'test'}}
-    ordinary=WorkflowCreateRequest(idempotency_key='ordinary-test', role_bindings=bindings)
-    business=WorkflowCreateRequest(idempotency_key='business-test', role_bindings=bindings,
+    ordinary=WorkflowCreateRequest(idempotency_key='ordinary-test')
+    business=WorkflowCreateRequest(idempotency_key='business-test',
         **workflow_configuration({'api_operations': []}))
     assert ordinary.application_native_tools_enabled is True
     assert ordinary.application_response_mode == 'standard'

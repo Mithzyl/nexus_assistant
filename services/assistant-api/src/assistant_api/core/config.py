@@ -49,16 +49,11 @@ class Settings(BaseSettings):
     )
     nexus_request_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     nexus_stream_timeout_seconds: float = Field(default=300.0, gt=0, le=900)
-    # Current NexusPilot App Runs require an explicit general-agent workflow
-    # definition and role bindings. These are server-side deployment choices;
-    # they are never accepted from a client or echoed in an API response.
+    # Nexus resolves the model for the authenticated application.
     nexus_workflow_name: Literal["general_agent"] = "general_agent"
     nexus_workflow_version: Literal["1.0.0"] = "1.0.0"
     nexus_execution_profile: Literal["general_tools_v1"] = "general_tools_v1"
     nexus_review_policy: Literal["always", "on_verification_failure", "never"] = "never"
-    nexus_role_bindings_json: SecretStr = SecretStr(
-        '{"controller":{"provider":"openai","model":"gpt-4o-mini"}}'
-    )
     nexus_workflow_start_timeout_seconds: float = Field(default=20.0, gt=0, le=60)
     nexus_business_max_model_calls: int = Field(default=24, ge=1, le=64)
     nexus_business_wall_time_limit_ms: int = Field(default=600000, ge=1000, le=600000)

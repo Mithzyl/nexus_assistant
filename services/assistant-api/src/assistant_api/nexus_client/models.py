@@ -38,14 +38,6 @@ class UpstreamModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class RoleBinding(StrictRequest):
-    """Bind a role and optional native Agent-loop duration, independently from a single HTTP timeout."""
-
-    provider: str = Field(min_length=1, max_length=64)
-    model: str = Field(min_length=1, max_length=128)
-    timeout_seconds: int | None = Field(default=None,ge=1,le=600)
-
-
 class RunCreateRequest(StrictRequest):
     """Current App Run creation accepts only the objective."""
 
@@ -67,7 +59,6 @@ class WorkflowCreateRequest(StrictRequest):
     workflow_version: Literal["1.0.0"] = "1.0.0"
     execution_profile: Literal["general_tools_v1"] = "general_tools_v1"
     idempotency_key: str = Field(min_length=8, max_length=128)
-    role_bindings: dict[str, RoleBinding]
     review_policy: Literal["always", "on_verification_failure", "never"] = "never"
     application_response_mode: Literal["standard", "caller_processed"] = "standard"
     application_native_tools_enabled: bool = True

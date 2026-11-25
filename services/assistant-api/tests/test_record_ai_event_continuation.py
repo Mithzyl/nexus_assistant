@@ -22,7 +22,7 @@ async def test_finite_start_stream_reads_followup_events_without_starting_again(
             return httpx.Response(200, text=frame(1, 'running'), headers={'content-type': 'text/event-stream'})
         return httpx.Response(200, text=frame(2, 'completed'), headers={'content-type': 'text/event-stream'})
     client = NexusPilotClient(base_url='http://nexus.test', application_id='personal_assistant', application_token='test-token-not-real', transport=httpx.MockTransport(handle))
-    payload = WorkflowCreateRequest(idempotency_key='finite-stream-001', role_bindings={'controller': {'provider': 'test', 'model': 'test'}})
+    payload = WorkflowCreateRequest(idempotency_key='finite-stream-001')
     try:
         events = [event async for event in client.start_workflow_events('isolated-user', 'existing-run', payload)]
     finally:
