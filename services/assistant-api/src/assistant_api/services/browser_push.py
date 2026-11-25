@@ -13,8 +13,8 @@ from assistant_api.models.browser_push import BrowserPushSubscription, BrowserPu
 logger = logging.getLogger(__name__)
 
 
-async def due_events(db, user_id, since, now):
-    """Find due active reminders and default event times, suppressing explicit-alarm duplicates."""
+async def due_events(db, user_id, since, now, *, use_current_todo_titles=False):
+    """Find due events once per alarm; optionally use the current todo title for linked reminders."""
     matters = {row.matter_id: row for row in await db.scalars(select(Matter).where(Matter.user_id == user_id))}
     todos = {row.todo_id: row for row in await db.scalars(select(MatterTodo).where(MatterTodo.user_id == user_id))}
     schedules = {row.schedule_id: row for row in await db.scalars(select(ScheduleEvent).where(ScheduleEvent.user_id == user_id))}
@@ -42,7 +42,8 @@ async def due_events(db, user_id, since, now):
         if plan and (not plan.enabled or not plan.notify_enabled):
             continue
         kind = 'commute' if plan else 'todo' if todo else 'schedule' if schedule else 'reminder'
-        events.append((kind, row.reminder_id, row.trigger_at, row.title, row.matter_id))
+        title = todo.title if kind == 'todo' and todo and use_current_todo_titles else row.title
+        events.append((kind, row.reminder_id, row.trigger_at, title, row.matter_id))
     for row in todos.values():
         at = row.reminder_at or row.due_at
         if at and row.todo_id not in explicit_todos and not row.deleted_at and row.status == 'open' and active(row.matter_id):

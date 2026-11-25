@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from assistant_api.commute.services.bark import BarkNotifier
 from assistant_api.core.config import Settings
-from assistant_api.models import Matter, MatterTodo, NexusRun, ScheduleEvent
+from assistant_api.models import Matter, MatterTodo, NexusRun, Reminder, ScheduleEvent
 from assistant_api.models.bark import BarkNotificationDelivery
 from assistant_api.services import bark_notifications
 from assistant_api.services.matter_plan import PURPOSE
@@ -77,7 +77,11 @@ async def test_due_and_reply_links_are_private_and_claimed_once(harness):
         "日程提醒": WEB_ORIGIN + "/today",
     }
     assert len(sent) == 3
-    assert all("private" not in item["body"] for item in sent)
+    assert {item["title"]: item["body"] for item in sent} == {
+        "助手等待你的回复": "打开生活助手继续回复。",
+        "待办提醒": "private todo",
+        "日程提醒": "打开生活助手查看今天的安排。",
+    }
     async with h.app.state.session_factory() as db:
         rows = list(await db.scalars(select(BarkNotificationDelivery)))
         assert sorted(row.status for row in rows) == ["accepted_by_bark", "accepted_by_bark", "unknown"]
@@ -90,6 +94,58 @@ async def test_due_and_reply_links_are_private_and_claimed_once(harness):
             MatterTodo.user_id == h.user_a, MatterTodo.title == "private todo", MatterTodo.status == "open",
         ))
         assert (await db.get(NexusRun, reply_id)).reply_state == "awaiting_reply"
+
+
+async def test_bark_uses_current_todo_title_when_claiming_explicit_reminder(harness, monkeypatch):
+    """Use a rename made between discovery and claim without changing delivery identity."""
+    h = harness
+    sent = []
+
+    def receive(request):
+        """Capture the outgoing Bark POST."""
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"code": 200})
+
+    h.settings.bark_web_origin = WEB_ORIGIN
+    h.app.state.bark_transport = httpx.MockTransport(receive)
+    await h.client.post(BARK_API + "/binding", headers=auth(h.token_a), json={"device_key": "isolated-bark-key"})
+    await h.client.patch(BARK_API, headers=auth(h.token_a), json={"assistant_notifications_enabled": True})
+    now = datetime.now(UTC) + timedelta(seconds=5)
+    async with h.app.state.session_factory() as db:
+        matter = Matter(user_id=h.user_a, title="隔离验收事项", status="active")
+        db.add(matter)
+        await db.flush()
+        todo = MatterTodo(user_id=h.user_a, matter_id=matter.matter_id, title="检查开发进度", status="open")
+        db.add(todo)
+        await db.flush()
+        reminder = Reminder(user_id=h.user_a, matter_id=matter.matter_id, todo_id=todo.todo_id,
+                            title="提醒：旧待办标题", trigger_at=now, status="pending")
+        db.add(reminder)
+        await db.commit()
+        todo_id, reminder_id = todo.todo_id, reminder.reminder_id
+
+    scan = bark_notifications._due_notifications
+
+    async def rename_after_scan(db, user_id, since, until):
+        """Commit a rename after discovering the pending notification."""
+        notifications = await scan(db, user_id, since, until)
+        async with h.app.state.session_factory() as other_db:
+            todo = await other_db.get(MatterTodo, todo_id)
+            todo.title = "检查 Codex 部署进度"
+            await other_db.commit()
+        return notifications
+
+    monkeypatch.setattr(bark_notifications, "_due_notifications", rename_after_scan)
+    assert await bark_notifications.tick(h.app, now=now) == 1
+    assert await bark_notifications.tick(h.app, now=now + timedelta(seconds=1)) == 0
+    assert len(sent) == 1
+    assert sent[0]["title"] == "待办提醒"
+    assert sent[0]["body"] == "检查 Codex 部署进度"
+    assert sent[0]["url"] == WEB_ORIGIN + "/today"
+    async with h.app.state.session_factory() as db:
+        delivery = await db.scalar(select(BarkNotificationDelivery))
+        assert delivery.status == "accepted_by_bark"
+        assert delivery.occurrence == f"todo:{reminder_id}:{now.isoformat()}"
 
 
 async def test_commute_worker_sends_plan_web_url(commute_harness):

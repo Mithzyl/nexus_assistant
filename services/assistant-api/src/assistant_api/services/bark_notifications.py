@@ -20,6 +20,7 @@ from assistant_api.services.matter_plan import PURPOSE
 
 REMINDER_WINDOW = timedelta(minutes=30)
 SEND_TIMEOUT_WINDOW = timedelta(minutes=2)
+DEFAULT_TIMED_BODY = "打开生活助手查看今天的安排。"
 TIMED_TITLES = {"todo": "待办提醒", "schedule": "日程提醒", "reminder": "到点提醒"}
 
 
@@ -39,18 +40,27 @@ def _timed_occurrence(kind: str, resource_id: str, trigger_at: datetime) -> str:
     return f"{kind}:{resource_id}:{as_utc(trigger_at).isoformat()}"
 
 
+async def _due_timed_notifications(
+    db: AsyncSession, user_id: str, since: datetime, now: datetime,
+) -> list[BarkNotification]:
+    """Build current timed notifications using the todo title as its lock-screen body."""
+    events = await due_events(db, user_id, since, now, use_current_todo_titles=True)
+    return [
+        BarkNotification(
+            _timed_occurrence(kind, resource_id, trigger_at),
+            TIMED_TITLES[kind], (title.strip() or DEFAULT_TIMED_BODY) if kind == "todo" else DEFAULT_TIMED_BODY,
+            as_utc(trigger_at),
+        )
+        for kind, resource_id, trigger_at, title, _ in events
+        if kind in TIMED_TITLES
+    ]
+
+
 async def _due_notifications(
     db: AsyncSession, user_id: str, since: datetime, now: datetime,
 ) -> list[BarkNotification]:
     """Read current business reminders and saved clarifications for one account."""
-    notifications = [
-        BarkNotification(
-            _timed_occurrence(kind, resource_id, trigger_at),
-            TIMED_TITLES[kind], "打开生活助手查看今天的安排。", as_utc(trigger_at),
-        )
-        for kind, resource_id, trigger_at, _, _ in await due_events(db, user_id, since, now)
-        if kind in TIMED_TITLES
-    ]
+    notifications = await _due_timed_notifications(db, user_id, since, now)
     # Commute alerts already run through the commute outbox with their own opt-in.
     replies = await db.execute(select(NexusRun.local_run_id, NexusRun.completed_at).where(
         NexusRun.user_id == user_id, NexusRun.purpose == PURPOSE, NexusRun.status == "succeeded",
@@ -68,8 +78,8 @@ async def _due_notifications(
 
 async def _claim(
     db: AsyncSession, user_id: str, notification: BarkNotification, now: datetime,
-) -> tuple[str, str] | None:
-    """Re-check the current binding and claim the occurrence before contacting Bark."""
+) -> tuple[str, str, BarkNotification] | None:
+    """Claim the occurrence once and return the notification refreshed before delivery."""
     binding = (await db.execute(select(
         BarkReminderSetting.device_key, BarkReminderSetting.assistant_notifications_enabled_at,
     ).join(User).where(
@@ -95,13 +105,14 @@ async def _claim(
             NexusRun.status == "succeeded", NexusRun.reply_state == "awaiting_reply",
             NexusRun.reply_expires_at > now,
         ))
+        if not still_due:
+            return None
     else:
-        still_due = any(
-            _timed_occurrence(kind, resource_id, at) == notification.occurrence
-            for kind, resource_id, at, _, _ in await due_events(db, user_id, since, now)
-        )
-    if not still_due:
-        return None
+        due = await _due_timed_notifications(db, user_id, since, now)
+        current = next((item for item in due if item.occurrence == notification.occurrence), None)
+        if current is None:
+            return None
+        notification = current
     delivery = BarkNotificationDelivery(user_id=user_id, occurrence=notification.occurrence, status="sending")
     db.add(delivery)
     try:
@@ -111,7 +122,7 @@ async def _claim(
         if await db.scalar(existing):
             return None
         raise
-    return delivery.delivery_id, key
+    return delivery.delivery_id, key, notification
 
 
 async def tick(app, *, now: datetime | None = None) -> int:
@@ -144,7 +155,7 @@ async def tick(app, *, now: datetime | None = None) -> int:
                 claim = await _claim(db, user_id, notification, now or datetime.now(UTC))
             if claim is None:
                 continue
-            delivery_id, key = claim
+            delivery_id, key, notification = claim
             reply_id = notification.reply_run_id
             path = f"/ask?reply={quote(reply_id, safe='')}" if reply_id else "/today"
             notifier = BarkNotifier(
