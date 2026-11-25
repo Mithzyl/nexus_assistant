@@ -12,6 +12,7 @@ from assistant_api.models import (
     CommuteCheck,
     CommuteEtaSnapshot,
     CommuteInstance,
+    CommutePlan,
     CommuteWeatherSnapshot,
     NotificationOutbox,
     PushAttempt,
@@ -71,7 +72,34 @@ async def test_plan_crud_and_revision_conflict(commute_harness):
 
 
 @pytest.mark.asyncio
+async def test_browser_place_metadata_round_trips_and_legacy_update_preserves_it(commute_harness):
+    """Use the browser's candidate and geolocation shapes, then simulate an old client update."""
+    h = commute_harness
+    body = commute_plan_body()
+    old = await create_plan(h, h.token_a)
+    path = f"/api/v1/commute-plans/{old['id']}"
+    origin = {**body["origin"], "city": None, "coordinate_system": "wgs84"}
+    destination = {**body["destination"], "city": "上海", "coordinate_system": "gcj02"}
+    payload = {**body, "origin": origin, "destination": destination}
+    result = await h.client.put(path, json=payload, headers=headers(h.token_a, {"If-Match": "1"}))
+    assert result.status_code == 200, result.text
+    assert result.json()["revision"] == 2
+    assert result.json()["origin"] == origin and result.json()["destination"] == destination
+    legacy = await h.client.put(path, json=body, headers=headers(h.token_a, {"If-Match": "2"}))
+    assert legacy.status_code == 200, legacy.text
+    detail = await h.client.get(path, headers=headers(h.token_a))
+    assert detail.json()["revision"] == 3
+    assert detail.json()["origin"] == origin and detail.json()["destination"] == destination
+    async with h.app.state.session_factory() as db:
+        plan = await db.get(CommutePlan, old["id"])
+        assert plan.origin_coordinate_system == "wgs84"
+        assert plan.destination_coordinate_system == "gcj02"
+        assert plan.destination_city == "上海"
+
+
+@pytest.mark.asyncio
 async def test_invalid_plan_is_rejected_with_error_envelope(commute_harness):
+    """Return a field-specific error when the plan times fail business validation."""
     h = commute_harness
     body = commute_plan_body(check_local_time="10:00", arrival_local_time="09:00")
     response = await h.client.post(
@@ -79,7 +107,7 @@ async def test_invalid_plan_is_rejected_with_error_envelope(commute_harness):
     )
     assert response.status_code == 422
     payload = response.json()
-    assert payload["error"]["code"] == "invalid_request"
+    assert payload["error"]["code"] == "commute_plan_fields_invalid"
     assert payload["request_id"] == response.headers["x-request-id"]
 
     body = commute_plan_body()

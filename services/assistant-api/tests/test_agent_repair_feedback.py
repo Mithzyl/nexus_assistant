@@ -20,7 +20,7 @@ from assistant_api.models import (
 )
 from assistant_api.services import agent_responses, commute_lifecycle
 from assistant_api.services.api_operations import OperationCatalog
-from assistant_api.services.operation_intake import workflow_configuration
+from assistant_api.services.operation_intake import model_context, workflow_configuration
 from conftest import FakeNexus, auth, build_settings, login, seed_user, tool_auth
 
 
@@ -168,11 +168,12 @@ async def test_format_feedback_is_actionable_before_writes(repair_app, value, hi
 
 
 async def test_agent_protocol_explains_repair_and_stop_conditions(repair_app):
-    """Publish repair instructions within the existing protocol limit, without starting a Nexus run."""
+    """Keep the actual first request, including a capture reply, within the Nexus protocol limit."""
     catalog = OperationCatalog(repair_app.app)
-    configuration = workflow_configuration({'api_operations': [
-        operation.model_description() for operation in catalog.search('新增日程 修改日程 冲突')
-    ]})
+    flow = {'text': '改到下午两点', 'now': '2040-01-02T00:00:00Z', 'timezone': 'Asia/Shanghai', 'history': [],
+            'receipts': [], 'step': 0,
+            'reply_to_run_id': repair_app.local_id, 'capture_review_id': 'isolated-review'}
+    configuration = workflow_configuration(model_context(flow, catalog))
     instructions = configuration['application_protocol_instructions']
     assert 'formal_write_status=not_applied' in instructions
     assert 'unknown/stop' in instructions and len(instructions) <= 16000

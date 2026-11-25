@@ -8,6 +8,7 @@ database, frontend, map or notification service is contacted.
 import json
 from datetime import UTC, datetime, timedelta
 from functools import partial
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -34,6 +35,7 @@ async def request_json(client, method, path, body=None, status=200):
 @pytest.mark.asyncio
 async def test_corrections_answers_and_ai_context_preserve_originals(tmp_path):
     """Verify one migration-to-context flow without replaying a real model or changing user data."""
+    matter_id = str(uuid4())
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'relations.db'}"
     settings = Settings(
         _env_file=None, environment="test", database_url=database_url, allow_schema_create=False,
@@ -52,7 +54,7 @@ async def test_corrections_answers_and_ai_context_preserve_originals(tmp_path):
         other = User(user_id="other-account", email="other@relations.invalid", display_name="另一合成账号",
                      password_verifier="disabled-test-login", status="active")
         db.add_all([owner, other]); await db.flush()
-        matter = Matter(matter_id="owned-matter", user_id=owner.user_id, title="套餐说明", status="active")
+        matter = Matter(matter_id=matter_id, user_id=owner.user_id, title="套餐说明", status="active")
         foreign_matter = Matter(matter_id="foreign-matter", user_id=other.user_id, title="其他事项", status="active")
         db.add_all([matter, foreign_matter]); await db.flush()
         root_request = {"text": "原始用户说明", "idempotency_key": "legacy-original-request", "parent_text_id": None}
@@ -114,7 +116,7 @@ async def test_corrections_answers_and_ai_context_preserve_originals(tmp_path):
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=partial(dispatch_local, app, user_id="owner-account"))
         async with httpx.AsyncClient(transport=transport, base_url="http://isolated-assistant") as client:
-            path = "/api/v1/matters/owned-matter/supplements"
+            path = f"/api/v1/matters/{matter_id}/supplements"
             old = await request_json(client, "GET", path + "/original-supplement")
             old_question = next(item for item in old["texts"] if item["text_id"] == "assistant-question")
             assert old_question["answer_count"] == 0 and not old_question["has_answers"]
@@ -180,7 +182,7 @@ async def test_corrections_answers_and_ai_context_preserve_originals(tmp_path):
                 assert records["assistant-summary"]["correction_count"] == 1
                 assert records["assistant-question"]["answer_count"] == 2
             fake.final_text = json.dumps({"decision": "answer", "answer": "已结合你的纠正和回答理解，不改变安排。", "cards": []}, ensure_ascii=False)
-            planned = await request_json(client, "POST", "/api/v1/matters/owned-matter/intake", {
+            planned = await request_json(client, "POST", f"/api/v1/matters/{matter_id}/intake", {
                 "text": "结合该事项的纠正和回答说明已有资料，不改变任何安排。", "idempotency_key": "relation-planning-request",
             })
             async with app.state.session_factory() as db:
@@ -191,7 +193,7 @@ async def test_corrections_answers_and_ai_context_preserve_originals(tmp_path):
                 assert records["assistant-summary"]["origin"] == "assistant"
                 assert records[correction["texts"][0]["text_id"]]["origin"] == "user"
                 assert run.context_json["api_flow"]["receipts"] == []
-                assert await db.scalar(select(Matter).where(Matter.matter_id == "owned-matter")) is not None
+                assert await db.get(Matter, matter_id) is not None
             prompts = "\n".join(item["body"] for item in fake.calls if item["path"] == "/api/v1/app/runs")
             assert "relation_type" in prompts and "不代表问题已经解决" in prompts
             assert fake.run_seq == 2, "Only one controlled analysis and one controlled planning call are expected"

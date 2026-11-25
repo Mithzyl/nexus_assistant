@@ -13,6 +13,34 @@ from assistant_api.models import Matter, MatterTodo, ScheduleEvent
 
 
 @pytest.mark.asyncio
+async def test_unpublished_follow_up_reference_returns_prewrite_error(harness):
+    """Reject an invalid reference so the Agent can correct it, with no saved rule."""
+    from assistant_api.models import FollowUp
+
+    h = harness
+    async with h.app.state.session_factory() as db:
+        matter = Matter(user_id=h.user_a, title='跟进引用验收')
+        db.add(matter)
+        await db.commit()
+        matter_id = matter.matter_id
+
+    response = await h.client.post('/api/v1/follow-ups', headers=auth(h.token_a), json={
+        'idempotency_key': 'invalid-reference-001',
+        'matter_id': matter_id,
+        'title': '核对事项',
+        'instruction': '检查事项的当前状态',
+        'references': [{'name': 'matter', 'operation_id': 'get_matter', 'path_parameters': {'matter_id': matter_id}}],
+        'trigger': {'kind': 'time', 'at': '2040-01-02T10:00:00Z'},
+    })
+    assert response.status_code == 422, response.text
+    error = response.json()['error']
+    assert error['code'] == 'follow_up_reference_invalid'
+    assert error['details'] == {'formal_write_status': 'not_applied'}
+    async with h.app.state.session_factory() as db:
+        assert await db.scalar(select(FollowUp).where(FollowUp.matter_id == matter_id)) is None
+
+
+@pytest.mark.asyncio
 async def test_contract_meeting_followup_lifecycle(harness):
     """Keep record identity through due follow-up, completion, reschedule and pause."""
     h = harness

@@ -2,7 +2,7 @@
 from datetime import UTC, datetime, timedelta
 from sqlalchemy import select, update
 from assistant_api.models import FollowUp, FollowUpExecution, Matter, User
-from assistant_api.core.errors import ConflictError, InvalidRequestError, NotFoundError
+from assistant_api.core.errors import AssistantError, ConflictError, InvalidRequestError, NotFoundError
 from assistant_api.services.api_operations import OperationCatalog, execute_call, read_result_pointer
 
 
@@ -28,14 +28,23 @@ def rule_read(row):
 
 
 async def read_references(app, user_id, references):
-    """Read owned records through published read effects, including JSON POST queries, without a handler registry."""
+    """Read owned records through published queries and report invalid references before saving a rule."""
     catalog = OperationCatalog(app)
     values = {}
     for reference in references:
         name = reference['name']
         if name in values:
             raise InvalidRequestError('follow_up_reference_name','记录引用名称重复。')
-        operation, call = catalog.validate_call({k:reference[k] for k in ('operation_id','path_parameters','query_parameters','body') if k in reference})
+        arguments = {k: reference[k] for k in ('operation_id', 'path_parameters', 'query_parameters', 'body') if k in reference}
+        try:
+            operation, call = catalog.validate_call(arguments)
+        except ValueError as exc:
+            raise AssistantError(
+                'follow_up_reference_invalid',
+                '跟进引用不符合已发布的查询接口，请核对接口编号和必填参数。规则未保存。',
+                422,
+                {'formal_write_status': 'not_applied'},
+            ) from exc
         if operation.effect!='read':
             raise InvalidRequestError('follow_up_read_operation','记录引用需要查询接口。')
         receipt = await execute_call(app,'',operation,call,'follow-up-read',execution_user_id=user_id)

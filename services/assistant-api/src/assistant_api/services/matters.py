@@ -4373,7 +4373,11 @@ async def create_structured_draft(db, runtime, settings, user,
     if memory_applications is None:
         resolved, memory_applications = await source_records.prepare_combination(db, user, request, execution_run_id=execution_run_id)
     else:
-        resolved = request.model_dump()
+        # Direct operations already resolved these options, so keep only formal record fields.
+        resolved = request.model_dump(exclude={
+            'schedule': source_records.OPTIONS,
+            'todos': {'__all__': source_records.OPTIONS},
+        })
     matter = await _get_matter(db, user, request.matter_id) if request.matter_id else None
     if matter is not None:
         if matter.status not in ("active", "waiting"):

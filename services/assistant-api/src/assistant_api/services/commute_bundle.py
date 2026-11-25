@@ -202,8 +202,13 @@ def validate_quote(payload):
     if not schedule.get('ends_at') or datetime.fromisoformat(schedule['ends_at'].replace('Z','+00:00'))!=expected_end:raise ConflictError('route_quote_mismatch','到达时间已变更。')
 
 async def attach_records(db,user,draft,matter,schedule):
+    """Create the recurring plan from the same confirmed places used for the first route."""
     state=draft.payload_json['commute'];inp=state['quote_inputs'];origin=inp['origin'];dest=inp['destination']
     plan=CommutePlan(user_id=user.user_id,matter_id=matter.matter_id,first_schedule_id=schedule.schedule_id,effective_from=date.fromisoformat(inp['effective_from']),name=matter.title,enabled=True,timezone=state['timezone'],weekdays_json=inp['weekdays'],arrival_local_time=state['intent']['arrival_local_time'],check_local_time='07:00',transport_mode=state['selected_mode'],buffer_minutes=inp['buffer_minutes'],rain_probability_threshold=.4,rain_extra_buffer_minutes=0,notify_enabled=False,origin_label=origin['name'],origin_latitude=origin['latitude'],origin_longitude=origin['longitude'],destination_label=dest['name'],destination_latitude=dest['latitude'],destination_longitude=dest['longitude'],revision=1)
+    plan.origin_city = origin.get('city')
+    plan.origin_coordinate_system = origin.get('coordinate_system')
+    plan.destination_city = dest.get('city')
+    plan.destination_coordinate_system = dest.get('coordinate_system')
     db.add(plan);await db.flush()
     route={**state['routes'][state['selected_mode']],'route_quote_id':state['route_quote_id']}
     route['schedule_id']=schedule.schedule_id

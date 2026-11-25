@@ -13,6 +13,7 @@ COMMITTED = ROOT / "docs" / "commute" / "openapi.json"
 
 
 def test_committed_openapi_matches_application():
+    """Keep the exported contracts identical to those served by the Assistant."""
     settings = Settings(
         environment="test",
         database_url="sqlite+aiosqlite:///:memory:",
@@ -25,6 +26,7 @@ def test_committed_openapi_matches_application():
 
 
 def test_commute_contract_exposes_headers_enums_and_no_body_identity():
+    """Follow the schemas referenced by real write routes and check location fields."""
     settings = Settings(
         environment="test",
         database_url="sqlite+aiosqlite:///:memory:",
@@ -62,9 +64,14 @@ def test_commute_contract_exposes_headers_enums_and_no_body_identity():
         "degraded",
         "unavailable",
     ]
-    assert "user_id" not in schemas["CommutePlanInput"]["properties"]
     assert "environment" not in schemas["PushDeviceInput"]["properties"]
-    plan_input = schemas["CommutePlanInput"]["properties"]
+    create_definition = paths["/api/v1/commute-plans"]["post"]
+    plan_schema_ref = create_definition["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+    assert put["requestBody"]["content"]["application/json"]["schema"]["$ref"] == plan_schema_ref
+    plan_schema = schemas[plan_schema_ref.rsplit("/", 1)[-1]]
+    assert plan_schema["additionalProperties"] is False
+    plan_input = plan_schema["properties"]
+    assert "user_id" not in plan_input
     for field in (
         "name",
         "enabled",
@@ -81,3 +88,6 @@ def test_commute_contract_exposes_headers_enums_and_no_body_identity():
         "destination",
     ):
         assert field in plan_input
+    location_schema_ref = next(item["$ref"] for item in plan_input["origin"]["anyOf"] if "$ref" in item)
+    location_fields = schemas[location_schema_ref.rsplit("/", 1)[-1]]["properties"]
+    assert {"latitude", "longitude", "city", "coordinate_system"} <= location_fields.keys()

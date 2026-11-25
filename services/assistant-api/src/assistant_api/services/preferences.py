@@ -427,7 +427,7 @@ def require_resolved(receipt):
 
 
 async def assert_current(db, client, user, receipt, *, schedule=None):
-    """Recheck chosen sources before saving; keep legacy pending drafts compatible without applying their roles to new tasks."""
+    """Recheck chosen sources and compare only the formal fields of pending schedule drafts."""
     from assistant_api.services.memory_repository import for_session
     client=for_session(db)
     sources=[{'entry_id':field['entry_id'],'version':field['version']} for field in receipt['fields'].values()
@@ -436,6 +436,10 @@ async def assert_current(db, client, user, receipt, *, schedule=None):
         return
     if schedule is not None:
         from assistant_api.schemas.matters import SchedulePayload
+        from assistant_api.services.memory_applications import OPTIONS
+
+        # Earlier direct drafts could store request-only memory options inside schedule.
+        schedule = {key: value for key, value in schedule.items() if key not in OPTIONS}
         original=SchedulePayload.model_validate(receipt['values'])
         actual=SchedulePayload.model_validate(schedule)
         for field,detail in receipt['fields'].items():

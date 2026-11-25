@@ -26,7 +26,7 @@ from assistant_api.routers.places import require_body_parameters
 from assistant_api.core.errors import InvalidRequestError, NotFoundError
 from assistant_api.models import ScheduleEvent, NexusRun
 from assistant_api.services import operation_intake, run_service
-from assistant_api.services.intake_failures import public_failure
+from assistant_api.services.intake_failures import public_failure, stream_failure
 from assistant_api.services import commute_estimate, commute_places, matters, schedule_routes, commute_bundle
 
 router = APIRouter(prefix="/api/v1", tags=["matters"])
@@ -172,7 +172,8 @@ async def intake_stream(request: Request, payload: schemas.IntakeRequest,
                     dismissed_reply_run_id=payload.dismissed_reply_run_id,
                     memory_disclosures=[item.model_dump() for item in payload.memory_disclosures])
                 if result["outcome"] in {"failed", "unknown", "cancelled"}:
-                    queue.put_nowait(("error", {k: result.get(k) for k in ("error", "status", "outcome", "local_run_id", "workflow_execution_id")}))
+                    row = await db.get(NexusRun, result["local_run_id"]) if result.get("local_run_id") else None
+                    queue.put_nowait(("error", stream_failure(result, row)))
                 else:
                     queue.put_nowait(("result", _intake_response(result=result, response=Response())))
         except Exception as exc:

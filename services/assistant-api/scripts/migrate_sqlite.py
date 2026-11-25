@@ -24,6 +24,7 @@ NEXT_ACTION_VERSION = "0030_next_actions"
 INTAKE_REPLY_VERSION = "0031_intake_replies"
 CAPTURE_VERSION = "0032_intake_capture"
 BARK_NOTIFICATION_VERSION = "0033_bark_notifications"
+COMMUTE_LOCATION_VERSION = "0034_commute_location_metadata"
 COLUMN_MIGRATIONS = (
     (INTAKE_REPLY_VERSION, "nexus_runs", "reply_state", "VARCHAR(20)"),
     (INTAKE_REPLY_VERSION, "nexus_runs", "reply_expires_at", "DATETIME"),
@@ -31,6 +32,10 @@ COLUMN_MIGRATIONS = (
     (CAPTURE_VERSION, "nexus_runs", "capture_lease_expires_at", "DATETIME"),
     (CAPTURE_VERSION, "nexus_runs", "capture_dispatch_started_at", "DATETIME"),
     (BARK_NOTIFICATION_VERSION, "bark_reminder_settings", "assistant_notifications_enabled_at", "DATETIME"),
+    (COMMUTE_LOCATION_VERSION, "commute_plans", "origin_city", "VARCHAR(160)"),
+    (COMMUTE_LOCATION_VERSION, "commute_plans", "origin_coordinate_system", "VARCHAR(16)"),
+    (COMMUTE_LOCATION_VERSION, "commute_plans", "destination_city", "VARCHAR(160)"),
+    (COMMUTE_LOCATION_VERSION, "commute_plans", "destination_coordinate_system", "VARCHAR(16)"),
     (NEXT_ACTION_VERSION, "matter_todos", "priority", "VARCHAR(8)"),
     (NEXT_ACTION_VERSION, "matter_todos", "estimated_duration_minutes", "INTEGER"),
     (NEXT_ACTION_VERSION, "matter_todos", "available_after", "DATETIME"),

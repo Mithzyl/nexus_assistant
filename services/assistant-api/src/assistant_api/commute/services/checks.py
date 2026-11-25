@@ -28,9 +28,9 @@ from assistant_api.commute.providers.base import (
 )
 from assistant_api.commute.runtime import CommuteRuntime
 from assistant_api.commute.schemas import CheckCreateRequest, CheckCreated, RouteSnapshotInput
-from assistant_api.commute.serializers import check_read
+from assistant_api.commute.serializers import check_read, saved_plan_location
 from assistant_api.commute.services.ai import analyze as analyze_commute
-from assistant_api.commute.services.plans import get_plan
+from assistant_api.commute.services.plans import get_plan, route_locations
 from assistant_api.commute.services.scheduling import ensure_instance, latest_advisory
 from assistant_api.commute.timeutil import ensure_aware, local_today, target_arrival_for
 from assistant_api.core.errors import AssistantError, ConflictError, NotFoundError
@@ -298,17 +298,34 @@ def backoff_seconds(
 
 
 async def _call_eta(runtime: CommuteRuntime, plan: CommutePlan, *, request_depart_at, target):
+    """Measure the plan with provider coordinates and the saved transit cities."""
     if not getattr(runtime.eta, "available", True):
         return None, ProviderNotConfigured("route provider is not configured", code="route_provider_unconfigured")
+
+    async def fetch():
+        """Convert GPS points before routing, within the provider timeout."""
+        origin, destination = await route_locations(
+            runtime, saved_plan_location(plan, "origin"), saved_plan_location(plan, "destination"),
+        )
+        origin_city, destination_city = origin.city, destination.city
+        if runtime.eta.provider == "amap" and plan.transport_mode == "transit":
+            if not origin_city:
+                origin_city = (await runtime.eta.reverse_geocode(latitude=origin.latitude, longitude=origin.longitude)).city
+            if not destination_city:
+                destination_city = (await runtime.eta.reverse_geocode(latitude=destination.latitude, longitude=destination.longitude)).city
+        return await runtime.eta.fetch(
+            origin=(origin.latitude, origin.longitude),
+            destination=(destination.latitude, destination.longitude),
+            mode=plan.transport_mode,
+            request_depart_at=request_depart_at,
+            target_arrival_at=target,
+            origin_city=origin_city,
+            destination_city=destination_city,
+        )
+
     try:
         return await asyncio.wait_for(
-            runtime.eta.fetch(
-                origin=(plan.origin_latitude, plan.origin_longitude),
-                destination=(plan.destination_latitude, plan.destination_longitude),
-                mode=plan.transport_mode,  # type: ignore[arg-type]
-                request_depart_at=request_depart_at,
-                target_arrival_at=target,
-            ),
+            fetch(),
             timeout=runtime.settings.commute_http_timeout_seconds,
         ), None
     except TimeoutError as exc:

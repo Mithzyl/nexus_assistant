@@ -70,6 +70,11 @@ class CommuteLocation(BaseModel):
     label: str = Field(min_length=1, max_length=160)
     latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
     longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    city: str | None = Field(default=None, max_length=160,
+        description="地点候选的城市名称或行政区代码；公交查询可使用。")
+    coordinate_system: Literal["gcj02", "wgs84"] | None = Field(
+        default=None, description="候选地点使用 gcj02；浏览器或设备 GPS 定位使用 wgs84。旧客户端可省略。",
+    )
 
     @field_validator("label")
     @classmethod

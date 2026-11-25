@@ -202,6 +202,21 @@ class AmapProvider:
             source="amap_regeo",
         )
 
+    async def convert_gps(self, points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        """Convert GPS points in order before a request to a GCJ-02 endpoint."""
+        payload = await self._get("/v3/assistant/coordinate/convert", {
+            "locations": "|".join(self._coord(point) for point in points),
+            "coordsys": "gps",
+        })
+        locations = payload.get("locations")
+        coordinates = locations.split(";") if isinstance(locations, str) else []
+        converted = [self._parse_location(item) for item in coordinates]
+        if len(converted) != len(points) or any(point is None for point in converted):
+            raise ProviderInvalidResponse(
+                "AMap returned invalid converted coordinates", code="amap_coordinate_conversion_invalid",
+            )
+        return [point for point in converted if point is not None]
+
     async def fetch(
         self,
         *,

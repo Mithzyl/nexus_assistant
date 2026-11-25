@@ -61,6 +61,38 @@ def create_proposal(title, start):
     }}}
 
 
+async def test_stream_reports_invalid_final_answer_without_losing_saved_write(harness):
+    """Return the Web workflow-error fields while preserving the already committed schedule."""
+    h = harness
+    original_count = await count_schedules(h)
+    payload = {'text': '安排日程', 'idempotency_key': 'invalid-stream-final-001'}
+    hold(h)
+    task = asyncio.create_task(h.client.post('/api/v1/matters/intake/stream',
+        headers=auth(h.token_a), json=payload))
+    try:
+        for _ in range(150):
+            if h.fake.workflow_seq:
+                break
+            await asyncio.sleep(0.02)
+        assert h.fake.workflow_seq == 1
+        result = await callback(h, 1, create_proposal('已保存的日程', datetime(2041, 4, 9, 2, tzinfo=UTC)), 'valid-create')
+        assert result['execution_status'] == 'succeeded'
+    finally:
+        h.fake.final_text = '这不是约定的最终回答格式。'
+        h.fake.release_workflow()
+        response = await asyncio.wait_for(task, 5)
+    error_frame = next(frame for frame in response.text.split('\n\n') if frame.startswith('event: error\n'))
+    failure = json.loads(error_frame.splitlines()[1].removeprefix('data: '))
+    assert failure['error']['error_code'] == 'final_output_invalid'
+    assert failure['error']['outcome_is_known'] is True
+    assert failure['error']['is_retryable'] is False
+    assert failure['local_run_id'] and failure['outcome'] == 'failed'
+    replay = await h.client.post('/api/v1/matters/intake/stream', headers=auth(h.token_a), json=payload)
+    assert failure['local_run_id'] in replay.text
+    assert h.fake.workflow_seq == 1
+    assert await count_schedules(h) == original_count + 1
+
+
 async def count_schedules(h):
     """Count the actual isolated account's schedule rows after commit or rollback."""
     async with h.app.state.session_factory() as db:

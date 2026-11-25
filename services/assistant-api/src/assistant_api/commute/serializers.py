@@ -28,7 +28,14 @@ from assistant_api.models import (
 )
 
 
+def saved_plan_location(plan: CommutePlan, endpoint: str) -> CommuteLocation:
+    """Read one saved point without guessing missing metadata."""
+    fields = ("label", "latitude", "longitude", "city", "coordinate_system")
+    return CommuteLocation.model_validate({field: getattr(plan, f"{endpoint}_{field}") for field in fields})
+
+
 def plan_read(plan: CommutePlan) -> CommutePlanRead:
+    """Return each saved place with its original coordinates, city and coordinate system."""
     return CommutePlanRead(
         id=plan.plan_id,
         effective_from=plan.effective_from,
@@ -48,16 +55,8 @@ def plan_read(plan: CommutePlan) -> CommutePlanRead:
         rain_probability_threshold=plan.rain_probability_threshold,
         rain_extra_buffer_minutes=plan.rain_extra_buffer_minutes,
         notify_enabled=plan.notify_enabled,
-        origin=CommuteLocation(
-            label=plan.origin_label,
-            latitude=plan.origin_latitude,
-            longitude=plan.origin_longitude,
-        ),
-        destination=CommuteLocation(
-            label=plan.destination_label,
-            latitude=plan.destination_latitude,
-            longitude=plan.destination_longitude,
-        ),
+        origin=saved_plan_location(plan, "origin"),
+        destination=saved_plan_location(plan, "destination"),
     )
 
 

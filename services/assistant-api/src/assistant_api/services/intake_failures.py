@@ -5,6 +5,7 @@ from assistant_api.nexus_client.models import WorkflowErrorRead
 
 
 def public_failure(row=None, exc=None) -> dict:
+    """Build a public failure from a durable run or a safe request error."""
     status = row.status if row is not None else "unknown"
     if status not in {"failed", "cancelled", "unknown", "pending", "running"}:
         status = "unknown"
@@ -35,3 +36,22 @@ def public_failure(row=None, exc=None) -> dict:
     return {"error": error, "status": status, "outcome": outcome,
             "local_run_id": row.local_run_id if row is not None else None,
             "workflow_execution_id": row.workflow_execution_id if row is not None else None}
+
+
+def stream_failure(result: dict, row) -> dict:
+    """Keep the actual run identity and emit the workflow-error fields expected by Web."""
+    failure = public_failure(row)
+    outcome = result["outcome"]
+    error = result.get("error")
+    if isinstance(error, dict) and error.get("code") == "final_output_invalid":
+        # A finished model run can have an invalid business answer even after saving a record.
+        # The answer failure is known, while repeating the business task is unsafe.
+        failure["error"] = WorkflowErrorRead(
+            error_code=error["code"],
+            error_type="response_validation",
+            public_message=error["message"],
+            outcome_is_known=True,
+        ).model_dump()
+    return {**failure, "outcome": outcome, "status": result.get("status"),
+            "local_run_id": result.get("local_run_id"),
+            "workflow_execution_id": result.get("workflow_execution_id")}

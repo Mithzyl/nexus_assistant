@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from assistant_api.commute.schemas import CommutePlanInput
+from assistant_api.commute.schemas import CommuteLocation, CommutePlanInput
+from assistant_api.commute.runtime import CommuteRuntime
 from assistant_api.core.errors import AssistantError, ConflictError, InvalidRequestError, NotFoundError
 from assistant_api.models import (
     AdvisoryAction,
@@ -48,6 +49,7 @@ def parse_if_match(header: str | None) -> int:
 
 
 def _values(payload: CommutePlanInput) -> dict:
+    """Map the editable plan and place metadata to the existing column names."""
     return {
         "name": payload.name,
         "effective_from": payload.effective_from,
@@ -64,10 +66,34 @@ def _values(payload: CommutePlanInput) -> dict:
         "origin_label": payload.origin.label,
         "origin_latitude": payload.origin.latitude,
         "origin_longitude": payload.origin.longitude,
+        "origin_city": payload.origin.city,
+        "origin_coordinate_system": payload.origin.coordinate_system,
         "destination_label": payload.destination.label,
         "destination_latitude": payload.destination.latitude,
         "destination_longitude": payload.destination.longitude,
+        "destination_city": payload.destination.city,
+        "destination_coordinate_system": payload.destination.coordinate_system,
     }
+
+
+async def route_locations(
+    runtime: CommuteRuntime, origin: CommuteLocation, destination: CommuteLocation,
+) -> tuple[CommuteLocation, CommuteLocation]:
+    """Prepare provider coordinates while keeping the saved original points unchanged."""
+    points = (origin, destination)
+    if runtime.eta.provider != "amap":
+        return points
+    gps = [(point.latitude, point.longitude) for point in points if point.coordinate_system == "wgs84"]
+    converted = iter(await runtime.eta.convert_gps(gps) if gps else [])
+
+    def route_point(point: CommuteLocation) -> CommuteLocation:
+        """Preserve the legacy GCJ-02 assumption and replace only explicit GPS points."""
+        if point.coordinate_system == "wgs84":
+            latitude, longitude = next(converted)
+            return point.model_copy(update={"latitude": latitude, "longitude": longitude, "coordinate_system": "gcj02"})
+        return point.model_copy(update={"coordinate_system": "gcj02"})
+
+    return route_point(origin), route_point(destination)
 
 
 async def list_plans(db: AsyncSession, user_id: str) -> list[CommutePlan]:
@@ -126,14 +152,23 @@ async def update_plan(
     user = await db.get(User, user_id)
     if memory_application:
         await memory_applications.verify_receipt(db, user, memory_application['receipt'])
+    expected = parse_if_match(if_match)
+    current = await get_plan(db, user_id, plan_id)
     if memory_application:
         from assistant_api.commute.serializers import plan_read
-        previous = plan_read(await get_plan(db, user_id, plan_id)).model_dump(mode='json')
+        previous = plan_read(current).model_dump(mode='json')
         memory_application = {**memory_application, 'previous_values': {
             field: previous.get(field) for field in memory_application['receipt']['fields']}}
-    expected = parse_if_match(if_match)
     now = datetime.now(UTC)
     values = _values(payload)
+    for endpoint, point in (("origin", payload.origin), ("destination", payload.destination)):
+        if (point.latitude, point.longitude) == (
+            getattr(current, f"{endpoint}_latitude"), getattr(current, f"{endpoint}_longitude"),
+        ):
+            # Older clients omit metadata when editing an unchanged point.
+            for field in ("city", "coordinate_system"):
+                if field not in point.model_fields_set:
+                    values.pop(f"{endpoint}_{field}")
     if "effective_from" not in payload.model_fields_set:
         values.pop("effective_from", None)
     values.update({"revision": expected + 1, "updated_at": now})

@@ -50,9 +50,13 @@ class CommutePlan(TimestampMixin, Base):
     origin_label: Mapped[str] = mapped_column(String(160))
     origin_latitude: Mapped[float] = mapped_column(Float)
     origin_longitude: Mapped[float] = mapped_column(Float)
+    origin_city: Mapped[str | None] = mapped_column(String(160))
+    origin_coordinate_system: Mapped[str | None] = mapped_column(String(16))
     destination_label: Mapped[str] = mapped_column(String(160))
     destination_latitude: Mapped[float] = mapped_column(Float)
     destination_longitude: Mapped[float] = mapped_column(Float)
+    destination_city: Mapped[str | None] = mapped_column(String(160))
+    destination_coordinate_system: Mapped[str | None] = mapped_column(String(16))
 
     effective_from: Mapped[date | None] = mapped_column(Date)
     matter_id: Mapped[str | None] = mapped_column(ForeignKey("matters.matter_id"))

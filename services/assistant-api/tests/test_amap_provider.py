@@ -9,9 +9,35 @@ import httpx
 import pytest
 
 from assistant_api.commute.providers.amap import AmapProvider
+from assistant_api.commute.schemas import CommuteLocation
+from assistant_api.commute.services.plans import route_locations
 from assistant_api.services.commute_estimate import estimate
 
 NOW = datetime(2026, 10, 27, 1, 0, tzinfo=UTC)
+
+
+async def test_plan_gps_coordinates_convert_only_for_amap():
+    """Keep the plan GPS value and use the converted point for the provider request."""
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Confirm the provider receives the original GPS point for conversion."""
+        requests.append(request.url.path)
+        assert request.url.params["coordsys"] == "gps"
+        assert request.url.params["locations"] == "109.400000,24.300000"
+        return httpx.Response(200, json={"status": "1", "locations": "109.404000,24.303000"})
+
+    provider = AmapProvider(api_key="test", transport=httpx.MockTransport(handler))
+    try:
+        gps = CommuteLocation(label="GPS", latitude=24.30, longitude=109.40, coordinate_system="wgs84")
+        amap = CommuteLocation(label="候选点", latitude=24.33, longitude=109.43, coordinate_system="gcj02", city="柳州")
+        origin, destination = await route_locations(SimpleNamespace(eta=provider), gps, amap)
+        assert gps.coordinate_system == "wgs84" and gps.longitude == 109.40
+        assert (origin.latitude, origin.longitude, origin.coordinate_system) == (24.303, 109.404, "gcj02")
+        assert destination == amap
+        assert requests == ["/v3/assistant/coordinate/convert"]
+    finally:
+        await provider.aclose()
 
 
 @pytest.mark.asyncio

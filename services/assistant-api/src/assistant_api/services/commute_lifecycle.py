@@ -7,7 +7,9 @@ from assistant_api.models import CommutePlan, MatterDraft, ScheduleEvent
 from assistant_api.core.errors import AssistantError, ConflictError, InvalidRequestError
 from assistant_api.services import commute_estimate, place_queries, schedule_routes
 from assistant_api.commute.schemas import CommuteLocation
-from assistant_api.commute.services.plans import _cancel_stale_work
+from assistant_api.commute.providers.base import ProviderError
+from assistant_api.commute.serializers import saved_plan_location
+from assistant_api.commute.services.plans import _cancel_stale_work, route_locations
 
 COMMUTE_LOCATION_INCOMPLETE = 'commute_location_incomplete'
 
@@ -28,9 +30,7 @@ async def stop_plans(db, user, matter_id):
 def plan_location(plan: CommutePlan, endpoint: str) -> CommuteLocation:
     """Validate persisted coordinates and labels, including rows created before current input validation."""
     try:
-        return CommuteLocation.model_validate({
-            field: getattr(plan, f'{endpoint}_{field}') for field in ('label', 'latitude', 'longitude')
-        })
+        return saved_plan_location(plan, endpoint)
     except ValidationError as exc:
         label = '起点' if endpoint == 'origin' else '终点'
         raise AssistantError(
@@ -87,25 +87,31 @@ async def revision_draft(db, runtime, settings, user, run, parsed, text, *, orig
         raise InvalidRequestError('commute_schedule_ambiguous', '目标日期没有通勤日程，请先读取当天安排。')
     origin = plan_location(plan, 'origin')
     destination = plan_location(plan, 'destination')
+    try:
+        route_origin, route_destination = await route_locations(runtime, origin, destination)
+    except ProviderError as exc:
+        raise ConflictError('commute_route_unavailable', '本次未取得有效的路线坐标，尚未更新日程。') from exc
     basis = schedule
     if basis is None and plan.first_schedule_id:
         basis = await db.get(ScheduleEvent, plan.first_schedule_id)
     proposed = {
         'title': schedule.title if schedule else plan.name,
         'location': destination.label, 'latitude': destination.latitude, 'longitude': destination.longitude,
-        'coordinate_system': 'gcj02',
+        'coordinate_system': destination.coordinate_system or 'gcj02',
+        'location_city': destination.city,
     }
     if (basis and basis.user_id == user.user_id and basis.matter_id == plan.matter_id
-            and basis.deleted_at is None and basis.coordinate_system == 'gcj02'
+            and basis.deleted_at is None and basis.coordinate_system == proposed['coordinate_system']
             and (basis.latitude, basis.longitude) == (destination.latitude, destination.longitude)):
-        for field in ('location_city', 'location_address', 'location_source', 'location_external_id'):
+        for field in ('location_address', 'location_source', 'location_external_id'):
             proposed[field] = getattr(basis, field)
-    origin_city = None
+        proposed['location_city'] = destination.city or basis.location_city
+    origin_city = origin.city
     destination_city = proposed.get('location_city')
     if plan.transport_mode == 'transit' and runtime.eta.provider == 'amap':
-        origin_city = await transit_city(runtime, origin, 'origin')
+        origin_city = origin_city or await transit_city(runtime, route_origin, 'origin')
         if not destination_city or not destination_city.strip():
-            destination_city = await transit_city(runtime, destination, 'destination')
+            destination_city = await transit_city(runtime, route_destination, 'destination')
             proposed['location_city'] = destination_city
     draft = MatterDraft(user_id=user.user_id, matter_id=target.matter_id,
         ai_run_id=run.local_run_id if run else None, origin_key=origin_key,
@@ -120,11 +126,12 @@ async def revision_draft(db, runtime, settings, user, run, parsed, text, *, orig
                 'set_override':request.get('set_override',True),'new_day':schedule is None}})
     draft.payload_json = schedule_routes._jsonable(draft.payload_json)
     db.add(draft); await db.commit()
-    route = await commute_estimate.estimate(runtime, origin=(origin.latitude,origin.longitude),
-        destination=(destination.latitude,destination.longitude), mode=plan.transport_mode,
+    route = await commute_estimate.estimate(runtime, origin=(route_origin.latitude,route_origin.longitude),
+        destination=(route_destination.latitude,route_destination.longitude), mode=plan.transport_mode,
         depart_at=arrival-timedelta(hours=1), arrive_by=arrival,
         origin_city=origin_city, destination_city=destination_city,
-        origin_coordinate_system='gcj02',destination_coordinate_system='gcj02',
+        origin_coordinate_system=route_origin.coordinate_system or 'gcj02',
+        destination_coordinate_system=route_destination.coordinate_system or 'gcj02',
         schedule_id=schedule.schedule_id if schedule else None)
     if route['status'] != 'available':
         draft.payload_json={**draft.payload_json,'commute_revision':{**draft.payload_json['commute_revision'],'status':'failed'}}
@@ -195,13 +202,23 @@ async def generate_day(db, runtime, user, plan_id, service_date):
         return {'schedule_id':existing.schedule_id,'replayed':True,
                 'timezone_repaired':repaired,'service_date':str(service_date)}
     if not first:raise ConflictError('commute_basis_missing','缺少已确认首日的地点依据。')
+    original_origin, original_destination = plan_location(plan, 'origin'), plan_location(plan, 'destination')
+    try:
+        origin, destination = await route_locations(runtime, original_origin, original_destination)
+    except ProviderError as exc:
+        raise ConflictError('commute_route_unavailable','本次未取得有效的路线坐标，未生成日程。') from exc
     instance=await ensure_instance(db,plan,now=now,service_date=service_date)
     if not instance:raise ConflictError('commute_date_ineligible','已错过目标到达时间。')
     claim=await db.execute(update(CommuteInstance).where(CommuteInstance.instance_id==instance.instance_id,CommuteInstance.status=='active').values(status='materializing'))
     if claim.rowcount!=1:raise ConflictError('commute_generation_pending','已有生成任务或未知结果，请先核查原实例。')
     await db.commit()
     arrival=instance.target_arrival_at.replace(tzinfo=UTC) if instance.target_arrival_at.tzinfo is None else instance.target_arrival_at
-    route=await commute_estimate.estimate(runtime,origin=(plan.origin_latitude,plan.origin_longitude),destination=(plan.destination_latitude,plan.destination_longitude),mode=plan.transport_mode,depart_at=arrival-timedelta(hours=1),arrive_by=arrival,origin_city=first.location_city,destination_city=first.location_city,origin_coordinate_system='gcj02',destination_coordinate_system='gcj02')
+    route=await commute_estimate.estimate(runtime,origin=(origin.latitude,origin.longitude),
+        destination=(destination.latitude,destination.longitude),mode=plan.transport_mode,
+        depart_at=arrival-timedelta(hours=1),arrive_by=arrival,
+        origin_city=origin.city or first.location_city,destination_city=destination.city or first.location_city,
+        origin_coordinate_system=origin.coordinate_system or 'gcj02',
+        destination_coordinate_system=destination.coordinate_system or 'gcj02')
     # Recheck lifecycle after the upstream call before creating any formal record.
     await db.refresh(plan);await db.refresh(matter)
     if not plan.enabled or matter.status not in ['active','waiting']:
@@ -212,7 +229,11 @@ async def generate_day(db, runtime, user, plan_id, service_date):
     row=ScheduleEvent(user_id=user.user_id,matter_id=matter.matter_id,title=plan.name,
         starts_at=(end-timedelta(seconds=route['duration_seconds'])).astimezone(UTC),ends_at=end.astimezone(UTC),status='scheduled',source='web_native',sync_status='local_only',
         source_external_id=source_key,source_scope_key=f'commute:{plan_id}',
-        location=first.location,latitude=plan.destination_latitude,longitude=plan.destination_longitude,coordinate_system='gcj02',location_city=first.location_city,location_address=first.location_address,location_source=first.location_source)
+        location=original_destination.label,latitude=original_destination.latitude,longitude=original_destination.longitude,
+        coordinate_system=original_destination.coordinate_system or 'gcj02',
+        location_city=original_destination.city or first.location_city,
+        location_address=first.location_address if (first.latitude, first.longitude) == (original_destination.latitude, original_destination.longitude) else None,
+        location_source=first.location_source)
     db.add(row);await db.flush();route['schedule_id']=row.schedule_id
     route['destination']={**route['destination'],'schedule_id':row.schedule_id,'basis':'destination_schedule'}
     await schedule_routes.save_for_schedule(db,user,schedule_id=row.schedule_id,result=route,commit=False)
