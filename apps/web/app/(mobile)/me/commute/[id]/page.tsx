@@ -680,11 +680,11 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
   };
 
   const savedPlaces = useMemo(() => {
-    const map = new Map<string, { label: string; latitude: number; longitude: number }>();
+    const map = new Map<string, CommutePlan["origin"]>();
     for (const item of [...(allPlans.data ?? []), ...(plan.data ? [plan.data] : [])]) {
       for (const location of [item.origin, item.destination]) {
         if (!location.label.trim()) continue;
-        map.set(`${location.label}|${location.latitude}|${location.longitude}`, location);
+        map.set(`${location.label}|${location.latitude}|${location.longitude}|${location.coordinate_system ?? ""}`, location);
       }
     }
     return Array.from(map.values());

@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { CommutePlaceInput } from "./commute-place-input";
 
-import type { CommutePlanDraft } from "@/lib/mobile/api";
+import type { CommuteLocation, CommutePlanDraft } from "@/lib/mobile/api";
 
 const WEEKDAYS = [
   [1, "一"],
@@ -65,11 +65,7 @@ function validate(draft: CommutePlanDraft): string | null {
   return null;
 }
 
-export interface SavedPlace {
-  label: string;
-  latitude: number;
-  longitude: number;
-}
+export type SavedPlace = CommuteLocation;
 
 export function CommuteForm({
   initial,
@@ -285,16 +281,10 @@ export function CommuteForm({
               <div className="chip-row">
                 {savedPlaces.map((place) => (
                   <button
-                    key={`${key}-${place.label}-${place.latitude}-${place.longitude}`}
+                    key={`${key}-${place.label}-${place.latitude}-${place.longitude}-${place.coordinate_system ?? ""}`}
                     type="button"
                     className="chip chip--sm"
-                    onClick={() =>
-                      set(key, {
-                        label: place.label,
-                        latitude: place.latitude,
-                        longitude: place.longitude,
-                      })
-                    }
+                    onClick={() => set(key, { ...place })}
                   >
                     {place.label}
                   </button>
