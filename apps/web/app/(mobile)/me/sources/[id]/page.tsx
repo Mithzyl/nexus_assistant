@@ -16,7 +16,6 @@ import {
   ErrorCard,
   LoadingCard,
   LoginRequired,
-  Notice,
   PageShell,
   Pill,
   SwitchRow,
@@ -57,12 +56,14 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
   const [saving, setSaving] = useState<string | null>(null);
   const [fieldSaving, setFieldSaving] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"items" | "source" | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const update = async (body: Partial<DataSource>, key: string) => {
     setSaving(key);
     setActionError(null);
+    setActionNotice(null);
     try {
       const updated = await apiRequest<DataSource>(
         `/api/pa/data-sources/${params.id}`,
@@ -84,6 +85,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
     if (!next.includes("title")) next.unshift("title");
     setFieldSaving(field);
     setActionError(null);
+    setActionNotice(null);
     try {
       const updated = await apiRequest<DataSource>(
         `/api/pa/data-sources/${params.id}`,
@@ -100,6 +102,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
   const remove = async () => {
     setDeleting(true);
     setActionError(null);
+    setActionNotice(null);
     try {
       if (confirm === "items") {
         const result = await apiRequest<{ deleted: number }>(
@@ -111,7 +114,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
         source.setData(
           source.data ? { ...source.data, item_count: 0, last_sync_at: null } : source.data,
         );
-        setActionError(`已删除 ${result.deleted} 条副本；来源和授权保留。`);
+        setActionNotice(`已清空 ${result.deleted} 条副本`);
       } else if (confirm === "source") {
         await apiRequest<void>(`/api/pa/data-sources/${params.id}`, { method: "DELETE" });
         router.replace("/me/sources");
@@ -184,10 +187,12 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
           </div>
 
           {actionError ? (
-            <p className="caption mt-10" style={{ color: actionError.includes("已删除") ? "var(--m-green)" : "var(--m-red)" }} role="status">
+            <p className="caption mt-10 danger-text" role="alert">
               {actionError}
             </p>
           ) : null}
+
+          {actionNotice ? <p className="caption mt-10 green" role="status">{actionNotice}</p> : null}
 
           <div className="card mt-14">
             <p className="card-title" style={{ fontSize: 15 }}>
@@ -237,10 +242,6 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
             )}
           </div>
 
-          <Notice tone="amber" title="删除分两层">
-            删除副本会保留来源和授权，之后仍可重新同步；删除来源会连同全部副本一起移除。两者都不会影响设备上的原始数据。
-          </Notice>
-
           <div className="mt-14" style={{ display: "grid", gap: 10 }}>
             <Link href="/me/sources" className="btn btn--secondary">
               去已同步内容里查看
@@ -268,8 +269,8 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
         title={confirm === "items" ? "删除副本？" : "删除整个来源？"}
         body={
           confirm === "items"
-            ? "只删除账号里的副本；授权保留，之后还能再传。手机上的内容不受影响。"
-            : "删除来源与它的全部副本，之后需要重新登记来源并上传。不会影响设备上的原始数据。"
+            ? "清空账号副本，保留上传授权。"
+            : "删除此来源及其全部副本。"
         }
         confirmLabel={confirm === "items" ? "删除副本" : "删除来源"}
         danger

@@ -361,7 +361,7 @@ export function DataConnections({
                     这是本机地址，手机连不上。
                   </p>
                 ) : null}
-                <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
+                <div className="action-row">
                   <a
                     className="btn btn--secondary btn--small"
                     href={privateSubscription.feed_url}
@@ -457,12 +457,7 @@ export function DataConnections({
             </Pill>
           </summary>
           <div className="connection-card__body">
-            <ol className="connection-steps">
-              <li>选择允许读取的日历与提醒清单。</li>
-              <li>为选中的上传来源生成连接码。完整连接码只在生成后显示。</li>
-              <li>手动上传一次，看到“最近成功上传”即完成。</li>
-              <li>确认结果后，可按需设置定时运行。</li>
-            </ol>
+            <p className="micro">生成连接码后，填入快捷指令并运行一次。</p>
             {shortcutSources.length > 0 ? (
               <label className="field">
                 <span className="field__label">使用已有上传来源</span>
@@ -530,43 +525,45 @@ export function DataConnections({
               <div className="private-link-box">
                 <strong>设备连接码，仅本次显示</strong>
                 <p className="micro">{shortcutCredential.credential}</p>
-                <button
-                  type="button"
-                  className="btn btn--quiet btn--small"
-                  onClick={() => void copySecret("credential", shortcutCredential.credential)}
-                >
-                  <Clipboard size={13} /> {copiedSecret === "credential" ? "已复制" : "复制连接码"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--quiet btn--small"
-                  onClick={() => setShortcutCredential(null)}
-                >
-                  清除并关闭
-                </button>
-                <p className="micro">连接码只显示一次，关闭后无法再次查看。</p>
+                <div className="action-row">
+                  <button
+                    type="button"
+                    className="btn btn--quiet btn--small"
+                    onClick={() => void copySecret("credential", shortcutCredential.credential)}
+                  >
+                    <Clipboard size={13} /> {copiedSecret === "credential" ? "已复制" : "复制连接码"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--quiet btn--small"
+                    onClick={() => setShortcutCredential(null)}
+                  >
+                    清除并关闭
+                  </button>
+                </div>
               </div>
             ) : null}
             {(shortcutTokens.data ?? []).length > 0 ? (
               <div className="connection-source-list">
                 {(shortcutTokens.data ?? []).map((token) => (
-                  <p key={token.token_id}>
-                    <strong>{token.display_name}</strong>
-                    {" · "}
-                    {token.enabled ? "有效" : "已撤销"}
-                    {token.last_used_at ? ` · 最近使用 ${formatDateTime(token.last_used_at)}` : " · 还没用过"}
+                  <div key={token.token_id} className="connection-token-row">
+                    <div className="grow">
+                      <strong>{token.display_name}</strong>
+                      {" · "}
+                      {token.enabled ? "有效" : "已撤销"}
+                      {token.last_used_at ? ` · 最近使用 ${formatDateTime(token.last_used_at)}` : " · 还没用过"}
+                    </div>
                     {token.enabled ? (
                       <button
                         type="button"
                         className="link-button danger-text"
-                        style={{ marginLeft: 6 }}
                         onClick={() => void revokeShortcut(token.token_id)}
                         disabled={shortcutBusy !== null}
                       >
                         <Trash2 size={12} /> 撤销
                       </button>
                     ) : null}
-                  </p>
+                  </div>
                 ))}
               </div>
             ) : null}
@@ -587,8 +584,7 @@ export function DataConnections({
                 重新读取
               </button>
             </div>
-            <p className="micro">按上面的步骤配置快捷指令即可。</p>
-            <p className="micro">我们不会要求 Apple 账号密码；设备连接码不要截图或分享。</p>
+            <p className="micro">请妥善保管连接码。</p>
           </div>
         </details>
       </div>

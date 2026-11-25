@@ -14,7 +14,6 @@ import {
   EmptyState,
   ErrorCard,
   LoadingCard,
-  Notice,
   PageShell,
   Pill,
   SwitchRow,
@@ -202,7 +201,7 @@ export default function BarkPage() {
                   {busy === "test" ? "正在发送测试…" : "发送一条测试提醒"}
                 </span>
                 <span className="row__detail" style={{ display: "block" }}>
-                  需要你明确确认；不会因为打开这个页面就自动发送
+                  向已绑定的手机发一条测试通知
                 </span>
               </span>
               <ChevronRight size={16} className="chevron" aria-hidden="true" />
@@ -213,19 +212,18 @@ export default function BarkPage() {
             <div className={`card mt-14 ${testResult.accepted ? "card--green" : "card--amber"}`}>
               <p className="card-title" style={{ fontSize: 15 }}>
                 {testResult.status === "accepted"
-                  ? "Bark 已接受这次请求"
+                  ? "已发送测试通知"
                   : testResult.status === "failed"
                     ? "测试发送失败"
                     : "还没收到测试结果"}
               </p>
               <p className="caption" style={{ margin: "4px 0 0" }}>
                 {testResult.status === "accepted"
-                  ? "接受请求不等于手机已经收到；以 Bark 客户端实际显示为准。"
-                  : testResult.message}
+                  ? "请留意手机通知。"
+                  : testResult.status === "unknown" ? "先查看手机通知，再决定是否重发。" : testResult.message}
               </p>
               <p className="micro" style={{ margin: "6px 0 0" }}>
                 {formatDateTime(testResult.tested_at)}
-                {testResult.status === "unknown" ? " · 不要自动重发，先核对客户端" : ""}
               </p>
             </div>
           ) : null}
@@ -239,10 +237,10 @@ export default function BarkPage() {
           <div className="card mt-16">
             <p className="card-title" style={{ fontSize: 15 }}>
               <KeyRound size={14} style={{ display: "inline", verticalAlign: "-2px" }} />{" "}
-              {configured ? "替换 device key" : "绑定 Bark"}
+              {configured ? "更换 Bark 设备密钥" : "绑定 Bark"}
             </p>
             <p className="caption" style={{ margin: "4px 0 10px" }}>
-              密钥只会提交到账号，不会在页面回显。
+              打开 Bark 复制设备密钥。
             </p>
             <label className="field" htmlFor="bark-key">
               <input
@@ -276,16 +274,13 @@ export default function BarkPage() {
             ) : null}
           </div>
 
-          <Notice tone="amber" title="不要把这当成送达回执">
-            这里只保留最近一次测试结果，实际送达以手机通知为准。
-          </Notice>
         </>
       ) : null}
 
       <ConfirmDialog
         open={confirmUnbind}
         title="解除 Bark 绑定？"
-        body="解除后不会再接收通勤提醒；已有通勤计划保留。"
+        body="解除后停止接收 Bark 提醒。"
         confirmLabel="解除绑定"
         danger
         busy={busy === "unbind"}
@@ -296,7 +291,7 @@ export default function BarkPage() {
       <ConfirmDialog
         open={confirmTest}
         title="发送测试提醒？"
-        body="这会通过 Bark 真实发送一条通知。接受请求不代表手机一定收到。"
+        body="向已绑定的手机发送一条通知。"
         confirmLabel="发送测试"
         busy={busy === "test"}
         onCancel={() => setConfirmTest(false)}

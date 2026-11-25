@@ -162,6 +162,30 @@ export function RouteTextCard({
     );
   }
 
+  const canReplan = replanHref && (state === "unverified" || state === "unavailable");
+  const canCopy = address || mapTarget?.label;
+  const moreActions = (
+    <>
+      {onViewRoute ? (
+        <button type="button" className="link-button" onClick={onViewRoute}>
+          <Map size={13} /> 查看路线
+        </button>
+      ) : null}
+      {canReplan ? (
+        <a className="link-button" href={replanHref}>
+          <Clock3 size={13} /> 打开事项重新测算
+        </a>
+      ) : null}
+      {canCopy ? (
+        <button type="button" className="link-button" onClick={() => void copyAddress()}>
+          <Copy size={13} /> {copied ? "已复制地址" : "复制地址"}
+        </button>
+      ) : (
+        <span className="micro"><MapPin size={12} /> 地点还没确认；确认后可以打开地图</span>
+      )}
+    </>
+  );
+
   return (
     <section className={`route-text-card${embedded ? " route-text-card--embedded" : ""}`}>
       <div className="flex items-start justify-between gap-10">
@@ -250,16 +274,6 @@ export function RouteTextCard({
             {state === "verified" ? "刷新路线" : "填出发点"}
           </button>
         ) : null}
-        {onViewRoute ? (
-          <button type="button" className="link-button" onClick={onViewRoute}>
-            <Map size={13} /> 查看路线
-          </button>
-        ) : null}
-        {replanHref && (state === "unverified" || state === "unavailable") ? (
-          <a className="link-button" href={replanHref}>
-            <Clock3 size={13} /> 打开事项重新测算
-          </a>
-        ) : null}
         {mapUrl ? (
           <a
             className="link-button"
@@ -270,13 +284,14 @@ export function RouteTextCard({
             <ExternalLink size={13} /> 打开地图
           </a>
         ) : null}
-        {address || mapTarget?.label ? (
-          <button type="button" className="link-button" onClick={() => void copyAddress()}>
-            <Copy size={13} /> {copied ? "已复制地址" : "复制地址"}
-          </button>
-        ) : (
-          <span className="micro"><MapPin size={12} /> 地点还没确认；确认后可以打开地图</span>
-        )}
+        {embedded ? (
+          (onViewRoute || canReplan || canCopy) ? (
+            <details className="route-text-card__more">
+              <summary className="link-button">更多路线操作</summary>
+              <div className="action-row action-row--compact">{moreActions}</div>
+            </details>
+          ) : null
+        ) : moreActions}
       </div>
     </section>
   );

@@ -494,27 +494,16 @@ export function revertMatterChange(
   );
 }
 
+/** Turn a draft confirmation into a brief result for the toast. */
 export function confirmSummary(response: DraftConfirmResponse): string {
-  if (!response.applied) return "这次没保存成功，检查一下草稿。";
-  const parts: string[] = [];
-  if (response.schedule) parts.push(`日程「${response.schedule.title}」已更新`);
-  if (response.reminders.length > 0) parts.push(`${response.reminders.length} 个提醒已保存`);
-  if (response.cancelled_reminder_ids.length > 0) {
-    parts.push(`${response.cancelled_reminder_ids.length} 个未触发提醒已取消`);
-  }
-  if (response.cancelled_schedule_ids.length > 0) {
-    parts.push(`${response.cancelled_schedule_ids.length} 项未来日程已取消`);
-  }
-  if (response.conflict?.has_conflict) parts.push("仍有一处时间冲突需要留意");
-  if (response.change) parts.push("变更已写入历史");
-  if (
-    (response.cancelled_reminder_ids.length > 0 ||
-      response.cancelled_schedule_ids.length > 0) &&
-    !response.notifications_retracted
-  ) {
-    parts.push("手机上已显示的通知需手动清除");
-  }
-  return parts.length > 0 ? parts.join("；") : "事项已更新";
+  if (!response.applied) return "这次没保存，请检查草稿";
+  const conflict = response.conflict?.has_conflict ? "，留意时间冲突" : "";
+  if (!response.schedule) return `已更新${conflict}`;
+  const title = Array.from(response.schedule.title.trim().replace(/\s+/g, " "));
+  if (title.length === 0) return `日程已更新${conflict}`;
+  const available = 18 - "日程「」已更新".length - conflict.length;
+  const shortTitle = title.length > available ? title.slice(0, available - 1).join("") + "…" : title.join("");
+  return `日程「${shortTitle}」已更新${conflict}`;
 }
 
 export const TODAY_REFRESH_EVENT = "pa:today-refresh";

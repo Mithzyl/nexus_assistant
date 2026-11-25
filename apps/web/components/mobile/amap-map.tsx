@@ -107,7 +107,7 @@ export function AmapMapCanvas({
     );
     if (!initialCenter) {
       setStatus("error");
-      setError("没有可用于高德地图的 GCJ-02 坐标。");
+      setError("暂时无法在地图上显示这个地点。");
       return;
     }
 
@@ -186,7 +186,7 @@ export function AmapMapCanvas({
       !focusCenterRef.current
     ) {
       setStatus("error");
-      setError("没有可用于高德地图的 GCJ-02 坐标。");
+      setError("暂时无法在地图上显示这个地点。");
       return;
     }
 

@@ -254,7 +254,6 @@ export function MatterDraftSheet({
       }
       hydrate(next);
       setBaseMatter(sourceMatter);
-      setMessage("已读取最新草稿。");
     } catch (caught) {
       setLoadError(caught instanceof Error ? caught.message : "读取草稿失败");
     } finally {
@@ -437,7 +436,6 @@ export function MatterDraftSheet({
     try {
       const next = await selectDraftMatter(current.draft_id, current.version, matterId);
       hydrate(next);
-      setMessage("已接上所选事项，冲突也重新核对过了。");
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : "选择事项失败");
       await load();
@@ -496,7 +494,7 @@ export function MatterDraftSheet({
       );
       setSelectedOption(optionId);
       setAcknowledge(false);
-      setMessage("方案已放进预览，正式安排还没改。");
+      setMessage("已更新预览。");
     } catch (caught) {
       if (caught instanceof ApiError) {
         if (caught.code === "option_not_executable") {
@@ -603,7 +601,7 @@ export function MatterDraftSheet({
     try {
       const next = await patchDraft(current.draft_id, input);
       hydrate(next);
-      setMessage("改好了，冲突和影响也重新核对过。");
+      setMessage("修改已保存。");
     } catch (caught) {
       if (caught instanceof ApiError) {
         if (isRecordChangedError(caught.code)) {
@@ -768,7 +766,7 @@ export function MatterDraftSheet({
     try {
       const next = await confirmPlaceSelection(current.draft_id, selectedPlaceToken);
       hydrate(next);
-      setMessage("地点已放进预览，路线和冲突也重新算过。");
+      setMessage("已更新预览地点。");
     } catch (caught) {
       if (caught instanceof ApiError && isRecordChangedError(caught.code)) {
         setPlaceError("记录刚有变化，刷新看看。");
@@ -879,7 +877,7 @@ export function MatterDraftSheet({
       const next = await cancelDraftRequest(current.draft_id);
       setCurrent(next);
       setConfirmCancel(false);
-      setMessage("这条草稿已取消，不会写入正式安排。");
+      setMessage("已取消草稿。");
       onDraftCancelled?.(next);
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : "取消草稿失败");
@@ -893,7 +891,6 @@ export function MatterDraftSheet({
       <div className="m-stack-12">
         <div className="draft-kind">
           <span className="draft-kind__label">待确认 · {primarySummary(effectiveMode)}</span>
-          <span className="micro">确认前不会写入正式日程、待办、提醒或归档状态</span>
         </div>
         {loading ? <p className="caption">正在读取最新草稿…</p> : null}
         {loadError ? <p className="danger-text">{loadError}</p> : null}
@@ -950,9 +947,6 @@ export function MatterDraftSheet({
                             : unavailableCandidateIds.has(value)
                               ? "暂时读不到这条候选的安排；选择时会再核对。"
                               : "还没有返回相关日程。"}
-                        </span>
-                        <span className="choice-card__detail">
-                          选择只用于接续事项，不等于确认保存修改。
                         </span>
                       </span>
                     </button>
@@ -1083,7 +1077,7 @@ export function MatterDraftSheet({
                           setCreateSchedule(event.target.checked);
                         }}
                       />
-                      <span className="micro">确认时写入正式日程</span>
+                      <span className="micro">同时保存日程</span>
                     </label>
                   ) : null}
                 </div>
@@ -1249,12 +1243,6 @@ export function MatterDraftSheet({
                                 <span className="choice-card__title">{candidate.name}</span>
                                 <span className="choice-card__detail">
                                   {[candidate.city, candidate.address].filter(Boolean).join(" · ") || "地址未提供"}
-                                  {" · "}
-                                  {candidate.coordinate_system === "gcj02"
-                                    ? "高德坐标 GCJ-02"
-                                    : candidate.coordinate_system === "wgs84"
-                                      ? "WGS-84"
-                                      : "坐标系未说明"}
                                 </span>
                               </span>
                             </button>
@@ -1282,12 +1270,12 @@ export function MatterDraftSheet({
                         {placeCandidates.length > 0 &&
                         mappablePlaceCandidates.length === 0 ? (
                           <span className="micro">
-                            候选坐标不是高德 GCJ-02，不能直接标在高德地图上。
+                            这个地点暂时无法在地图上显示。
                           </span>
                         ) : placeCandidates.length === 0 &&
                           !currentPlaceCoordinates ? (
                           <span className="micro">
-                            先查找候选并取得 GCJ-02 坐标，才能在地图上标记。
+                            先搜索地点，再打开地图选点。
                           </span>
                         ) : null}
                       </div>
@@ -1354,8 +1342,8 @@ export function MatterDraftSheet({
                           />
                           <p className="micro place-map-dependency">
                             {placeMapMode === "pick"
-                              ? "移动地图，中心图钉固定在地图中央。拖动过程只更新临时坐标；点击“使用这个位置”后才会解析一次地址。"
-                              : "编号标记对应搜索结果，绿点是当前已确认地点。选出候选后仍需点击下方按钮才会写进草稿。"}
+                              ? "拖动地图，再点“使用这个位置”。"
+                              : "在地图或列表中选一个地点。"}
                           </p>
                           {placeMapMode === "pick" ? (
                             <button
@@ -1389,8 +1377,7 @@ export function MatterDraftSheet({
                               </p>
                               <p className="micro" style={{ margin: "5px 0 0" }}>
                                 坐标 {pickedMapLocation.latitude.toFixed(5)},{" "}
-                                {pickedMapLocation.longitude.toFixed(5)} ·
-                                高德 GCJ-02
+                                {pickedMapLocation.longitude.toFixed(5)}
                               </p>
                             </div>
                           ) : null}
@@ -1663,7 +1650,7 @@ export function MatterDraftSheet({
                   </details>
                 ) : null}
                 <p className="micro" style={{ margin: "6px 0 0" }}>
-                  这些修改已放进预览，点“确认更新”才生效。
+                  确认后更新安排。
                 </p>
               </div>
             ) : null}
@@ -1703,93 +1690,106 @@ export function MatterDraftSheet({
             {message ? <p className="caption" style={{ margin: 0 }}>{message}</p> : null}
             {outcome === "unknown" ? (
               <p className="danger-text" style={{ margin: 0 }}>
-                结果还没确认。可以刷新草稿，或按同一次提交重试；不会重复写入。
+                结果待确认。请刷新或重试原操作。
               </p>
             ) : null}
 
-            <button
-              type="button"
-              className="btn btn--secondary"
-              onClick={() => void patch()}
-              disabled={busy || actionBusy !== null || isTerminal}
-            >
-              {actionBusy === "patch" ? "正在保存…" : "保存并核对"}
-            </button>
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() => void confirm()}
-              disabled={
-                busy ||
-                actionBusy !== null ||
-                isTerminal ||
-                (mode === "create" && !title.trim()) ||
-                (directSchedule && (!scheduleTitle.trim() || !startsAt)) ||
-                (needsChoice && !selectedMatter) ||
-                dirty ||
-                selectedOptionBlocked ||
-                (hasConflictOptions && !selectedOption)
-              }
-            >
-              {busy
-                ? "正在确认…"
-                : outcome === "unknown"
-                  ? "重试同一次确认"
-                  : isArchiveDraft
-                    ? "确认暂停跟进"
-                    : "确认更新"}
-            </button>
-            <button
-              type="button"
-              className="btn btn--quiet"
-              onClick={() => void load()}
-              disabled={busy || loading || actionBusy !== null}
-            >
-              <RefreshCw size={14} /> 刷新草稿
-            </button>
+            {dirty ? (
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => void patch()}
+                disabled={busy || actionBusy !== null || isTerminal}
+              >
+                {actionBusy === "patch" ? "正在保存…" : "保存修改并核对"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => void confirm()}
+                disabled={
+                  busy ||
+                  actionBusy !== null ||
+                  isTerminal ||
+                  (mode === "create" && !title.trim()) ||
+                  (directSchedule && (!scheduleTitle.trim() || !startsAt)) ||
+                  (needsChoice && !selectedMatter) ||
+                  dirty ||
+                  selectedOptionBlocked ||
+                  (hasConflictOptions && !selectedOption)
+                }
+              >
+                {busy
+                  ? "正在确认…"
+                  : outcome === "unknown"
+                    ? "重试同一次确认"
+                    : isArchiveDraft
+                      ? "确认暂停跟进"
+                      : "确认更新"}
+              </button>
+            )}
+            <div className="action-row draft-secondary-actions">
+              <button
+                type="button"
+                className="btn btn--quiet btn--small"
+                onClick={() => void load()}
+                disabled={busy || loading || actionBusy !== null}
+              >
+                <RefreshCw size={14} /> 刷新
+              </button>
 
-            {current.status === "preview" ? (
-              confirmCancel ? (
-                <div className="notice notice--amber">
-                  <strong>取消这条草稿？</strong>
-                  <p className="caption" style={{ margin: "4px 0 8px" }}>
-                    取消只影响这份预览，已生效的修改不受影响。
-                  </p>
-                  <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="btn btn--secondary btn--small"
-                      onClick={() => setConfirmCancel(false)}
-                    >
-                      继续保留
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--danger btn--small"
-                      onClick={() => void cancelDraft()}
-                      disabled={actionBusy !== null || busy}
-                    >
-                      {actionBusy === "cancel" ? "正在取消…" : "取消草稿"}
-                    </button>
+              {current.status === "preview" ? (
+                confirmCancel ? (
+                  <div className="notice notice--amber draft-action-notice">
+                    <strong>取消这条草稿？</strong>
+                    <p className="caption" style={{ margin: "4px 0 8px" }}>
+                      取消后将移除这份草稿。
+                    </p>
+                    <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--small"
+                        onClick={() => setConfirmCancel(false)}
+                      >
+                        继续保留
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--danger btn--small"
+                        onClick={() => void cancelDraft()}
+                        disabled={actionBusy !== null || busy}
+                      >
+                        {actionBusy === "cancel" ? "正在取消…" : "取消草稿"}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn--quiet danger-text"
-                  onClick={() => setConfirmCancel(true)}
-                  disabled={busy || actionBusy !== null}
-                >
-                  取消这条草稿
-                </button>
-              )
-            ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn--quiet btn--small danger-text"
+                    onClick={() => setConfirmCancel(true)}
+                    disabled={busy || actionBusy !== null}
+                  >
+                    取消这条草稿
+                  </button>
+                )
+              ) : null}
 
+              <button
+                type="button"
+                className="btn btn--quiet btn--small"
+                onClick={requestClose}
+                disabled={busy || actionBusy !== null}
+              >
+                关闭
+              </button>
+            </div>
             {confirmDiscard ? (
               <div className="notice notice--amber">
                 <strong>有未保存的修改</strong>
                 <p className="caption" style={{ margin: "4px 0 8px" }}>
-                  关闭会丢掉这次编辑；草稿本身不受影响。
+                  未保存的修改将丢失。
                 </p>
                 <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
                   <button
@@ -1809,14 +1809,6 @@ export function MatterDraftSheet({
                 </div>
               </div>
             ) : null}
-            <button
-              type="button"
-              className="btn btn--quiet"
-              onClick={requestClose}
-              disabled={busy || actionBusy !== null}
-            >
-              关闭，不提交
-            </button>
           </>
         ) : null}
       </div>

@@ -147,7 +147,7 @@ export function CommuteDayPanel({
       if (result.applied) {
         operationKey.current = null;
         setArrival(result.arrival_local_time);
-        setMessage("改好了，出发和结束时间也一起更新了。");
+        setMessage("已保存，出发时间已同步调整");
         onPlanChanged?.();
       } else {
         setMessage(
@@ -187,10 +187,10 @@ export function CommuteDayPanel({
       setArrival(result.arrival_local_time);
       if (result.applied) {
         refreshKey.current = null;
-        setMessage("刷新好了，时间以刚算出的为准。");
+        setMessage("路线与时间已更新");
         onPlanChanged?.();
       } else {
-        setMessage("这次没算出新的安排，换个日期或稍后再试。");
+        setMessage("暂未算出新安排，稍后再试");
       }
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : "这次没刷新成功。");

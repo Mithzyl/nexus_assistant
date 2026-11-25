@@ -642,10 +642,10 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       }
       // The server already refreshed the next valid day; do not request it again.
       if (updated.next_day?.applied) {
-        toast("通勤计划已保存，并已更新下一次出发时间");
+        toast("已保存，下次出发时间已更新");
       } else if (updated.next_day && updated.next_day.applied === false) {
-        toast("通勤计划已保存；下一次出发时间还没算出来");
-        setMessage("通勤设置已保存；下一次出发时间还没算出来，可以在单日通勤里刷新。");
+        toast("已保存，暂未算出出发时间");
+        setMessage("可在单日通勤里刷新路线。");
       } else {
         toast("通勤计划已保存");
       }

@@ -99,22 +99,27 @@ export function TodayNextActions({ onReschedule }: { onReschedule: (item: TodayA
       ? new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", timeZone: data.timezone }).format(new Date(item.departure_at))
       : null;
     const disabled = pending || retry.current !== null || error !== null;
+    const canComplete = item.actions.includes("complete") && item.kind === "todo";
     return (
       <div className="card card--tight" key={`${item.kind}:${item.record_id}`}>
         <p className="card-title">{item.state === "departure_due" ? "现在该出发 · " : ""}{item.title}</p>
         {label ? <p className="caption">建议出发 {label}{item.destination ? ` · ${item.destination}` : ""}</p> : null}
         <p className="caption">{item.reason}</p>
-        <div className="flex items-center gap-8" style={{ flexWrap: "wrap" }}>
+        {canComplete || item.actions.includes("reschedule") ? (
+          <div className="action-row">
+            {canComplete ? (
+              <button type="button" className="btn btn--primary btn--small" disabled={disabled} onClick={() => {
+                const key = newOperationKey("web-next-complete");
+                void run(`complete:${item.record_id}`, () => completeRecommendedTodo(item.record_id, key, item.matter_version));
+              }}>完成待办</button>
+            ) : null}
+            {item.actions.includes("reschedule") ? <button type="button" className={canComplete ? "link-button" : "btn btn--primary btn--small"} disabled={disabled}
+              onClick={() => void run(`reschedule:${item.record_id}`, () => onReschedule(item), false)}>改期</button> : null}
+          </div>
+        ) : null}
+        <div className="action-row action-row--compact">
           {item.actions.includes("view") ? <Link className="link-button" href={targetLink(item)}>查看原记录</Link> : null}
-          {item.actions.includes("complete") && item.kind === "todo" ? (
-            <button type="button" className="btn btn--secondary btn--small" disabled={disabled} onClick={() => {
-              const key = newOperationKey("web-next-complete");
-              void run(`complete:${item.record_id}`, () => completeRecommendedTodo(item.record_id, key, item.matter_version));
-            }}>完成待办</button>
-          ) : null}
           {item.commute_plan_id ? <Link className="link-button" href={`/me/commute/${encodeURIComponent(item.commute_plan_id)}`}>查看通勤计划</Link> : null}
-          {item.actions.includes("reschedule") ? <button type="button" className="link-button" disabled={disabled}
-            onClick={() => void run(`reschedule:${item.record_id}`, () => onReschedule(item), false)}>改期</button> : null}
           {item.actions.includes("snooze") ? <button type="button" className="link-button" disabled={disabled}
             onClick={() => feedback(item, "snooze")}>暂缓 30 分钟</button> : null}
           {item.actions.includes("dismiss") ? <button type="button" className="link-button" disabled={disabled}
@@ -129,12 +134,12 @@ export function TodayNextActions({ onReschedule }: { onReschedule: (item: TodayA
       <SectionHeading title="下一步" />
       {message ? <div className="card card--tight" role="status">
         <p className="caption">{message}</p>
-        {retry.current ? <>
+        {retry.current ? <div className="action-row">
           <button type="button" className="link-button" disabled={pending}
             onClick={() => { const saved = retry.current; if (saved) void run(saved.signature, saved.run); }}>用原请求重试</button>
           <button type="button" className="link-button" disabled={pending}
             onClick={() => { retry.current = null; setMessage(null); refresh(); }}>重新查看建议</button>
-        </> : null}
+        </div> : null}
       </div> : null}
       {error ? <ErrorCard message={error} onRetry={refresh} /> : !data ? <LoadingCard label="正在读取下一步建议…" /> : (
         <>

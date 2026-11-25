@@ -89,14 +89,14 @@ function amapConfig(): { key: string; securityJsCode?: string; serviceHost?: str
     process.env.NEXT_PUBLIC_AMAP_SECURITY_CODE?.trim() ?? "";
   if (!key) {
     throw new Error(
-      "地图配置缺失：需要 Web 端 JS API Key（NEXT_PUBLIC_AMAP_JS_KEY）。",
+      "地图暂时无法显示，可以继续搜索地点。",
     );
   }
   const serviceHost = process.env.NEXT_PUBLIC_AMAP_SERVICE_HOST?.trim();
-  if (serviceHost && !/^\/(?!\/)[A-Za-z0-9/_-]+$/.test(serviceHost)) throw new Error("地图代理地址无效。");
+  if (serviceHost && !/^\/(?!\/)[A-Za-z0-9/_-]+$/.test(serviceHost)) throw new Error("地图暂时无法显示，可以继续搜索地点。");
   if (!securityJsCode && !serviceHost) {
     throw new Error(
-      "地图配置缺失：需要与该 Key 配套的 Web 端安全密钥（NEXT_PUBLIC_AMAP_SECURITY_CODE）。",
+      "地图暂时无法显示，可以继续搜索地点。",
     );
   }
   return { key, ...(serviceHost ? {serviceHost} : {securityJsCode}) };

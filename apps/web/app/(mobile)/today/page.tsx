@@ -69,7 +69,7 @@ function reminderNote(item: MatterReminder): string {
   if (item.status === "due") return "应用内提醒到点了 · 等你确认";
   if (item.sync_status === "pending_ios") return "应用内提醒 · Apple 日历待更新";
   if (item.sync_status === "ios_synced") return "应用内提醒 · Apple 日历已更新";
-  return "提醒设好了 · 页面开着时，到点会在这里提醒你";
+  return "提醒已设置";
 }
 
 function routeState(schedule: TodaySchedule): {
@@ -318,31 +318,29 @@ export default function TodayPage() {
               <SectionHeading title="到点提醒" trailing="等你确认" />
               <div className="m-stack-10">
                 {dueReminders.map((reminder) => (
-                  <div key={reminder.reminder_id} className="deadline-card deadline-card--overdue">
-                    <span className="tile tile--sm">
-                      <Bell size={15} />
-                    </span>
-                    <span className="grow">
-                      <span className="deadline-card__title">{reminder.title}</span>
-                      <span className="deadline-card__meta">
-                        {dateTime(reminder.trigger_at, todayData.data?.timezone)} · 「{reminder.matter_title || "所属事项"}」
+                  <div key={reminder.reminder_id} className="deadline-card deadline-card--overdue deadline-card--with-actions">
+                    <div className="deadline-card__content">
+                      <span className="tile tile--sm"><Bell size={15} /></span>
+                      <span className="grow">
+                        <span className="deadline-card__title">{reminder.title}</span>
+                        <span className="deadline-card__meta">
+                          {dateTime(reminder.trigger_at, todayData.data?.timezone)} · 「{reminder.matter_title || "所属事项"}」
+                        </span>
                       </span>
-                    </span>
-                    <button
-                      type="button"
-                      className="btn btn--secondary btn--small"
-                      onClick={() => void acknowledge(reminder)}
-                      disabled={acknowledgingId !== null}
-                    >
-                      {acknowledgingId === reminder.reminder_id ? "确认中…" : "知道了"}
-                    </button>
-                    {reminder.todo_id && reminder.matter_id ? <button type="button" className="btn btn--secondary btn--small" disabled={acknowledgingId !== null} onClick={() => void acknowledge(reminder, true)}>已办完，一并完成待办</button> : null}
+                    </div>
+                    <div className="action-row">
+                      <button type="button" className={reminder.todo_id && reminder.matter_id ? "link-button" : "btn btn--secondary btn--small"}
+                        onClick={() => void acknowledge(reminder)} disabled={acknowledgingId !== null}>
+                        {acknowledgingId === reminder.reminder_id ? "确认中…" : "知道了"}
+                      </button>
+                      {reminder.todo_id && reminder.matter_id ? (
+                        <button type="button" className="btn btn--secondary btn--small" disabled={acknowledgingId !== null}
+                          onClick={() => void acknowledge(reminder, true)}>完成待办</button>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>
-              <p className="micro" style={{ margin: "8px 0 0" }}>
-                点“知道了”，这条就不再提醒。
-              </p>
               {acknowledgeError ? (
                 <p className="danger-text" style={{ margin: "8px 0 0" }} role="alert">
                   {acknowledgeError}
@@ -514,9 +512,6 @@ export default function TodayPage() {
                 ))}
               </div>
             )}
-            <p className="micro" style={{ margin: "8px 0 0" }}>
-              提醒设好了 · 到点后在这里点一下就行。
-            </p>
           </section>
 
           {todayData.data.changes.length > 0 ? (
@@ -552,11 +547,6 @@ export default function TodayPage() {
             </section>
           ) : null}
 
-          <section style={{ padding: "0 var(--m-gutter)" }}>
-            <div className="notice">
-              通勤确认后，首日日程会和固定计划一起保存；以后每天都能单独调整。
-            </div>
-          </section>
         </>
       ) : null}
 
@@ -601,7 +591,7 @@ export default function TodayPage() {
         </section>
       ) : null}
 
-      <Sheet title="本机暂存" open={Boolean(selectedRecord)} onClose={() => setSelectedRecord(null)}>
+      <Sheet title="暂存详情" open={Boolean(selectedRecord)} onClose={() => setSelectedRecord(null)}>
         {selectedRecord ? (
           <>
             <p className="card-title">{selectedRecord.title}</p>
@@ -630,7 +620,7 @@ export default function TodayPage() {
       <ConfirmDialog
         open={confirmDelete}
         title="删除这条暂存？"
-        body="删除后无法恢复；账号里也没有这份副本。"
+        body="删除这份暂存后无法恢复。"
         confirmLabel="删除"
         danger
         onCancel={() => setConfirmDelete(false)}

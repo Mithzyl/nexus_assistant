@@ -249,7 +249,7 @@ function StatusCard({
         <div className="ask-message__body">
           <p className="ask-failure__title">这次没处理完</p>
           <p className="ask-failure__body">
-            你刚才那条「{item.question}」我收到了，但这次没能跑完。内容我先存着。
+            原话已保留。
           </p>
           <div className="ask-failure__actions">
             <button type="button" className="btn btn--secondary btn--small" onClick={onReuse}>
@@ -269,7 +269,7 @@ function StatusCard({
       <div className="card card--tight">
         <div className="ask-status">
           <XCircle size={17} className="muted" />
-          <span className="muted">已取消，不会再产生回答。</span>
+          <span className="muted">已取消。</span>
         </div>
       </div>
     );
@@ -734,7 +734,7 @@ function AccountAskPage() {
       }
       if (result.outcome === "processing" || result.outcome === "unknown") {
         setOperationFailure(
-          "结果还在确认。内容留着，不会重复提交。",
+          "结果待确认，请稍后查询。",
         );
         setRecoveryRunId(result.local_run_id);
         void refreshServerIntake();
@@ -745,7 +745,7 @@ function AccountAskPage() {
         setContinuationRunId(null);
         setClarificationContext({});
         setRecoveryRunId(result.local_run_id);
-        toast("已生成变更草稿，还没写入正式安排");
+        toast("草稿已生成");
         void refreshServerIntake();
         return;
       }
@@ -806,7 +806,6 @@ function AccountAskPage() {
         setIntakeDraft(result.draft);
         setContinuationRunId(null);
         setClarificationContext({});
-        toast("已读取待确认结果");
       } else if (result.outcome === "needs_clarification") {
         setClarificationContext(result.pending_context ?? {});
         setSupplementQuestion(result.clarify || "再补一点信息就好。");
@@ -815,7 +814,6 @@ function AccountAskPage() {
       } else if (result.outcome === "answer") {
         setContinuationRunId(null);
         setClarificationContext({});
-        toast("回答已恢复到历史");
       } else if (result.outcome === "processing" || result.outcome === "unknown") {
         setOperationFailure("结果还在确认，稍后再看看。");
       } else {
@@ -995,8 +993,7 @@ function AccountAskPage() {
                       <IntakeFailureActions context={pendingContext} onEdit={isFollowUp ? undefined : () => {
                         setDraft(question);
                         inputRef.current?.focus();
-                      }} onCheck={serverItem ? () => void recoverResult(item.local_run_id) : undefined} />
-                      <div className="ask-failure__actions">
+                      }} onCheck={serverItem ? () => void recoverResult(item.local_run_id) : undefined} details={
                         <details className="ask-stored">
                           <summary>查看已存内容</summary>
                           <p>原话已保留。</p>
@@ -1004,7 +1001,7 @@ function AccountAskPage() {
                             <p>问题编号：{item.error.details_reference_id}</p>
                           ) : null}
                         </details>
-                      </div>
+                      } />
                     </div>
                   ) : null}
 

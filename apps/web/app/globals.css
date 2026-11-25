@@ -412,7 +412,7 @@ a {
   align-items: center;
   gap: 4px;
   min-height: 44px;
-  padding: 0;
+  padding: 0 4px;
   border: 0;
   background: none;
   color: var(--m-fog-deep);
@@ -423,6 +423,52 @@ a {
 .link-button--inline { min-height: 0; font-size: 13px; }
 .link-button:disabled { color: var(--m-faint); }
 .link-button--danger { color: var(--m-red); }
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 10px;
+}
+.action-row--compact { gap: 8px 12px; }
+.action-row:empty { display: none; }
+.private-link-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--m-mist);
+  overflow-wrap: anywhere;
+}
+.private-link-box > p, .private-link-box > .action-row { margin: 0; }
+.connection-token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+.connection-token-row > .grow, .deadline-card__content > .grow {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.connection-token-row > button { flex-shrink: 0; }
+.deadline-card__content, .matter-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.deadline-card__content > .tile { flex-shrink: 0; }
+.deadline-card--with-actions > .action-row { margin-top: 0; }
+.matter-heading-actions > .link-button { font-size: 13px; white-space: nowrap; }
+.matter-heading-actions > .icon-button { width: 44px; height: 44px; }
+.draft-secondary-actions > .btn--small { padding-inline: 8px; }
+.draft-action-notice { flex: 1 0 100%; }
+.commute-weekdays > label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.route-text-card__more > summary { cursor: pointer; }
 
 /* Quick actions ----------------------------------------------------------- */
 .quick-row {
@@ -1287,7 +1333,7 @@ a {
 .history-item__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--m-muted); }
 .work-actions {
   position: sticky;
-  bottom: calc(72px + env(safe-area-inset-bottom));
+  bottom: calc(84px + env(safe-area-inset-bottom));
   z-index: 6;
   display: flex;
   align-items: center;
@@ -1433,6 +1479,7 @@ a {
   background: var(--m-card);
   color: var(--m-ink);
 }
+.deadline-card--with-actions { flex-direction: column; align-items: stretch; }
 .deadline-card--overdue { border-color: color-mix(in srgb, var(--m-red) 35%, var(--m-line)); }
 .deadline-card__title { display: block; font-size: 14px; font-weight: 650; }
 .deadline-card__meta { display: block; margin-top: 2px; color: var(--m-muted); font-size: 12px; }
@@ -1936,6 +1983,7 @@ a {
   }
   .m-screen { padding-top: 0; }
   .tabbar { display: none; }
+  .work-actions { bottom: calc(72px + env(safe-area-inset-bottom)); }
   .composer {
     left: calc(50% + 118px);
     bottom: 24px;
@@ -2869,6 +2917,10 @@ a {
 }
 
 .ask-stored > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: 4px;
   cursor: pointer;
   list-style: none;
   color: var(--m-fog-deep);
@@ -3201,7 +3253,7 @@ a {
   border-left: 3px solid var(--m-fog-soft);
 }
 .supplement-origin { font-size: 11.5px; font-weight: 700; color: var(--m-fog-deep); }
-.supplement-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.supplement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
 
 @media (max-width: 1023px) {
   .matter-detail-layout { display: flex; flex-direction: column; gap: 14px; }

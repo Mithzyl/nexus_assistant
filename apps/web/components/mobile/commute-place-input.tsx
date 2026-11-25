@@ -63,7 +63,7 @@ export function CommutePlaceInput({ id, title, value, onChange }: {
         <span className="field__label">{k === "latitude" ? "纬度" : "经度"}</span>
         <input className="input" type="number" step="0.000001" value={value[k] || ""} onChange={e => onChange({...value,[k]:Number(e.target.value),coordinate_system:value.coordinate_system ?? "gcj02"})}/>
       </label>)}</div>
-      <label className="field"><span className="field__label">坐标系</span><select className="select" value={value.coordinate_system ?? "gcj02"} onChange={e => onChange({...value,coordinate_system:e.target.value as "gcj02" | "wgs84"})}><option value="gcj02">高德坐标（GCJ-02）</option><option value="wgs84">GPS 坐标（WGS84）</option></select></label>
+      <label className="field"><span className="field__label">坐标系</span><select className="select" value={value.coordinate_system ?? "gcj02"} onChange={e => onChange({...value,coordinate_system:e.target.value as "gcj02" | "wgs84"})}><option value="gcj02">高德坐标</option><option value="wgs84">GPS 坐标</option></select></label>
     </details>
   </div>;
 }

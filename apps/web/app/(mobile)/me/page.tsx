@@ -99,7 +99,7 @@ export default function MePage() {
     setLogoutNote(
       result.revoked
         ? "已退出，并结束当前设备的登录状态。"
-        : "这台设备已退出；账号那边还没确认，重新登录后旧登录会自动过期。",
+        : "已在本设备退出登录",
     );
     toast(result.revoked ? "已退出登录" : "这台设备已退出，账号侧未确认");
     router.push("/today");
@@ -321,7 +321,7 @@ export default function MePage() {
       <ConfirmDialog
         open={confirmLogout}
         title="退出登录？"
-        body="退出后，当前设备会清理问答状态；账号里的内容仍会保留。"
+        body="退出会清除本机的问答状态。"
         confirmLabel="退出登录"
         danger
         busy={busyLogout}

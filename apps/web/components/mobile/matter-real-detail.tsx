@@ -360,24 +360,27 @@ export function MatterRealDetail({ id }: { id: string }) {
     };
   }, [matter, routeRefresh]);
 
+  /** Run a matter action and keep its result feedback brief. */
   const run = async (key: string, action: () => Promise<void>) => {
     setBusy(key);
     try {
       await action();
     } catch (caught) {
+      const message = caught instanceof Error ? caught.message.trim() : "";
+      const briefError = message && Array.from(message).length <= 18 ? message : null;
       if (caught instanceof ApiError && isRecordChangedError(caught.code)) {
         toast("记录已发生变化，请刷新后检查");
         await load();
       } else if (caught instanceof ApiError && caught.code === "revert_from_source_matter") {
-        toast(caught.message);
+        toast(briefError ?? "请从原事项撤回");
         await load();
       } else if (caught instanceof ApiError && caught.code === "option_not_executable") {
-        toast(caught.message);
+        toast(briefError ?? "这项操作暂不可用");
       } else if (caught instanceof ApiError && caught.code === "creation_revert_unsupported") {
         toast("暂不支持撤回新建事项");
         await load();
       } else if (caught instanceof ApiError && caught.code === "incomplete_change_snapshot") {
-        toast("这条旧变更缺少完整记录，不能安全撤回");
+        toast("旧变更记录不完整，无法撤回");
         await load();
       } else if (
         caught instanceof ApiError &&
@@ -385,10 +388,10 @@ export function MatterRealDetail({ id }: { id: string }) {
           caught.code,
         )
       ) {
-        toast(caught.message);
+        toast(briefError ?? "记录已改变，请重新查看");
         await load();
       } else {
-        toast(caught instanceof Error ? caught.message : "操作失败");
+        toast(briefError ?? "操作失败，请重试");
       }
     } finally {
       setBusy(null);
@@ -417,7 +420,7 @@ export function MatterRealDetail({ id }: { id: string }) {
         if (caught instanceof ApiError && caught.code === "matter_changed") {
           await load();
           setEditOpen(false);
-          toast("事项已在别处修改，已刷新，请重新检查");
+          toast("事项已更新，请重新检查");
           return;
         }
         throw caught;
@@ -765,8 +768,8 @@ export function MatterRealDetail({ id }: { id: string }) {
       title="事项详情"
       fallbackHref="/matters"
       action={
-        <div className="flex items-center gap-8">
-          <button type="button" className="btn btn--secondary btn--small" onClick={openChange}>
+        <div className="matter-heading-actions">
+          <button type="button" className="link-button" onClick={openChange}>
             改变安排
           </button>
           <button
@@ -1311,7 +1314,7 @@ export function MatterRealDetail({ id }: { id: string }) {
         onConfirmed={(response) => void onConfirmed(response)}
         onDraftCancelled={() => {
           setEditingDraft(null);
-          toast("草稿已取消，没有写入正式安排");
+          toast("草稿已取消");
           void load();
           requestTodayRefresh();
         }}
@@ -1428,7 +1431,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ConfirmDialog
         open={Boolean(initialDeleteTarget)}
         title="删除这个新事项？"
-        body="删除会移除这个事项和本次新建的日程、待办、提醒；其他事项和手机导入的副本不受影响。"
+        body="删除事项及这次新建的安排。"
         confirmLabel="删除新事项"
         danger
         onCancel={() => setInitialDeleteTarget(null)}
@@ -1440,7 +1443,7 @@ export function MatterRealDetail({ id }: { id: string }) {
             const result = await initialDeleteMatter(target.matter_id);
             toast(
               result.schedule_ids.length + result.todo_ids.length + result.reminder_ids.length > 0
-                ? "已删除这个新事项及其本次新建的安排"
+                ? "已删除新事项及相关安排"
                 : "已删除这个新事项",
             );
             requestTodayRefresh();
@@ -1451,9 +1454,8 @@ export function MatterRealDetail({ id }: { id: string }) {
       <Sheet title={`确认暂停「${matter.title}」？`} open={archiveOpen} onClose={() => setArchiveOpen(false)}>
         <div className="m-stack-12">
           <div className="notice notice--amber">
-            <strong>事项将归档，不会删除</strong>
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              「{matter.title}」会从正在推进中移到归档；过去安排仍会保留，未发生的未来日程默认一并取消。
+              归档后停止跟进，保留过去的安排。
             </p>
           </div>
           <div className="card card--tight">
@@ -1487,9 +1489,6 @@ export function MatterRealDetail({ id }: { id: string }) {
           </div>
           <div className="card card--tight">
             <p className="micro" style={{ margin: 0 }}>日程范围</p>
-            <p className="caption" style={{ margin: "4px 0 0" }}>
-              取消未来日程时，还没触发的提醒也会停止；手机导入的日程要在原设备处理。
-            </p>
             {futureSchedules.length > 0 ? (
               <label className="flex items-start gap-8 mt-10"><input type="checkbox" checked={archiveCancelSchedules} onChange={(event) => setArchiveCancelSchedules(event.target.checked)} /><span className="caption">同时取消以下未发生的应用内日程（共 {futureSchedules.filter((s) => !s.source || s.source === "web_native").length} 项）</span></label>
             ) : null}
@@ -1504,9 +1503,6 @@ export function MatterRealDetail({ id }: { id: string }) {
               </ul>
             ) : null}
           </div>
-          <p className="caption" style={{ margin: 0 }}>
-            关联的重复通勤计划将停止自动生成。注：若此前已有通知发送到手机锁屏，需在手机上手动清除；你单独保存在「个人记忆」中的习惯仍为你留存，如需移除可前往「个人记忆」管理。
-          </p>
           <button
             type="button"
             className="btn btn--primary"
@@ -1520,7 +1516,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                   cancel_future_schedules: archiveCancelSchedules,
                 });
                 const effect = result.archive_effect;
-                toast(`已归档并停止后续自动生成；${effect?.cancelled_schedules ? `已取消 ${effect.cancelled_schedules} 项未来日程；` : ""}${effect?.retained_schedules ? `你选择保留的 ${effect.retained_schedules} 项未来日程仍在日程表中；` : ""}${effect?.readonly_schedules ? `${effect.readonly_schedules} 项只读日程需在原设备处理；` : ""}${archiveCancelReminders ? "未到期提醒已取消" : "你选择保留的独立提醒仍会生效"}`);
+                toast(effect?.cancelled_schedules ? `已归档，已取消 ${effect.cancelled_schedules} 项日程` : "已归档");
                 router.push("/matters");
               });
             }}
@@ -1550,7 +1546,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ConfirmSheet
         open={deleteOpen}
         title="彻底删除这件事？"
-        body="删除后，这个事项和关联安排会移除；助手不再使用这些内容。已经显示的聊天文字不会消失。"
+        body="删除此事项及关联安排。"
         confirmLabel="彻底删除"
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => {

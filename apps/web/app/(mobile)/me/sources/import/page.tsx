@@ -10,7 +10,7 @@ import { ApiError, apiRequest } from "@/lib/mobile/api";
 import { sha256Hex, uuid } from "@/lib/mobile/format";
 import { installationId, readSession, writeSession } from "@/lib/mobile/storage";
 import { useAuth } from "@/components/mobile/providers";
-import { LoginLink, EmptyState, Notice, PageShell } from "@/components/mobile/ui";
+import { LoginLink, EmptyState, PageShell } from "@/components/mobile/ui";
 import { PrimaryButton, SecondaryButton } from "@/components/mobile/buttons";
 
 interface Draft {
@@ -167,7 +167,7 @@ export default function ImportNotePage() {
   return (
     <PageShell
       title="导入笔记"
-      subtitle="支持纯文本与 Markdown；确认后才保存到账号。"
+      subtitle="支持纯文本与 Markdown。"
     >
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录生活助手" body="跨设备保存你的笔记。">
@@ -185,14 +185,11 @@ export default function ImportNotePage() {
                 {result.created > 0
                   ? "已保存"
                   : result.updated > 0
-                    ? "已更新已有副本"
-                    : "内容已存在，没有新增副本"}
-              </p>
-              <p className="caption" style={{ margin: "6px 0 0" }}>
-                新建 {result.created} · 更新 {result.updated} · 未改动 {result.unchanged}
+                    ? "已更新"
+                    : "内容未变化，无需重复保存"}
               </p>
               <p className="micro" style={{ margin: "6px 0 0" }}>
-                同步时间 {new Date(result.last_sync_at).toLocaleString("zh-CN")} · 这条笔记来自浏览器导入
+                同步时间 {new Date(result.last_sync_at).toLocaleString("zh-CN")}
               </p>
               <div className="mt-14" style={{ display: "grid", gap: 8 }}>
                 <Link
@@ -231,7 +228,7 @@ export default function ImportNotePage() {
                   style={{ paddingTop: 10 }}
                 />
                 <span className="field__hint">
-                  {fileName ? `已读取 ${fileName}` : "只读取本地文本，不会上传未经确认的文件。"}
+                  {fileName || "选择文本文件，或在下方粘贴内容。"}
                 </span>
               </label>
 
@@ -299,14 +296,6 @@ export default function ImportNotePage() {
             </>
           )}
 
-          <Notice tone="amber" title="能力边界">
-            浏览器只能读取你选择的文本文件；不读取 Apple 备忘录，不做 OCR，不支持 Word/PDF/表格。
-            选择文件不等于同步成功，只有上面的保存结果才算写入。
-          </Notice>
-          <p className="micro mt-12" style={{ lineHeight: 1.7 }}>
-            导入后会创建一个独立的“浏览器导入笔记”来源（范围键以当前设备安装 ID 区分），
-            导入的笔记单独存放；是否让助手读取，可以在来源详情里授权。
-          </p>
         </>
       ) : null}
     </PageShell>

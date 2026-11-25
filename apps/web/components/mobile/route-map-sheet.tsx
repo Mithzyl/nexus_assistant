@@ -193,7 +193,7 @@ export function RouteMapSheet({
           />
         ) : !loading && available ? (
           <div className="notice notice--amber">
-            起终点没有可用于高德地图的 GCJ-02 坐标，无法显示地图。
+            暂时无法在地图上显示起终点。
           </div>
         ) : null}
 
