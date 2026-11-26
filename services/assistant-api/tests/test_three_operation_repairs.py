@@ -3,14 +3,18 @@
 Only these newly defined cases are run. They use temporary SQLite and existing
 explicit provider doubles; real Nexus evaluation is separately opt-in.
 """
-import json
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import select
 from conftest import auth
-from test_api_operation_flow import fixed_decisions
-from assistant_api.models import CommuteInstance, CommutePlan, FollowUp, FollowUpExecution, MatterTodo, ScheduleEvent, User
+from test_intake_capture_flow import callback, finish, hold
+from assistant_api.models import (
+    AgentResponseReceipt, CommuteInstance, CommutePlan, FollowUp, FollowUpExecution,
+    MatterTodo, NexusRun, ScheduleEvent, User,
+)
 from assistant_api.services import response_cards, schedule_routes, commute_lifecycle, follow_ups
 from assistant_api.commute.services.scheduling import ensure_instance
 
@@ -40,6 +44,30 @@ async def seed_commute(h):
             origin_coordinate_system='gcj02',destination_coordinate_system='gcj02',schedule_id=plan.first_schedule_id)
         await schedule_routes.save_for_schedule(db,await db.get(User,h.user_a),schedule_id=plan.first_schedule_id,result=route)
     return body
+
+
+@asynccontextmanager
+async def pending_intake(h, text, key):
+    """Submit via public chat and wait until the real callback can identify its Nexus workflow."""
+    hold(h)
+    submission = asyncio.create_task(h.client.post('/api/v1/matters/intake',
+        headers=auth(h.token_a), json={'text': text, 'idempotency_key': key}))
+    try:
+        workflow = select(NexusRun.workflow_execution_id).where(
+            NexusRun.user_id == h.user_a, NexusRun.idempotency_key == f'matter-intake:{key}',
+        )
+        async with asyncio.timeout(4):
+            while True:
+                async with h.app.state.session_factory() as db:
+                    workflow_id = await db.scalar(workflow)
+                if workflow_id:
+                    break
+                await asyncio.sleep(0.02)
+        assert workflow_id == 'wf_remote_1'
+        yield submission
+    finally:
+        h.fake.release_workflow()
+        await asyncio.wait_for(submission, 5)
 
 
 @pytest.mark.asyncio
@@ -107,17 +135,32 @@ async def test_evening_rule_is_due_at_22_before_service_day_and_is_not_duplicate
 
 
 @pytest.mark.asyncio
-async def test_unknown_operation_returns_feedback_then_ai_asks_without_dispatch(harness):
-    """An invented tool name gets a bounded correction turn instead of ending the request."""
-    h=harness
-    fixed_decisions(h,[{'decision':'call','call':{'operation_id':'search_tools','query_parameters':{'query':'修改通勤'}}},
-                       {'decision':'ask_user','question':'想改成几点到达？只改某一天，还是长期调整？'}])
-    response=await h.client.post('/api/v1/matters/intake',headers=auth(h.token_a),json={
-        'text':'通勤往后挪一点','idempotency_key':'unknown-op-repair-001'})
-    assert response.status_code==200,response.text
-    assert response.json()['outcome']=='needs_clarification'
-    prompts='\n'.join(c['body'] for c in h.fake.calls if c['path']=='/api/v1/app/runs')
-    assert 'api_call_invalid' in prompts and 'dispatched' in prompts
+async def test_unknown_tool_callback_allows_same_workflow_to_publish_a_question(harness):
+    """Reject a deliberately unknown tool before dispatch and publish a question in the same workflow."""
+    h = harness
+    question = {'decision': 'ask_user', 'question': '想改成几点到达？只改某一天，还是长期调整？',
+                'choices': ['只改某一天', '长期调整']}
+    async with pending_intake(h, '通勤往后挪一点', 'unknown-op-repair-001') as submission:
+        unknown = await callback(h, 1, {'decision': 'call', 'call': {
+            'operation_id': 'unknown_commute_operation'}}, 'unknown-tool')
+        assert unknown['disposition'] == 'continue' and unknown['execution_status'] == 'failed', unknown
+        assert unknown['error']['code'] == 'operation_definition_required'
+        assert unknown['result'] is None
+        assert (await callback(h, 1, question, 'clarification'))['disposition'] == 'complete'
+        await finish(h, question)
+
+    response = submission.result()
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result['outcome'] == 'needs_clarification' and result['stage'] == 'awaiting_reply'
+    assert result['clarify'] == question['question']
+    assert result['pending_context']['choices'] == question['choices']
+    assert h.fake.run_seq == h.fake.workflow_seq == 1
+    async with h.app.state.session_factory() as db:
+        receipts = (await db.scalars(select(AgentResponseReceipt))).all()
+        assert len(receipts) == 2
+        assert all(receipt.local_run_id == result['local_run_id'] and receipt.executed_call_json is None
+                   for receipt in receipts)
 
 
 def test_display_can_format_weekday_array_without_weakening_record_selection():
@@ -132,20 +175,53 @@ def test_display_can_format_weekday_array_without_weakening_record_selection():
 
 
 @pytest.mark.asyncio
-async def test_card_repair_after_success_does_not_repeat_business_write(harness):
-    """A bad display definition is corrected using saved results, never by creating another todo."""
-    h=harness
-    fixed_decisions(h,[
-        {'decision':'call','call':{'operation_id':'create_todo','body':{'title':'卡片修复测试','idempotency_key':'card-repair-save'}}},
-        {'decision':'answer','answer':'记好了。','cards':[{'kind':'result','title':'已完成','blocks':[{'type':'unknown'}]}]},
-        {'decision':'answer','answer':'记好了。','cards':[{'kind':'result','title':'已完成','blocks':[{'type':'fields','items':[{'label':'名称','value':{'$result':'/todo/title'}}]}]}]},
-    ])
-    response=await h.client.post('/api/v1/matters/intake',headers=auth(h.token_a),json={
-        'text':'新增一个卡片修复测试待办','idempotency_key':'card-repair-intake'})
-    assert response.status_code==200,response.text
-    assert response.json()['pending_context']['cards'][0]['blocks'][0]['items'][0]['value']=='卡片修复测试'
+async def test_card_feedback_reuses_saved_todo_in_same_workflow(harness):
+    """Repair an invalid card using the committed todo and verify one dispatch and one row."""
+    h = harness
+    title = '卡片修复测试'
+    async with pending_intake(h, f'新增一个{title}待办', 'card-repair-intake') as submission:
+        definition = await callback(h, 1, {'decision': 'call', 'call': {
+            'operation_id': 'resolve_operation_definitions',
+            'body': {'uris': ['assistant://operations/create_todo']}}}, 'load-todo-definition')
+        assert definition['execution_status'] == 'succeeded', definition
+        assert [operation['operation_id'] for operation in definition['result']['data']['api_operations']] == ['create_todo']
+
+        saved = await callback(h, 1, {'decision': 'call', 'call': {
+            'operation_id': 'create_todo', 'summary': f'创建待办「{title}」',
+            'body': {'title': title, 'idempotency_key': 'card-repair-save'}}}, 'save-todo')
+        assert saved['execution_status'] == 'succeeded' and saved['disposition'] == 'continue', saved
+        todo = saved['result']['data']['todo']
+        assert todo['title'] == title
+        async with h.app.state.session_factory() as db:
+            assert (await db.get(MatterTodo, todo['todo_id'])).title == title
+
+        invalid = {'decision': 'answer', 'answer': '记好了。', 'cards': [
+            {'kind': 'result', 'title': '已完成', 'blocks': [{'type': 'unknown'}]}]}
+        feedback = await callback(h, 1, invalid, 'invalid-card')
+        assert feedback['execution_status'] == 'failed' and feedback['disposition'] == 'continue', feedback
+        assert feedback['error']['code'] == 'invalid_parameters'
+        assert 'cards 校验失败' in feedback['error']['message']
+        assert '此前成功操作保留' in feedback['error']['message']
+
+        corrected = {'decision': 'answer', 'answer': '记好了。', 'cards': [
+            {'kind': 'result', 'title': '已完成', 'blocks': [
+                {'type': 'fields', 'items': [{'label': '名称', 'value': {'$result': '/todo/title'}}]}]}]}
+        assert (await callback(h, 1, corrected, 'corrected-card'))['disposition'] == 'complete'
+        await finish(h, corrected)
+
+    response = submission.result()
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result['outcome'] == 'answer' and result['answer'] == corrected['answer']
+    assert result['pending_context']['cards'][0]['blocks'][0]['items'][0]['value'] == title
+    assert h.fake.run_seq == h.fake.workflow_seq == 1
     async with h.app.state.session_factory() as db:
-        assert len(list(await db.scalars(select(MatterTodo).where(MatterTodo.user_id==h.user_a,MatterTodo.title=='卡片修复测试'))))==1
+        todos = (await db.scalars(select(MatterTodo).where(MatterTodo.user_id == h.user_a))).all()
+        assert [row.todo_id for row in todos] == [todo['todo_id']]
+        receipts = (await db.scalars(select(AgentResponseReceipt))).all()
+        assert len(receipts) == 4 and all(receipt.local_run_id == result['local_run_id'] for receipt in receipts)
+        dispatched = [receipt.executed_call_json['operation_id'] for receipt in receipts if receipt.executed_call_json]
+        assert dispatched.count('create_todo') == 1
 
 
 @pytest.mark.asyncio
