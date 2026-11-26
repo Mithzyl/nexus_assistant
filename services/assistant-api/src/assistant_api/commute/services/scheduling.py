@@ -193,7 +193,7 @@ async def enqueue_due_checks(
         pending = await db.scalar(
             select(CommuteCheck.check_id).where(
                 CommuteCheck.instance_id == instance.instance_id,
-                CommuteCheck.trigger == "auto",
+                CommuteCheck.trigger == "auto", CommuteCheck.notification_stage.is_(None),
                 CommuteCheck.status.in_(("queued", "running")),
             )
         )
@@ -204,7 +204,7 @@ async def enqueue_due_checks(
             select(CommuteCheck.created_at)
             .where(
                 CommuteCheck.instance_id == instance.instance_id,
-                CommuteCheck.trigger == "auto",
+                CommuteCheck.trigger == "auto", CommuteCheck.notification_stage.is_(None),
             )
             .order_by(CommuteCheck.created_at.desc())
             .limit(1)
@@ -254,8 +254,9 @@ async def close_instance(
 
 
 async def cancel_pending_checks(
-    db: AsyncSession, *, instance_id: str, code: str, now: datetime
+    db: AsyncSession, *, instance_id: str, code: str, now: datetime, keep_staged_notifications: bool = False
 ) -> None:
+    """Cancel stale worker jobs while allowing a measured edit to replace a staged push."""
     await db.execute(
         update(CommuteCheck)
         .where(
@@ -279,6 +280,7 @@ async def cancel_pending_checks(
         .where(
             NotificationOutbox.instance_id == instance_id,
             NotificationOutbox.status == "pending",
+            NotificationOutbox.notification_stage.is_(None) if keep_staged_notifications else True,
         )
         .values(status="cancelled", last_error_code=code)
     )

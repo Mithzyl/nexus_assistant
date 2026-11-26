@@ -55,6 +55,8 @@ def plan_read(plan: CommutePlan) -> CommutePlanRead:
         rain_probability_threshold=plan.rain_probability_threshold,
         rain_extra_buffer_minutes=plan.rain_extra_buffer_minutes,
         notify_enabled=plan.notify_enabled,
+        evening_notice_local_time=plan.evening_notice_local_time,
+        evening_notice_level=plan.evening_notice_level,
         origin=saved_plan_location(plan, "origin"),
         destination=saved_plan_location(plan, "destination"),
     )

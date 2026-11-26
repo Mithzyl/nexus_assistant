@@ -62,7 +62,11 @@ async def worker_tick(
         if active_state is not None:
             active_state["job"] = ActiveJob(kind="check", job_id=check.check_id, owner=worker_id)
         try:
-            await execute_check(db, runtime, check_id=check.check_id, worker_id=worker_id)
+            if check.notification_stage:
+                from assistant_api.commute.services.staged_notifications import execute_notification_check
+                await execute_notification_check(db, runtime, check_id=check.check_id, worker_id=worker_id)
+            else:
+                await execute_check(db, runtime, check_id=check.check_id, worker_id=worker_id)
         except Exception:  # noqa: BLE001 - expired lease allows recovery
             await db.rollback()
             emit_event('background_tick_failure',level='error',category='queue_failure',component='commute_check')

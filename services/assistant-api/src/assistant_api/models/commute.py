@@ -46,6 +46,8 @@ class CommutePlan(TimestampMixin, Base):
     rain_probability_threshold: Mapped[float] = mapped_column(Float, default=0.4)
     rain_extra_buffer_minutes: Mapped[int] = mapped_column(Integer, default=10)
     notify_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    evening_notice_local_time: Mapped[str | None] = mapped_column(String(5))
+    evening_notice_level: Mapped[str | None] = mapped_column(String(16))
 
     origin_label: Mapped[str] = mapped_column(String(160))
     origin_latitude: Mapped[float] = mapped_column(Float)
@@ -93,6 +95,7 @@ class CommuteInstance(TimestampMixin, Base):
     target_arrival_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     check_window_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(16), default="active")
+    notification_snapshot_json: Mapped[dict | None] = mapped_column(JSON)
     auto_reminder_count: Mapped[int] = mapped_column(Integer, default=0)
     last_auto_reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     skip_today_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -127,6 +130,7 @@ class CommuteCheck(TimestampMixin, Base):
     )
     plan_revision: Mapped[int] = mapped_column(Integer)
     trigger: Mapped[str] = mapped_column(String(16))
+    notification_stage: Mapped[str | None] = mapped_column(String(16))
     analysis_mode: Mapped[str | None] = mapped_column(String(16))
     phase: Mapped[str | None] = mapped_column(String(32))
     phase_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -302,6 +306,7 @@ class NotificationOutbox(TimestampMixin, Base):
         ForeignKey("commute_advisories.advisory_id", ondelete="CASCADE"), index=True
     )
     local_service_date: Mapped[date] = mapped_column(Date)
+    notification_stage: Mapped[str | None] = mapped_column(String(16))
     reminder_sequence: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(24), default="pending")
     payload_json: Mapped[dict] = mapped_column(JSON)

@@ -52,7 +52,9 @@ async def scheduler_tick(
     enqueue_enabled: bool = True,
     runtime=None,
     user_id: str | None = None,
+    staged_notifications: bool = False,
 ) -> int:
+    """Dispatch due provider and notification work under the same scheduler lease."""
     now = now or datetime.now(UTC)
     acquired = await acquire_lease(
         db,
@@ -77,7 +79,8 @@ async def scheduler_tick(
         update(NotificationOutbox)
         .where(
             NotificationOutbox.user_id == user_id if user_id else True,
-            NotificationOutbox.status.in_(("pending", "sending")),
+            (NotificationOutbox.status == "pending")
+            | ((NotificationOutbox.status == "sending") & NotificationOutbox.notification_stage.is_(None)),
             NotificationOutbox.expires_at <= now,
         )
         .values(status="expired", last_error_code="notification_expired")
@@ -112,8 +115,12 @@ async def scheduler_tick(
         )
     if created:
         logger.info("enqueued %s commute checks", len(created))
+    notification_count = 0
+    if staged_notifications and user_id is None:
+        from assistant_api.commute.services.staged_notifications import enqueue_due
+        notification_count = await enqueue_due(db, settings, now=now)
     await db.commit()
-    return len(created)
+    return len(created) + notification_count
 
 
 async def run_forever(settings: Settings, *, user_id: str | None = None) -> None:

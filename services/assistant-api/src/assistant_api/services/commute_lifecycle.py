@@ -59,7 +59,8 @@ async def transit_city(runtime, point: CommuteLocation, endpoint: str) -> str:
     )
 
 
-async def revision_draft(db, runtime, settings, user, run, parsed, text, *, origin_key=None, allow_create=False):
+async def revision_draft(db, runtime, settings, user, run, parsed, text, *, origin_key=None,
+                         allow_create=False, weather_buffer_seconds=0):
     """Measure the saved plan and use a matching calendar record only for optional place metadata."""
     from assistant_api.services import matters
     from assistant_api.commute.services.plans import get_plan
@@ -137,7 +138,8 @@ async def revision_draft(db, runtime, settings, user, run, parsed, text, *, orig
         draft.payload_json={**draft.payload_json,'commute_revision':{**draft.payload_json['commute_revision'],'status':'failed'}}
         await db.commit()
         raise ConflictError('commute_route_unavailable', '这次未取得通勤测算结果，请稍后再试。')
-    end=arrival-timedelta(minutes=plan.buffer_minutes);start=end-timedelta(seconds=route['duration_seconds'])
+    end = arrival - timedelta(minutes=plan.buffer_minutes, seconds=weather_buffer_seconds)
+    start = end - timedelta(seconds=route["duration_seconds"])
     if schedule: proposed['schedule_id']=schedule.schedule_id
     proposed.update(starts_at=start.isoformat(),ends_at=end.isoformat())
     revision={**draft.payload_json['commute_revision'],'status':'ready','route':schedule_routes._jsonable(route),

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, Protocol, get_args
+from typing import Literal, Protocol, TypedDict, get_args
 
 TransportMode = Literal["driving", "walking", "transit", "bicycling", "electrobike"]
 TRANSPORT_MODES = get_args(TransportMode)
@@ -109,6 +109,25 @@ class WeatherResult:
     valid_to: datetime
 
 
+class TransitBoarding(TypedDict, total=False):
+    """Provider-owned boarding facts; timetable and live observations stay distinct."""
+
+    provider: str
+    line_id: str | None
+    line_name: str
+    boarding_stop_id: str | None
+    direction: str | None
+    alighting_stop_id: str | None
+    time_kind: Literal["line_only", "first_service", "scheduled", "live"]
+    station_first_at: str
+    scheduled_boarding_at: str
+    predicted_boarding_at: str
+    trip_id: str
+    observed_at: str
+    valid_until: str
+    delay_seconds: int
+
+
 @dataclass(frozen=True)
 class EtaResult:
     provider: str
@@ -127,6 +146,7 @@ class EtaResult:
     timing_basis: str = "provider_departure_time"
     route_segments: tuple["RouteSegment", ...] = ()
     route_shape_status: RouteShapeStatus = "missing"
+    transit_boarding: TransitBoarding | None = None
 
 
 @dataclass(frozen=True)

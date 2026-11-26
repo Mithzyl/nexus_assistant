@@ -63,6 +63,8 @@ def _values(payload: CommutePlanInput) -> dict:
         "rain_probability_threshold": payload.rain_probability_threshold,
         "rain_extra_buffer_minutes": payload.rain_extra_buffer_minutes,
         "notify_enabled": payload.notify_enabled,
+        "evening_notice_local_time": payload.evening_notice_local_time,
+        "evening_notice_level": payload.evening_notice_level,
         "origin_label": payload.origin.label,
         "origin_latitude": payload.origin.latitude,
         "origin_longitude": payload.origin.longitude,
@@ -169,8 +171,9 @@ async def update_plan(
             for field in ("city", "coordinate_system"):
                 if field not in point.model_fields_set:
                     values.pop(f"{endpoint}_{field}")
-    if "effective_from" not in payload.model_fields_set:
-        values.pop("effective_from", None)
+    for optional in ("effective_from", "evening_notice_local_time", "evening_notice_level"):
+        if optional not in payload.model_fields_set:
+            values.pop(optional, None)
     values.update({"revision": expected + 1, "updated_at": now})
     result = await db.execute(
         update(CommutePlan)

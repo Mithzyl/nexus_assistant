@@ -6,7 +6,7 @@ transaction. Provider calls prepare a preview; no formal partial write is made.
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy import or_, select
-from assistant_api.models import CommuteInstance, CommutePlan, MatterDraft, ScheduleEvent
+from assistant_api.models import CommuteCheck, CommuteInstance, CommutePlan, MatterDraft, ScheduleEvent
 from assistant_api.core.errors import ConflictError
 from assistant_api.commute.services.plans import get_plan
 from assistant_api.commute.services.scheduling import get_instance, cancel_pending_checks
@@ -21,7 +21,8 @@ async def day_schedule(db, user, plan, service_date):
         ScheduleEvent.user_id==user.user_id, ScheduleEvent.matter_id==plan.matter_id,
         ScheduleEvent.deleted_at.is_(None), ScheduleEvent.status=='scheduled',
         or_(ScheduleEvent.schedule_id==plan.first_schedule_id, ScheduleEvent.source_external_id==key))))
-    matches=[row for row in rows if matters._as_utc(row.starts_at).astimezone(ZoneInfo(plan.timezone)).date()==service_date]
+    matches = [row for row in rows if row.source_external_id == key
+               or matters._as_utc(row.starts_at).astimezone(ZoneInfo(plan.timezone)).date() == service_date]
     if len(matches)>1:
         raise ConflictError('commute_schedule_ambiguous','这一天有多条通勤安排，请明确目标。')
     return matches[0] if matches else None
@@ -46,7 +47,8 @@ async def read_day(db, runtime, user, plan_id, service_date):
             'schedule':matters._serialize_schedule(schedule) if schedule else None,'route':route}
 
 
-async def change_day(db, runtime, settings, user, plan_id, service_date, request, *, refresh=False):
+async def change_day(db, runtime, settings, user, plan_id, service_date, request, *, refresh=False,
+                     notification_check=None, notification_weather=None):
     """Remeasure and atomically save the same day, or replay its original completed command."""
     from assistant_api.services import commute_lifecycle
     signature={'plan_id':plan_id,'service_date':str(service_date),'refresh':refresh,
@@ -72,11 +74,13 @@ async def change_day(db, runtime, settings, user, plan_id, service_date, request
     parsed={'matter_id':state['matter_id'],'todos':[],'commute_update':{
         'plan_id':plan_id,'service_date':str(service_date),'arrival_local_time':arrival,'set_override':not refresh}}
     draft=await commute_lifecycle.revision_draft(db,runtime,settings,user,None,parsed,
-        f'{service_date}通勤'+('更新' if refresh else '到达时间修改'),origin_key=request.idempotency_key,allow_create=True)
+        f'{service_date}通勤'+('更新' if refresh else '到达时间修改'),origin_key=request.idempotency_key,allow_create=True,
+        weather_buffer_seconds=int((notification_weather or {}).get("extra_buffer_seconds", 0)))
     draft.payload_json={**draft.payload_json,'analysis':{'day_request':signature}}
     await db.commit()
     result=await matters.confirm_draft(db,runtime,settings,user,draft.draft_id,
-        ConfirmRequest(expected_version=draft.version),request.idempotency_key)
+        ConfirmRequest(expected_version=draft.version),request.idempotency_key,
+        notification_check=notification_check, notification_weather=notification_weather)
     if not result.get('applied',True):
         return {**state,'applied':False,'replayed':False,'conflict':result.get('conflict')}
     return {**await read_day(db,runtime,user,plan_id,service_date),'applied':True,'replayed':False,'change_id':result['change_id']}
@@ -104,8 +108,8 @@ async def require_measured_day_edit(db, user, payload):
             raise ConflictError('commute_day_update_required','请使用通勤当天修改接口，系统会同时更新出发时间和路线。')
 
 
-async def apply_day_revision(db, user, payload, schedule):
-    """Save a measured override and invalidate old pending work inside the formal transaction."""
+async def apply_day_revision(db, user, payload, schedule, *, runtime, check=None, weather=None):
+    """Save a measured override, route notification facts and pending pushes in the formal transaction."""
     revision=payload['commute_revision']
     plan=await get_plan(db,user.user_id,revision['plan_id'])
     target=datetime.fromisoformat(revision['target_arrival_at']).astimezone(UTC)
@@ -119,6 +123,16 @@ async def apply_day_revision(db, user, payload, schedule):
             local_service_date=day,timezone=plan.timezone,target_arrival_at=target,
             check_window_start_at=datetime.combine(day,datetime.strptime(plan.check_local_time,'%H:%M').time(),ZoneInfo(plan.timezone)),status='active')
         db.add(instance);await db.flush()
+    now = matters._as_utc(runtime.now())
+    if check:
+        from assistant_api.commute.services.staged_notifications import phase_expiry
+        lease_owner = check.lease_owner
+        claim = await db.get(CommuteCheck, check.check_id, populate_existing=True)
+        if (not claim or claim.status != "running" or claim.lease_owner != lease_owner
+                or claim.plan_revision != plan.revision or not claim.lease_expires_at
+                or matters._as_utc(claim.lease_expires_at) <= now or instance.status != "active"
+                or now >= phase_expiry(plan, instance, claim.notification_stage)):
+            raise ConflictError("commute_notification_stale", "此次通勤提醒任务已失效。")
     changed=matters._as_utc(instance.target_arrival_at)!=target
     if revision.get('set_override',True):
         instance.arrival_local_time_override=revision.get('arrival_local_time') or local_target.strftime('%H:%M')
@@ -126,11 +140,14 @@ async def apply_day_revision(db, user, payload, schedule):
     if instance.status in ('expired','closed'):
         instance.status='active'
     if changed:
-        await cancel_pending_checks(db,instance_id=instance.instance_id,code='commute_day_changed',now=datetime.now(UTC))
+        await cancel_pending_checks(db,instance_id=instance.instance_id,code='commute_day_changed',now=now, keep_staged_notifications=True)
     if revision.get('new_day'):
         schedule.source_external_id=f'commute:{plan.plan_id}:{day}'
         schedule.source_scope_key=f'commute:{plan.plan_id}'
     await db.flush()
+    from assistant_api.commute.services.staged_notifications import save_snapshot
+    await save_snapshot(db, runtime.settings, plan, instance, schedule, revision["route"],
+                        weather=weather, check=check, now=now)
 
 
 async def remeasure_next_day(db, runtime, settings, user, plan):

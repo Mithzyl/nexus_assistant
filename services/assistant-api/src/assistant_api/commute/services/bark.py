@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import json
+
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,11 +37,16 @@ class BarkNotifier:
     def configured(self) -> bool:
         return bool(self._key)
 
-    async def send(self, *, title: str, body: str, group: str = "PA", url: str | None = None) -> BarkDelivery:
+    async def send(self, *, title: str, body: str, group: str = "PA", url: str | None = None, level: str | None = None) -> BarkDelivery:
         """Send one message to Bark with an optional Web destination for a tap."""
         payload = {"device_key": self._key, "title": title, "body": body, "group": group}
         if url:
             payload["url"] = url
+        if level:
+            payload["level"] = level
+            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            if len(encoded) > 1024:
+                return BarkDelivery("failed", "通知内容过长。", "bark_payload_too_large")
         try:
             response = await self._client.post(
                 f"{self._base_url}/push",

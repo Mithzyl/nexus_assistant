@@ -134,6 +134,7 @@ async def estimate(
         "walking_distance_meters": result.walking_distance_meters,
         "transfer_count": result.transfer_count,
         "transfers_summary": result.transfers_summary,
+        "transit_boarding": result.transit_boarding,
         "fare_cny": result.fare_cny,
         "fare_kind": result.fare_kind,
         "fare_notice": (

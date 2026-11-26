@@ -2906,7 +2906,7 @@ async def confirm_draft(
     draft_id: str,
     body: schemas.ConfirmRequest,
     idempotency_key: str,
-    *, client=None,
+    *, client=None, notification_check=None, notification_weather=None,
 ) -> dict:
     """Recheck private memory sources and confirm changes with their attribution in one transaction.
 
@@ -3299,7 +3299,10 @@ async def confirm_draft(
             # when those fields change; title/notes/no-op edits remain verified.
 
         if payload.get("commute_revision") and schedule_row is not None:
-            await commute_day_commands.apply_day_revision(db, user, payload, schedule_row)
+            await commute_day_commands.apply_day_revision(
+                db, user, payload, schedule_row, runtime=runtime,
+                check=notification_check, weather=notification_weather,
+            )
             await schedule_routes.save_for_schedule(db, user, schedule_id=schedule_row.schedule_id, result={**payload["commute_revision"]["route"], "schedule_id":schedule_row.schedule_id}, commit=False)
         if payload.get("proposed_status") == "archived":
             await commute_lifecycle.stop_plans(db, user, matter.matter_id)

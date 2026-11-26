@@ -102,6 +102,8 @@ class CommutePlanInput(BaseModel):
     rain_probability_threshold: float = Field(default=0.4, ge=0, le=1, allow_inf_nan=False)
     rain_extra_buffer_minutes: int = Field(default=10, ge=0, le=120)
     notify_enabled: bool = True
+    evening_notice_local_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    evening_notice_level: Literal["passive", "active"] | None = None
     origin: CommuteLocation
     destination: CommuteLocation
 
@@ -165,6 +167,8 @@ class CommutePlanWrite(MemoryInputOptions):
     rain_probability_threshold: float = Field(default=0.4, ge=0, le=1, allow_inf_nan=False)
     rain_extra_buffer_minutes: int = Field(default=10, ge=0, le=120)
     notify_enabled: bool = True
+    evening_notice_local_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    evening_notice_level: Literal["passive", "active"] | None = None
     origin: CommuteLocation | None = None
     destination: CommuteLocation | None = None
 

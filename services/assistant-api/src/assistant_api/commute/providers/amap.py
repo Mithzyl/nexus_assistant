@@ -341,6 +341,7 @@ class AmapProvider:
                     if name:
                         lines.append(str(name))
             route_segments, shape_status = self._transit_segments(segments)
+            boarding = self._first_boarding(segments)
             result = self._result(
                 mode=mode,
                 origin=origin,
@@ -354,6 +355,7 @@ class AmapProvider:
                 walking_distance=walking or None,
                 transfer_count=max(0, len(lines) - 1) if lines else None,
                 transfers_summary=" → ".join(lines[:5]) or None,
+                transit_boarding=boarding,
                 fare=self._positive_float(transit.get("cost")),
                 fare_kind=(
                     "amap_transit_fare"
@@ -382,6 +384,7 @@ class AmapProvider:
         fare: float | None = None,
         fare_kind: str | None = None,
         timing_basis: str | None = None,
+        transit_boarding: dict | None = None,
     ) -> EtaResult:
         """Normalize measured values, retaining missing geometry and honest time-estimate limits."""
         if duration is None:
@@ -409,6 +412,7 @@ class AmapProvider:
             timing_basis=timing_basis or basis,
             route_segments=route_segments,
             route_shape_status=shape_status,
+            transit_boarding=transit_boarding,
         )
 
     def _driving_segments(self, steps) -> tuple[RouteSegment, ...]:
@@ -425,6 +429,25 @@ class AmapProvider:
                 coordinate_system=self.coordinate_system,
             ),
         )
+
+    def _first_boarding(self, segments) -> dict | None:
+        """Identify the first boarding leg independently of drawing geometry."""
+        for segment in segments:
+            if not isinstance(segment, dict):
+                continue
+            lines = (segment.get("bus") or {}).get("buslines") or []
+            for line in lines:
+                if isinstance(line, dict) and (name := self._text(line.get("name"))):
+                    stop = line.get("departure_stop")
+                    stop = stop if isinstance(stop, dict) else {}
+                    return {
+                        "provider": self.provider, "time_kind": "line_only",
+                        "line_id": self._text(line.get("id")), "line_name": name,
+                        "boarding_stop_id": self._text(stop.get("id")),
+                        "alighting_stop_id": self._text((line.get("arrival_stop") or {}).get("id"))
+                        if isinstance(line.get("arrival_stop"), dict) else None,
+                    }
+        return None
 
     def _transit_segments(
         self, segments

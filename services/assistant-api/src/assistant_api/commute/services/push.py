@@ -7,7 +7,7 @@ import hashlib
 import json
 import random
 from datetime import datetime, timedelta
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +30,7 @@ from assistant_api.models import (
     PushDevice,
 )
 from assistant_api.models.base import utc_now
+from assistant_api.core.observability import emit_event
 
 ELIGIBLE_PERMISSIONS = {"authorized", "provisional", "ephemeral"}
 INVALID_TOKEN_REASONS = {"Unregistered", "BadDeviceToken", "DeviceTokenNotForTopic"}
@@ -195,6 +196,10 @@ async def deliver_outbox(
             )
         await db.commit()
         await db.refresh(outbox)
+        if outbox.notification_stage:
+            emit_event("commute_notification_delivery", status=status, error_code=code,
+                       stage=outbox.notification_stage, plan_id=outbox.plan_id,
+                       service_date=outbox.local_service_date.isoformat())
         return outbox
 
     if plan is None or advisory is None or instance is None:
@@ -203,12 +208,31 @@ async def deliver_outbox(
         return await finish_early("cancelled", "plan_revision_superseded")
     if not plan.enabled:
         return await finish_early("cancelled", "plan_disabled")
+    if outbox.notification_stage and not plan.notify_enabled:
+        return await finish_early("cancelled", "plan_notification_disabled")
     if instance.status == "skipped":
         return await finish_early("cancelled", "skipped_today")
     if ensure_aware(outbox.expires_at) <= now:
         return await finish_early("expired", "notification_expired")
 
-    raw = json.dumps(outbox.payload_json, ensure_ascii=False, separators=(",", ":"))
+    outgoing = outbox.payload_json
+    if outbox.notification_stage:
+        from assistant_api.commute.services.staged_notifications import payload_for_delivery
+        snapshot = outgoing.get("notification_snapshot") or {}
+        current = instance.notification_snapshot_json or {}
+        if snapshot.get("departure_at") and any(
+            snapshot.get(field) != current.get(field)
+            for field in ("saved_at", "schedule_id", "departure_at", "plan_revision", "target_arrival_at")
+        ):
+            return await finish_early("cancelled", "route_superseded")
+        if snapshot.get("target_arrival_at") != ensure_aware(instance.target_arrival_at).isoformat():
+            return await finish_early("cancelled", "route_superseded")
+        if not snapshot.get("departure_at") and current.get("departure_at") and current.get("saved_at", "") > ensure_aware(advisory.generated_at).isoformat():
+            return await finish_early("cancelled", "route_superseded")
+        outgoing = payload_for_delivery(outgoing, plan, outbox.notification_stage,
+                                        day=outbox.local_service_date, now=now)
+
+    raw = json.dumps(outgoing, ensure_ascii=False, separators=(",", ":"))
     if len(raw.encode("utf-8")) > APNS_MAX_PAYLOAD_BYTES:
         return await finish_early("failed", "payload_too_large")
 
@@ -220,6 +244,8 @@ async def deliver_outbox(
         return await finish_early("cancelled", "bark_not_enabled")
     bark = runtime.bark
     owns_notifier = False
+    if outbox.notification_stage and not row.device_key:
+        return await finish_early("cancelled", "bark_not_configured")
     if bark is None:
         if not row.device_key:
             return await finish_early("cancelled", "bark_not_configured")
@@ -228,9 +254,15 @@ async def deliver_outbox(
     if not bark.configured:
         return await finish_early("cancelled", "bark_not_enabled")
 
-    alert = (outbox.payload_json.get("aps") or {}).get("alert") or {}
+    alert = (outgoing.get("aps") or {}).get("alert") or {}
     origin = runtime.settings.bark_web_origin
-    web_link = {"url": f"{origin}/me/commute/{quote(plan.plan_id, safe='')}"} if origin else {}
+    destination = f"/me/commute/{quote(plan.plan_id, safe='')}"
+    options = {}
+    if outbox.notification_stage:
+        destination += "?" + urlencode({"service_date": outbox.local_service_date.isoformat()})
+        options["level"] = outgoing["level"]
+    if origin:
+        options["url"] = origin + destination
     # End the read transaction before the network wait; SQLite must never stay
     # locked while Bark is slow or unreachable.
     await db.commit()
@@ -240,7 +272,7 @@ async def deliver_outbox(
         delivery = await bark.send(
             title=str(alert.get("title") or "PA 通勤提醒"),
             body=str(alert.get("body") or "通勤建议已更新。"),
-            **web_link,
+            **options,
         )
     except Exception:  # noqa: BLE001 - an uncertain send must not be retried blindly
         send_error = "bark_send_unknown"
@@ -255,7 +287,7 @@ async def deliver_outbox(
         accepted_at = now
     elif delivery is None or delivery.status == "unknown":
         next_status = "unknown"
-        last_error = send_error or "bark_unknown"
+        last_error = send_error or (delivery.error_code if delivery is not None else None) or "bark_unknown"
         attempt_result = "unknown"
         attempt_error = last_error
         accepted_at = None
@@ -282,6 +314,7 @@ async def deliver_outbox(
             status=next_status,
             last_error_code=last_error,
             accepted_at=accepted_at,
+            payload_json=outgoing,
             lease_owner=None,
             lease_expires_at=None,
             updated_at=now,
@@ -299,6 +332,10 @@ async def deliver_outbox(
         db, outbox, row.device_key, result=attempt_result, now=now,
         error_code=attempt_error,
     )
+    if outbox.notification_stage:
+        emit_event("commute_notification_delivery", status=next_status, error_code=last_error,
+                   stage=outbox.notification_stage, plan_id=outbox.plan_id,
+                   service_date=outbox.local_service_date.isoformat())
     await db.commit()
     await db.refresh(outbox)
     return outbox

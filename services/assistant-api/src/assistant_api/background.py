@@ -30,7 +30,7 @@ async def tick(app, component, identity, *, now=None, active_state=None):
         count=await follow_ups.scheduler_tick(app,now=now,scheduler_id=identity)
         # Weather/provider refreshes do not plan user actions or start another AI planner.
         async with app.state.session_factory() as db:
-            await provider_scheduler(db,settings,owner=identity,now=now,auto_analysis_mode='weather_only',enqueue_enabled=settings.commute_auto_weather_enabled,runtime=None)
+            await provider_scheduler(db,settings,owner=identity,now=now,auto_analysis_mode='weather_only',enqueue_enabled=settings.commute_auto_weather_enabled,runtime=None,staged_notifications=True)
         return count
     from assistant_api.services import capture_intake, supplements
     from assistant_api.services import memory_repository
@@ -38,10 +38,9 @@ async def tick(app, component, identity, *, now=None, active_state=None):
     handled=await supplements.worker_tick(app,worker_id=identity) or bool(memory_handled)
     # Retain follow-up progress even when supplement submissions are arriving continuously.
     handled=await follow_ups.worker_tick(app,now=now,worker_id=identity) or handled
-    if not handled:
-        async with app.state.session_factory() as db:
-            provider_handled=await provider_worker(db,runtime,worker_id=identity,now=now,active_state=active_state)
-        handled=any(provider_handled)
+    async with app.state.session_factory() as db:
+        provider_handled=await provider_worker(db,runtime,worker_id=identity,now=now,active_state=active_state)
+    handled=any(provider_handled) or handled
     captured=await capture_intake.worker_tick(app)
     return handled or captured
 
