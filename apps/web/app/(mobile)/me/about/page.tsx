@@ -29,7 +29,7 @@ export default function AboutPage() {
       <section className="card mt-14">
         <h2 className="section-title" style={{ fontSize: 18 }}>你的内容</h2>
         <p className="body-text" style={{ margin: "8px 0 0" }}>
-          日程与提醒会同步到你的账号；个人记忆只有在你确认后才会保存；删除后不再引用。
+          你明确交代好的安排，助手会直接帮你记下来。遇到时间冲突或者信息不够时，会先请你确认。你可以随时查看、修改或删掉助手记住的习惯。
         </p>
       </section>
 

@@ -16,13 +16,34 @@ export function MemoryPicker({selected,onChange}:{selected:SelectedMemory[];onCh
  </section>
 }
 interface Candidate {status:string;text?:string;message?:string;entry_id?:string}
+/** Offer saved commute facts for confirmation without changing how Assistant stores them. */
 export function MemoryCandidates({refresh=0}:{refresh?:number}){
+ const [hiddenIds, setHiddenIds] = useState<string[]>([]);
  const [drafts,setDrafts]=useState<MatterDraft[]>([]),[values,setValues]=useState<Record<string,Candidate>>({}),[error,setError]=useState(''),[saving,setSaving]=useState('');
  useEffect(()=>{let active=true;apiRequest<MatterDraft[]>(pa('/matters/drafts?status=confirmed&limit=20')).then(r=>{if(active)setDrafts(r.filter(d=>d.payload.commute))}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[refresh]);
  useEffect(()=>{if(!drafts.length)return;let active=true;let timer:ReturnType<typeof setTimeout>;
  const load=async()=>{try{const pairs=await Promise.all(drafts.map(async d=>[d.draft_id,await apiRequest<Candidate>(pa(`/matters/drafts/${d.draft_id}/memory-candidate`))] as const));if(!active)return;setValues(Object.fromEntries(pairs));if(pairs.some(([,v])=>['pending','running'].includes(v.status)))timer=setTimeout(load,2500);}catch(e){if(active)setError(e instanceof Error?e.message:'提取状态读取失败')}};
  void load();return()=>{active=false;clearTimeout(timer)}},[drafts]);
  async function save(id:string){setSaving(id);setError('');try{const v=await apiRequest<Candidate>(pa(`/matters/drafts/${id}/memory-candidate/confirm`),{method:'POST',body:{confirmed_sensitive:true}});setValues(x=>({...x,[id]:v}));}catch(e){setError(e instanceof Error?e.message:'保存失败')}finally{setSaving('')}}
- if(!drafts.length&&!error)return null;
- return <section className="card m-stack-10" aria-label="通勤记忆确认"><h3>保存为个人记忆</h3><p>确认后，助手会记住这些通勤习惯。</p>{error?<p role="alert">{error}</p>:null}{drafts.map(d=>{const v=values[d.draft_id];return <div key={d.draft_id}><p>{d.payload.title}</p>{!v||['pending','running'].includes(v.status)?<p>正在提取记忆…</p>:v.status==='candidate'?<><p>{v.text}</p><button className="btn btn--primary" disabled={!!saving} onClick={()=>void save(d.draft_id)}>记住这些信息</button></>:v.status==='saved'?<p>记忆已保存。<Link href="/me/memories">查看个人记忆</Link></p>:<p role="alert">暂未整理出习惯，原通勤安排已保存。</p>}</div>})}</section>
+ const visible = drafts.filter((draft) => !hiddenIds.includes(draft.draft_id) &&
+   [undefined, "pending", "running", "candidate", "saved"].includes(values[draft.draft_id]?.status));
+ if (!visible.length && !error) return null;
+ return <section className="card m-stack-10" aria-label="通勤习惯">
+   {error ? <p role="alert">通勤习惯没加载出来</p> : null}
+   {visible.map((draft) => {
+     const value = values[draft.draft_id];
+     return <div key={draft.draft_id}>
+       <p className="card-title">{draft.payload.title}</p>
+       {!value || value.status === "pending" || value.status === "running" ? <p>正在整理通勤习惯…</p>
+         : value.status === "candidate" ? <>
+           <p>以后都按这个通勤习惯来记吗？</p>
+           <p>{value.text}</p>
+           <div className="action-row">
+             <button type="button" className="btn btn--primary" disabled={Boolean(saving)} onClick={() => void save(draft.draft_id)}>记住</button>
+             <button type="button" className="link-button" disabled={Boolean(saving)} onClick={() => setHiddenIds((ids) => [...ids, draft.draft_id])}>不用</button>
+           </div>
+         </> : <p>已经记下来了 <Link className="link-button" href="/me/memories">看看我的记忆</Link></p>}
+     </div>;
+   })}
+ </section>;
 }

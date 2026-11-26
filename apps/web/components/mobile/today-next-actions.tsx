@@ -10,13 +10,29 @@ import {
   type ActionTarget, type FeedbackAction, type NextActions, type TodayAction,
 } from "@/lib/mobile/next-actions-api";
 import { ErrorCard, LoadingCard, SectionHeading } from "@/components/mobile/ui";
+import { writeSession } from "@/lib/mobile/storage";
 
 const emptyMessage = {
-  ready: "目前没有可推荐的下一步。",
-  availability_missing: "还没有可用时间信息，目前无法确认哪些待办能放进空档。",
-  no_current_window: "现在没有可用空档，目前没有可推荐的下一步。",
-  calendar_end_unknown: "当前日程没有结束时间，暂时无法确认下一段空档。",
+  ready: "今天暂时没有需要安排的事",
+  availability_missing: "告诉我你平时什么时候有空，就能帮你安排待办",
+  no_current_window: "现在这个时间段不太方便加新安排",
+  calendar_end_unknown: "现在正在进行的日程还没写结束时间",
 };
+
+const todoReasons: Record<string, string> = {
+  deadline_risk: "这件事可能来不及做完。可以先处理，或改个截止时间。",
+  needs_deadline: "原先关联的日程已不可用。请重新设定截止时间。",
+  needs_duration: "填一下大概要多久，就能判断现在做不做得完。",
+  needs_availability: "还不知道你什么时候有空，暂时无法建议开始时间。",
+  fits_window: "照预计耗时，现在可以做完。",
+};
+
+/** Use the server's recommendation state while retaining its warning about travel time. */
+function recommendationReason(item: TodayAction): string {
+  const label = item.kind === "todo" ? todoReasons[item.state] : undefined;
+  if (!label) return item.reason;
+  return item.reason.includes("上述判断不含出行") ? `${label} 路上的时间另算。` : label;
+}
 
 /** Keep the recommendation independent of the Today timeline and discard cancelled reads. */
 function useRecommendation() {
@@ -54,12 +70,17 @@ function targetLink(item: TodayAction): string {
 }
 
 /** Show one local recommendation and use the original handlers for changes to business records. */
-export function TodayNextActions({ onReschedule }: { onReschedule: (item: TodayAction) => Promise<void> }) {
+export function TodayNextActions({ onReschedule, onCapture, unfinishedScheduleHref }: {
+  onReschedule: (item: TodayAction) => Promise<void>;
+  onCapture: () => void;
+  unfinishedScheduleHref: string;
+}) {
   const { data, error, refresh } = useRecommendation();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const running = useRef(false);
   const retry = useRef<{ signature: string; run: () => Promise<unknown> } | null>(null);
+  const suppressedList = useRef<HTMLDetailsElement>(null);
 
   /** Block duplicate submits; stale state refreshes, and transport errors retain the exact original request. */
   async function run(signature: string, execute: () => Promise<unknown>, retryable = true) {
@@ -104,7 +125,7 @@ export function TodayNextActions({ onReschedule }: { onReschedule: (item: TodayA
       <div className="card card--tight" key={`${item.kind}:${item.record_id}`}>
         <p className="card-title">{item.state === "departure_due" ? "现在该出发 · " : ""}{item.title}</p>
         {label ? <p className="caption">建议出发 {label}{item.destination ? ` · ${item.destination}` : ""}</p> : null}
-        <p className="caption">{item.reason}</p>
+        <p className="caption">{recommendationReason(item)}</p>
         {canComplete || item.actions.includes("reschedule") ? (
           <div className="action-row">
             {canComplete ? (
@@ -143,9 +164,29 @@ export function TodayNextActions({ onReschedule }: { onReschedule: (item: TodayA
       </div> : null}
       {error ? <ErrorCard message={error} onRetry={refresh} /> : !data ? <LoadingCard label="正在读取下一步建议…" /> : (
         <>
-          {data.primary ? renderItem(data.primary) : <div className="card card--tight"><p className="caption">{emptyMessage[data.data_status]}</p></div>}
+          {data.primary ? renderItem(data.primary) : <div className="card card--tight">
+            <p className="body-text">{emptyMessage[data.data_status]}</p>
+            <div className="action-row">
+              {data.data_status === "availability_missing" ? (
+                <Link href="/ask" className="link-button" onClick={() =>
+                  writeSession("pa.web.ask.draft", "帮我设置作息：我平时周一到周五晚上七点到九点有空")}>去设置作息</Link>
+              ) : data.data_status === "no_current_window" ? (
+                <a href="#today-timeline" className="link-button">看看今天日程</a>
+              ) : data.data_status === "calendar_end_unknown" ? (
+                <Link href={unfinishedScheduleHref} className="link-button">去补全时间</Link>
+              ) : (
+                <button type="button" className="link-button" onClick={onCapture}>随手记一条</button>
+              )}
+              {data.suppressed.length > 0 ? <button type="button" className="link-button" onClick={() => {
+                if (suppressedList.current) {
+                  suppressedList.current.open = true;
+                  suppressedList.current.scrollIntoView({ block: "nearest" });
+                }
+              }}>看看搁置的建议</button> : null}
+            </div>
+          </div>}
           {data.alternatives.length > 0 ? <details><summary>备选建议</summary><div className="m-stack-8">{data.alternatives.map(renderItem)}</div></details> : null}
-          {data.suppressed.length > 0 ? <details><summary>已暂缓或忽略</summary>
+          {data.suppressed.length > 0 ? <details ref={suppressedList}><summary>搁置的建议</summary>
             {data.suppressed.map((item) => <div className="card card--tight" key={`${item.kind}:${item.record_id}`}>
               <span className="caption">{item.title}</span>{" "}
               <button type="button" className="link-button" disabled={pending || retry.current !== null}

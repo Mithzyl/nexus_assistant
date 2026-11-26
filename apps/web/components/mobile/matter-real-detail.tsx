@@ -263,7 +263,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       setChangesError(
         changesResult.reason instanceof Error
           ? changesResult.reason.message
-          : "读取调整记录失败",
+          : "读取修改记录失败",
       );
     }
     if (supplementsResult.status === "fulfilled") {
@@ -646,11 +646,12 @@ export function MatterRealDetail({ id }: { id: string }) {
     }
   };
 
+  /** Keep the confirmation open until the service acknowledges the reversal. */
   const revertChange = async (change: MatterChange) => {
     if (!matter) return;
-    setRevertTarget(null);
     await run("revert", async () => {
       await revertMatterChange(matter.matter_id, change.change_id, matter.version);
+      setRevertTarget(null);
       toast("已撤回这次调整");
       await load();
       requestTodayRefresh();
@@ -792,7 +793,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       <div className="work-detail">
         <section className="matter-head">
           <Pill tone={matter.status === "active" ? "green" : matter.status === "waiting" ? "amber" : "neutral"}>
-            {matter.status === "active" ? "正在推进" : matter.status === "waiting" ? "等待外部反馈" : "已归档"}
+            {matter.status === "active" ? "正在推进" : matter.status === "waiting" ? "跟进中" : "已归档"}
           </Pill>
           <h2 className="serif-title matter-head__title">{matter.title}</h2>
           {primarySchedule ? (
@@ -842,7 +843,7 @@ export function MatterRealDetail({ id }: { id: string }) {
           <div className="card card--tight">
             {matter.schedules.length === 0 &&
             openReminders.length === 0 ? (
-              <p className="caption" style={{ margin: 0 }}>还没有已确定的日程或提醒。</p>
+              <p className="caption" style={{ margin: 0 }}>还没有安排日程或提醒</p>
             ) : (
               <div className="m-stack-10">
                 {matter.schedules.map((schedule) => (
@@ -948,10 +949,10 @@ export function MatterRealDetail({ id }: { id: string }) {
               </div>
             )}
             {routeError ? <p role="alert" className="caption">路线信息读取失败，已保存的日程仍保留。<button type="button" className="link-button" onClick={() => setRouteRefresh(value => value + 1)}>重新读取路线</button></p> : null}
-            <p className="micro" style={{ margin: "10px 0 0" }}>
-              调整后会先生成预览，确认后才会修改安排。
-            </p>
-            <div className="flex items-center gap-12 mt-6" style={{ flexWrap: "wrap" }}>
+            <div className="action-row">
+              <button type="button" className="btn btn--primary btn--small" onClick={() => openQuickAdd("schedule")} disabled={Boolean(busy)}>
+                新建日程
+              </button>
               <button type="button" className="link-button" onClick={() => {
                 setProgressError(null);
                 setProgressPendingContext({});
@@ -959,10 +960,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                 progressOperation.current = null;
                 setProgressOpen(true);
               }}>
-                补充安排
-              </button>
-              <button type="button" className="link-button" onClick={() => openQuickAdd("schedule")} disabled={Boolean(busy)}>
-                新建日程
+                让助手安排
               </button>
             </div>
             {matter.commute_plan_id ? (
@@ -1028,15 +1026,15 @@ export function MatterRealDetail({ id }: { id: string }) {
 
         <section id="changes">
           <div className="flex items-center justify-between gap-12" style={{ marginBottom: 8 }}>
-            <h2 className="section-title">调整记录</h2>
+            <h2 className="section-title">修改记录</h2>
             <span className="micro">已保存</span>
           </div>
           {changesLoading ? (
-            <LoadingCard label="正在读取调整记录…" />
+            <LoadingCard label="正在读取修改记录…" />
           ) : changesError ? (
             <ErrorCard message={changesError} onRetry={() => void load()} />
           ) : changes.length === 0 ? (
-            <p className="caption">还没有调整记录。</p>
+            <p className="caption">还没有修改记录。</p>
           ) : (
             <div className="card card--tight">
               <div className="matter-log">
@@ -1103,7 +1101,7 @@ export function MatterRealDetail({ id }: { id: string }) {
               <div className="matter-side-rows">
                 <div className="matter-side-row">
                   <span>状态</span>
-                  <span>{matter.status === "active" ? "正在推进" : matter.status === "waiting" ? "等待外部反馈" : "已归档"}</span>
+                  <span>{matter.status === "active" ? "正在推进" : matter.status === "waiting" ? "跟进中" : "已归档"}</span>
                 </div>
                 <div className="matter-side-row">
                   <span>最近更新</span>
@@ -1416,13 +1414,14 @@ export function MatterRealDetail({ id }: { id: string }) {
       </Sheet>
       <ConfirmDialog
         open={Boolean(revertTarget)}
-        title="撤回这条变更？"
+        title="确定要撤回这次修改，恢复成原来的安排吗？"
         body={
           revertTarget
-            ? `${describeRevert(revertTarget)}。撤回后事项、历史和今天的安排会重新读取。`
+            ? `${describeRevert(revertTarget)}。`
             : ""
         }
         confirmLabel="确认撤回"
+        busy={busy === "revert"}
         onCancel={() => setRevertTarget(null)}
         onConfirm={() => {
           if (revertTarget) void revertChange(revertTarget);
@@ -1451,15 +1450,15 @@ export function MatterRealDetail({ id }: { id: string }) {
           });
         }}
       />
-      <Sheet title={`确认暂停「${matter.title}」？`} open={archiveOpen} onClose={() => setArchiveOpen(false)}>
+      <Sheet title={`确认归档「${matter.title}」？`} open={archiveOpen} onClose={() => setArchiveOpen(false)}>
         <div className="m-stack-12">
           <div className="notice notice--amber">
             <p className="caption" style={{ margin: "4px 0 0" }}>
-              归档后停止跟进，保留过去的安排。
+              归档后，这件事项还会留着给你查看。不会再自动跟进。勾选的提醒和未来日程会一并取消。
             </p>
           </div>
           <div className="card card--tight">
-            <p className="micro" style={{ margin: 0 }}>未触发提醒</p>
+            <p className="micro" style={{ margin: 0 }}>还没发送的提醒</p>
             {pendingReminders.length > 0 ? (
               <div className="m-stack-8 mt-8">
                 {pendingReminders.map((reminder) => (
@@ -1482,7 +1481,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                   style={{ marginTop: 3 }}
                 />
                 <span className="caption" style={{ margin: 0 }}>
-                  同时取消以上 {pendingReminders.length} 条未触发提醒
+                  同时取消以上 {pendingReminders.length} 条还没发送的提醒
                 </span>
               </label>
             ) : null}
@@ -1521,7 +1520,7 @@ export function MatterRealDetail({ id }: { id: string }) {
               });
             }}
           >
-            {busy === "archive" ? "正在归档…" : "确认归档并停止跟进"}
+            {busy === "archive" ? "正在归档…" : "确认归档"}
           </button>
           <button type="button" className="btn btn--quiet" onClick={() => setArchiveOpen(false)}>
             取消

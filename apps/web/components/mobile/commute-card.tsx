@@ -1,5 +1,7 @@
 "use client";
 
+import { commuteModeLabel } from "@/lib/mobile/commute-mode";
+
 /** Today's compact commute summary. Detail and diagnostics live on the plan page. */
 
 import Link from "next/link";
@@ -7,8 +9,9 @@ import { CloudSun, MapPin, RefreshCw } from "lucide-react";
 
 import type { Advisory, CommutePlan } from "@/lib/mobile/api";
 import { ApiError } from "@/lib/mobile/api";
-import { formatDuration, formatTime } from "@/lib/mobile/format";
+import { formatDuration, formatServiceDate } from "@/lib/mobile/format";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
+import { formatInTimeZone, serviceDateInTimeZone } from "@/lib/mobile/commute-day";
 import { advisoryApplicability } from "@/lib/mobile/advisory";
 import { useAuth } from "./providers";
 import { LoginLink } from "./ui";
@@ -23,11 +26,12 @@ function weekdayText(weekdays: number[]): string {
   return weekdays.map((day) => `周${WEEKDAYS[day - 1]}`).join("、");
 }
 
-function timeAfter(value: string | null, seconds: number | null): string {
+/** Format the estimated arrival in the plan's own time zone. */
+function timeAfter(value: string | null, seconds: number | null, timezone: string): string {
   if (!value || seconds === null) return "";
   const start = Date.parse(value);
   if (!Number.isFinite(start)) return "";
-  return formatTime(new Date(start + seconds * 1000).toISOString());
+  return formatInTimeZone(new Date(start + seconds * 1000).toISOString(), timezone, false);
 }
 
 function weatherText(advisory: Advisory): string {
@@ -61,10 +65,24 @@ export function TodayCommuteCard() {
   const applicability =
     data && plan ? advisoryApplicability(data, plan.revision) : null;
   const current = applicability?.applicable ? data : null;
-  const departure = current ? formatTime(current.recommended_departure_at) : "";
-  const target = current ? formatTime(current.target_arrival_at) : "";
+  const departure = current && plan ? formatInTimeZone(current.recommended_departure_at, plan.timezone, false) : "";
+  const today = plan ? serviceDateInTimeZone(new Date(), plan.timezone) : "";
+  const tomorrow = today ? new Date(Date.parse(today) + 86_400_000).toISOString().slice(0, 10) : "";
+  const adviceDate = data ? formatServiceDate(data.local_service_date).split(" ")[0] : "";
+  const departureTitle = !departure ? "还没有建议出发时间"
+    : current?.local_service_date === tomorrow ? `${departure < "12:00" ? "明早" : "明天"} ${departure} 出发`
+    : current?.local_service_date !== today ? `${adviceDate} 建议 ${departure} 出发`
+    : `建议 ${departure} 出发`;
+  const inactiveTitle = {
+    changed: "通勤设置改了，需要重新查路线",
+    expired: "上次的路线已经过期了",
+    history: `这是 ${adviceDate} 的路线`,
+    unavailable: "这次没查到路线",
+    current: "",
+  };
+  const target = current && plan ? formatInTimeZone(current.target_arrival_at, plan.timezone, false) : "";
   const eta = current?.ai_analysis?.used_duration_seconds ?? current?.eta_seconds ?? null;
-  const arrival = current ? timeAfter(current.recommended_departure_at, eta) : "";
+  const arrival = current && plan ? timeAfter(current.recommended_departure_at, eta, plan.timezone) : "";
   const resultBits: string[] = [];
   if (eta !== null) resultBits.push(`车程${formatDuration(eta)}`);
   if (arrival) resultBits.push(`预计 ${arrival} 到达`);
@@ -75,7 +93,7 @@ export function TodayCommuteCard() {
         <div className="today-commute__head">
           <span className="today-commute__eyebrow">
             <CloudSun size={15} strokeWidth={1.5} aria-hidden="true" />
-            通勤
+            {plan?.name || "通勤"}
           </span>
           {signedIn && plan ? (
             <Link href={`/me/commute/${plan.id}`} className="today-commute__head-link">
@@ -127,12 +145,20 @@ export function TodayCommuteCard() {
         {signedIn && plan ? (
           <>
             <div className="today-commute__work">
-              <span>到岗</span>
+              <span>到达</span>
               <b>{current ? target || plan.arrival_local_time : plan.arrival_local_time}</b>
               <span className="today-commute__plan-meta">
-                {weekdayText(plan.weekdays)} · {plan.transport_mode === "driving" ? "驾车" : plan.transport_mode === "transit" ? "公交" : "步行"}
+                {weekdayText(plan.weekdays)} · {commuteModeLabel(plan.transport_mode)}
               </span>
             </div>
+            <details className="commute-address">
+              <summary>
+                <MapPin size={12} aria-hidden="true" />
+                <span className="commute-address__preview">{plan.origin.label} → {plan.destination.label}</span>
+                <span className="commute-address__collapse">收起地址</span>
+              </summary>
+              <div>出发地：{plan.origin.label}<br />目的地：{plan.destination.label}</div>
+            </details>
 
             {advisory.loading ? (
               <p className="today-commute__body">正在读取通勤建议…</p>
@@ -140,15 +166,10 @@ export function TodayCommuteCard() {
 
             {!advisory.loading && current ? (
               <>
-                <p className="today-commute__label">建议出发</p>
-                <p className="today-commute__time">{departure || "待确认"}</p>
+                <p className="today-commute__time">{departureTitle}</p>
                 {resultBits.length > 0 ? (
                   <p className="today-commute__result">{resultBits.join(" · ")}</p>
                 ) : null}
-                <p className="today-commute__meta">
-                  <MapPin size={12} strokeWidth={1.5} aria-hidden="true" />
-                  <span>{plan.origin.label} → {plan.destination.label}</span>
-                </p>
                 <p className="today-commute__meta">
                   <CloudSun size={12} strokeWidth={1.5} aria-hidden="true" />
                   <span>{weatherText(current)}</span>
@@ -167,19 +188,10 @@ export function TodayCommuteCard() {
 
             {!advisory.loading && !current && applicability ? (
               <>
-                <div className="today-commute__state-row">
-                  <p className="today-commute__title">
-                    {applicability.label === "已过期" ? "方案已过期" : "方案对应旧设置"}
-                  </p>
-                  <span className="today-commute__state">{applicability.label}</span>
-                </div>
-                <p className="today-commute__body">刷新路线后，这里会显示下一次通勤。</p>
-                <p className="today-commute__route">
-                  {plan.origin.label} → {plan.destination.label}
-                </p>
+                <p className="today-commute__title">{inactiveTitle[applicability.reason]}</p>
                 <div className="today-commute__foot">
                   <Link href={`/me/commute/${plan.id}`} className="today-commute__link">
-                    刷新路线
+                    去查路线
                   </Link>
                   <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
                     调整计划
@@ -190,11 +202,10 @@ export function TodayCommuteCard() {
 
             {!advisory.loading && !current && !applicability && noAdvisory ? (
               <>
-                <p className="today-commute__title">今天还没有出行方案</p>
-                <p className="today-commute__body">刷新路线后，这里会显示建议出发时间。</p>
+                <p className="today-commute__title">还没查过路线</p>
                 <div className="today-commute__foot">
                   <Link href={`/me/commute/${plan.id}`} className="today-commute__link">
-                    刷新路线
+                    去查路线
                   </Link>
                   <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
                     调整计划
@@ -205,15 +216,9 @@ export function TodayCommuteCard() {
 
             {!advisory.loading && !current && !applicability && advisory.error && !noAdvisory ? (
               <>
-                <p className="today-commute__title">暂时无法读取通勤建议</p>
-                <p className="today-commute__body">计划时间仍可查看，稍后可以再刷新。</p>
+                <p className="today-commute__title">路线没加载出来</p>
                 <div className="today-commute__foot">
-                  <Link href={`/me/commute/${plan.id}`} className="today-commute__link">
-                    查看通勤详情
-                  </Link>
-                  <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
-                    调整计划
-                  </Link>
+                  <button type="button" className="link-button" onClick={advisory.reload}>再试一次</button>
                 </div>
               </>
             ) : null}

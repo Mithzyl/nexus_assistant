@@ -71,7 +71,7 @@ export default function SourcesPage() {
     <div style={{ paddingBottom: 24 }}>
       <PageShell
         title="内容来源"
-        subtitle="这里显示已经同步到账号的内容；新内容从手机上传。"
+        subtitle="管理你传到账号里的笔记和文件"
         action={
           <button
             type="button"
@@ -120,16 +120,16 @@ export default function SourcesPage() {
               <div className="m-stack-10 mt-14">
                 {sources.loading ? <LoadingCard label="正在读取内容来源…" /> : null}
                 {sources.error ? (
-                  <ErrorCard message={errorText(sources.error)} onRetry={sources.reload} />
+                  <ErrorCard error={sources.error} message={errorText(sources.error)} onRetry={sources.reload} />
                 ) : null}
                 {!sources.loading && !sources.error && sources.data?.length === 0 ? (
                   <EmptyState
                     title="还没有内容来源"
-                    body="日历、提醒事项和笔记会在你主动上传后出现在这里。"
                   >
-                    <Link href="/me/sources/import" className="btn btn--secondary">
-                      导入一条文本笔记
-                    </Link>
+                    <div className="action-row">
+                      <Link href="/me/sources/import" className="btn btn--secondary">导入笔记</Link>
+                      <Link href="/me#shortcut-upload" className="link-button">手机上传设置</Link>
+                    </div>
                   </EmptyState>
                 ) : null}
                 {(sources.data ?? []).map((source) => (
@@ -214,17 +214,18 @@ export default function SourcesPage() {
 
                 {content.loading ? <LoadingCard label="正在读取已同步内容…" /> : null}
                 {content.error ? (
-                  <ErrorCard message={errorText(content.error)} onRetry={content.reload} />
+                  <ErrorCard error={content.error} message={errorText(content.error)} onRetry={content.reload} />
                 ) : null}
                 {!content.loading && !content.error && content.data?.items.length === 0 ? (
                   <EmptyState
-                    title={debounced ? "没有匹配的内容" : "还没有已同步的内容"}
-                    body={
-                      debounced
-                        ? "换一个关键词，或切换类型再试。"
-                        : "上传副本后可以在这里搜索和查看详情。"
-                    }
-                  />
+                    title={debounced || kind ? "没有符合条件的内容" : "还没有已同步的内容"}
+                  >{debounced || kind ? <button type="button" className="link-button" onClick={() => {
+                    setQuery("");
+                    setKind("");
+                  }}>清空筛选</button> : <div className="action-row">
+                    <Link href="/me/sources/import" className="link-button">导入笔记</Link>
+                    <Link href="/me#shortcut-upload" className="link-button">手机上传设置</Link>
+                  </div>}</EmptyState>
                 ) : null}
                 <div className="list-card">
                   {(content.data?.items ?? []).map((item, index) => (
@@ -256,9 +257,7 @@ export default function SourcesPage() {
                     </div>
                   ))}
                 </div>
-                <p className="micro mt-12" style={{ lineHeight: 1.6 }}>
-                  搜索范围是本账号已授权的内容；没搜到不代表已被删除。
-                </p>
+
               </div>
             )}
           </>

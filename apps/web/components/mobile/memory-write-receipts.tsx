@@ -112,7 +112,7 @@ export function MemoryWriteReceipts({ operationId }: { operationId: string }) {
         </button>
       ) : null}
       {entryId ? (
-        <button type="button" className="ask-memory__link" onClick={() => setHistory(entryId)}>查看</button>
+        <button type="button" className="ask-memory__link" onClick={() => setHistory(entryId)}>看看我的记忆</button>
       ) : null}
       {error && receipt ? <span className="ask-memory__notice">{error}</span> : null}
       {pending || error ? (

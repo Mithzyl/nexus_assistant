@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Clock3, Info, MapPin, RefreshCw } from "lucide-react";
 
 import type { MapEndpoint } from "@/lib/mobile/amap";
-import type { ScheduledRoute } from "@/lib/mobile/api";
+import { commuteModeLabel } from "@/lib/mobile/commute-mode";
+import type { CommuteTransportMode, ScheduledRoute } from "@/lib/mobile/api";
 import { formatDuration } from "@/lib/mobile/format";
 import { getScheduleRoute } from "@/lib/mobile/matters-api";
 import {
@@ -13,14 +14,6 @@ import {
   type AmapRouteSegment,
 } from "./amap-map";
 import { LoadingCard, Sheet } from "./ui";
-
-/** Convert a server route mode into the same label used by text cards. */
-function modeLabel(mode: "driving" | "walking" | "transit" | null): string {
-  if (mode === "driving") return "驾车";
-  if (mode === "walking") return "步行";
-  if (mode === "transit") return "公共交通";
-  return "出行方式未返回";
-}
 
 /** Convert persisted endpoint and segment coordinates into drawable GCJ-02 data. */
 function mapEndpoint(
@@ -71,7 +64,7 @@ export function RouteMapSheet({
   title: string;
   fallbackOriginLabel?: string | null;
   fallbackDestination: MapEndpoint | null;
-  fallbackMode: "driving" | "walking" | "transit" | null;
+  fallbackMode: CommuteTransportMode | null;
   fallbackDurationSeconds: number | null;
   fallbackWalkingDistanceMeters?: number | null;
   fallbackTransferCount?: number | null;
@@ -201,16 +194,8 @@ export function RouteMapSheet({
           <div className="route-map-sheet__notice" role="status">
             <Info size={16} aria-hidden="true" />
             <div>
-              <strong>暂未提供路线图</strong>
-              <p>
-                已保存出行方式、耗时和费用，但没有真实道路形状。这里只标出
-                已有起终点，不画直线，也不在浏览器重新计算路线。
-              </p>
-              {mode === "transit" ? (
-                <p>
-                  公交步行段与乘车段的分段线条，要等账号里保存了对应形状才能显示。
-                </p>
-              ) : null}
+              <strong>地图上暂时只能看起点和终点</strong>
+              <p>可查看文字路线和预计耗时。</p>
             </div>
           </div>
         ) : null}
@@ -272,7 +257,7 @@ export function RouteMapSheet({
 
             <div className="route-map-sheet__facts">
               <span>
-                <Clock3 size={13} /> {modeLabel(mode)}
+                <Clock3 size={13} /> {commuteModeLabel(mode)}
               </span>
               {durationSeconds !== null && durationSeconds !== undefined ? (
                 <span>{formatDuration(durationSeconds)}</span>

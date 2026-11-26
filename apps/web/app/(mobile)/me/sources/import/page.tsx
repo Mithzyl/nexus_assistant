@@ -51,7 +51,7 @@ export default function ImportNotePage() {
       return;
     }
     if (!/\.(txt|md|markdown)$/i.test(file.name)) {
-      setError("只支持 .txt / .md 纯文本。不支持 Office 文件、PDF、图片或 OCR。");
+      setError("请选择纯文本笔记文件。");
       return;
     }
     try {
@@ -124,7 +124,7 @@ export default function ImportNotePage() {
         throw new ApiError(
           409,
           "sync_disabled",
-          "这个来源已停止上传，先在来源详情里点“继续上传”。",
+          "这个来源已经停用上传了",
           true,
         );
       }
@@ -167,7 +167,7 @@ export default function ImportNotePage() {
   return (
     <PageShell
       title="导入笔记"
-      subtitle="支持纯文本与 Markdown。"
+      subtitle="可以粘贴文字，也可以选取文本文件。"
     >
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录生活助手" body="跨设备保存你的笔记。">
@@ -183,10 +183,10 @@ export default function ImportNotePage() {
             <div className="card card--green">
               <p className="card-title green" style={{ fontSize: 16 }}>
                 {result.created > 0
-                  ? "已保存"
+                  ? "笔记存好了"
                   : result.updated > 0
-                    ? "已更新"
-                    : "内容未变化，无需重复保存"}
+                    ? "笔记更新好了"
+                    : "以前存过这条笔记，没有重复保存"}
               </p>
               <p className="micro" style={{ margin: "6px 0 0" }}>
                 同步时间 {new Date(result.last_sync_at).toLocaleString("zh-CN")}
@@ -196,10 +196,10 @@ export default function ImportNotePage() {
                   href={sourceId ? `/me/sources/${sourceId}` : "/me/sources"}
                   className="btn btn--secondary"
                 >
-                  查看来源与授权
+                  去看看
                 </Link>
                 <Link href="/me/sources" className="btn btn--secondary">
-                  去已同步内容里搜索
+                  查看全部笔记
                 </Link>
                 <button
                   type="button"
@@ -280,6 +280,7 @@ export default function ImportNotePage() {
               {error ? (
                 <p className="caption red" role="alert" style={{ margin: "12px 0 0" }}>
                   {error}
+                  {sourceId && error === "这个来源已经停用上传了" ? <Link href={`/me/sources/${sourceId}`} className="link-button">去打开</Link> : null}
                 </p>
               ) : null}
 

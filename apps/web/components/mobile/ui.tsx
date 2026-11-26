@@ -12,6 +12,7 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ApiError } from "@/lib/mobile/api";
 import { loginHref } from "@/lib/mobile/login-return.mjs";
 
 export function ScreenHeader({
@@ -142,13 +143,13 @@ export function EmptyState({
   children,
 }: {
   title: string;
-  body: string;
+  body?: string;
   children?: ReactNode;
 }) {
   return (
     <div className="empty">
       <p className="empty__title">{title}</p>
-      <p className="empty__body">{body}</p>
+      {body ? <p className="empty__body">{body}</p> : null}
       {children ? <div className="mt-12">{children}</div> : null}
     </div>
   );
@@ -219,31 +220,48 @@ export function LoadingCard({ label = "正在同步…" }: { label?: string }) {
   );
 }
 
+/** Give a read failure a next step matched to its status and the current page. */
 export function ErrorCard({
   message,
+  error,
   onRetry,
   retryable = true,
 }: {
   message: string;
+  error?: Error | null;
   onRetry?: () => void;
   retryable?: boolean;
 }) {
+  const status = error instanceof ApiError ? error.status : null;
+  const seconds = error instanceof ApiError ? error.retryAfter : null;
+  const router = useRouter();
+  const title = status === 401 ? "登录已经过期"
+    : status === 403 ? "你没有权限看这个内容"
+    : status === 404 ? "找不到这个页面，可能已经被删掉了"
+    : status === 429 ? (seconds && seconds > 0 ? `请等 ${seconds} 秒后再试` : "点得太快了，请稍后再试")
+    : "内容没加载出来";
   return (
-    <div className="card card--red">
+    <div className="card card--red" role="alert">
       <p className="card-title red" style={{ fontSize: 15 }}>
-        没能读取
+        {title}
       </p>
-      <p className="caption red" style={{ margin: "4px 0 0", opacity: 0.9 }}>
+      {!error && message ? <p className="caption red" style={{ margin: "4px 0 0", opacity: 0.9 }}>
         {message}
-      </p>
-      {retryable && onRetry ? (
+      </p> : null}
+      {status === 401 ? <LoginLink className="link-button">重新登录</LoginLink>
+        : status === 403 || status === 404 ? <button type="button" className="link-button"
+          onClick={() => {
+            if (window.history.length > 1) router.back();
+            else router.replace("/today");
+          }}>{status === 403 ? "返回上一页" : "返回"}</button>
+        : retryable && onRetry && status !== 429 ? (
         <button
           type="button"
           className="link-button"
           onClick={onRetry}
           style={{ color: "var(--m-red)" }}
         >
-          重试
+          再试一次
         </button>
       ) : null}
     </div>
@@ -311,7 +329,7 @@ export function SwitchRow({
   );
 }
 
-/** Accessible confirmation overlay (replaces native alert/confirmationDialog). */
+/** Keep destructive confirmations focused and keep pending submissions visible. */
 export function ConfirmDialog({
   open,
   title,
@@ -333,21 +351,36 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const dialogId = useId();
+  const onCancelRef = useRef(onCancel);
+  const busyRef = useRef(busy);
+  onCancelRef.current = onCancel;
+  busyRef.current = busy;
 
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
-    confirmRef.current?.focus();
+    cancelRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCancel();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (!busyRef.current) onCancelRef.current();
+      }
+      if (event.key === "Tab" && (busyRef.current ||
+        (event.shiftKey && document.activeElement === cancelRef.current) ||
+        (!event.shiftKey && document.activeElement === confirmRef.current))) {
+        event.preventDefault();
+        (event.shiftKey && !busyRef.current ? confirmRef : cancelRef).current?.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
       previous?.focus?.();
     };
-  }, [open, onCancel]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -356,14 +389,14 @@ export function ConfirmDialog({
       className="sheet-backdrop"
       style={{ alignItems: "center", padding: 24, zIndex: 100 }}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onCancel();
+        if (!busy && event.target === event.currentTarget) onCancel();
       }}
     >
       <div
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="confirm-title"
-        aria-describedby="confirm-body"
+        aria-labelledby={`${dialogId}-title`}
+        aria-describedby={`${dialogId}-body`}
         style={{
           width: "100%",
           maxWidth: 330,
@@ -372,14 +405,14 @@ export function ConfirmDialog({
           background: "var(--m-card)",
         }}
       >
-        <p className="card-title" id="confirm-title">
+        <p className="card-title" id={`${dialogId}-title`}>
           {title}
         </p>
-        <p className="caption" id="confirm-body" style={{ margin: "6px 0 18px" }}>
+        <p className="caption" id={`${dialogId}-body`} style={{ margin: "6px 0 18px" }}>
           {body}
         </p>
-        <div className="flex gap-10">
-          <button type="button" className="btn btn--secondary" onClick={onCancel}>
+        <div className="action-row">
+          <button type="button" className="btn btn--secondary" ref={cancelRef} aria-disabled={busy} onClick={() => { if (!busy) onCancel(); }}>
             {cancelLabel}
           </button>
           <button

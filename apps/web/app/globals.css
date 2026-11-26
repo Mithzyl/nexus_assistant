@@ -888,17 +888,20 @@ a {
   margin-top: 2px;
 }
 
-.composer {
+.ask-dock {
   position: fixed;
   left: 50%;
   bottom: calc(76px + env(safe-area-inset-bottom));
   z-index: 35;
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
   width: 100%;
   max-width: 480px;
   transform: translateX(-50%) translateY(calc(-1 * var(--m-keyboard-offset, 0px)));
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
   padding: 10px 14px;
   background: var(--m-chrome);
   -webkit-backdrop-filter: blur(22px) saturate(1.4);
@@ -939,13 +942,20 @@ a {
 .composer__send:disabled { background: var(--m-faint); opacity: 0.55; }
 .composer-hint { padding: 0 var(--m-gutter) 6px; font-size: 12px; color: var(--m-red); }
 .composer-operation {
-  margin: 0 var(--m-gutter) 168px;
+  margin: 0 var(--m-gutter) 6px;
   padding: 12px 14px;
   border: 0.5px solid var(--m-line);
   border-radius: 14px;
   background: var(--m-card);
   color: var(--m-ink);
 }
+.composer-reply__options {
+  max-height: min(28vh, calc(var(--m-visible-height, 100dvh) * 0.30));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.composer-reply__options:empty { display: none; }
+.ask-dock .composer-operation { overflow-wrap: anywhere; }
 .composer-operation--amber { background: var(--m-amber-soft); border-color: transparent; }
 .composer-operation strong { display: block; font-size: 14px; }
 .composer-operation p { margin: 4px 0 8px; color: var(--m-muted); font-size: 13px; line-height: 1.55; }
@@ -1009,7 +1019,7 @@ a {
 }
 
 .m-app[data-keyboard="true"] .tabbar { display: none; }
-.m-app[data-keyboard="true"] .composer { bottom: 0; }
+.m-app[data-keyboard="true"] .ask-dock { bottom: 0; }
 
 /* Toast ------------------------------------------------------------------- */
 .toast-wrap {
@@ -1984,10 +1994,12 @@ a {
   .m-screen { padding-top: 0; }
   .tabbar { display: none; }
   .work-actions { bottom: calc(72px + env(safe-area-inset-bottom)); }
-  .composer {
+  .ask-dock {
     left: calc(50% + 118px);
     bottom: 24px;
     max-width: 760px;
+  }
+  .composer {
     border: 1px solid var(--m-line);
     border-radius: 20px;
     box-shadow: 0 12px 36px color-mix(in srgb, var(--m-ink) 10%, transparent);
@@ -2001,8 +2013,24 @@ a {
   .board-legacy .h-screen { height: auto; }
 }
 
+/* Keep long labels and address details inside the mobile card. */
+.action-row > .btn, .action-row > .link-button, .quick-btn__title {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.commute-address { margin: 7px 0; }
+.commute-address summary { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.commute-address summary svg { flex: none; }
+.commute-address__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commute-address .commute-address__collapse,
+.commute-address[open] .commute-address__preview { display: none; }
+.commute-address[open] .commute-address__collapse { display: inline; }
+.commute-address > div { overflow-wrap: anywhere; padding-top: 4px; }
+
 @media (max-width: 380px) {
   .quick-btn { min-height: 74px; padding: 9px 12px; }
+  .quick-btn__title { font-size: 13px; }
   .quick-btn__hint { font-size: 11px; }
 }
 
@@ -2402,6 +2430,8 @@ a {
   flex: 0 0 auto;
   color: var(--m-faint);
 }
+
+details.commute-conclusion__meta { display: block; }
 
 .commute-conclusion__meta span {
   overflow: hidden;

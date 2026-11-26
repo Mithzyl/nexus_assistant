@@ -8,7 +8,7 @@ import type { MemoryResults } from "@/lib/mobile/api";
 import { ApiError, apiRequest } from "@/lib/mobile/api";
 import { uuid } from "@/lib/mobile/format";
 import { useAuth } from "@/components/mobile/providers";
-import { LoginLink, EmptyState, Notice, PageShell, Pill } from "@/components/mobile/ui";
+import { LoginLink, EmptyState, PageShell, Pill } from "@/components/mobile/ui";
 import { PrimaryButton } from "@/components/mobile/buttons";
 
 export default function MemorySearchPage() {
@@ -22,7 +22,7 @@ export default function MemorySearchPage() {
   const search = async (offset = 0) => {
     const trimmed = query.trim();
     if (!trimmed) {
-      setError("先写一句要检索的内容。");
+      setError("先写一个想搜的词。");
       return;
     }
     setBusy(true);
@@ -59,7 +59,7 @@ export default function MemorySearchPage() {
 
   return (
     <PageShell
-      title="记忆检索"
+      title="搜记忆"
       subtitle="检索当前账号下的个人记忆，待确认内容会单独标记。"
     >
       {!signedIn && state !== "loading" ? (
@@ -101,30 +101,26 @@ export default function MemorySearchPage() {
           {results ? (
             results.items.length === 0 ? (
               <EmptyState
-                title="没有搜到相关记忆"
-                body="这次检索没有命中；没搜到不等于记录被删除了。"
-              />
+                title="没找到相关的记忆，换个词试试"
+              ><Link href="/me/memories" className="link-button">看全部记忆</Link></EmptyState>
             ) : (
               <div className="m-stack-10 mt-14">
                 {results.items.map((hit) => (
                   <div className="card" key={hit.memory_id}>
                     <div className="flex items-center gap-8" style={{ flexWrap: "wrap" }}>
-                      <Pill tone="fog">{hit.memory_type || "记忆"}</Pill>
-                      <Pill tone="fog">{hit.status === "active" ? "已生效" : hit.status === "candidate" ? "待确认" : hit.status || "状态未知"}</Pill>
-                      {typeof hit.score === "number" ? (
-                        <span className="micro">相关度 {hit.score.toFixed(2)}</span>
-                      ) : null}
+                      <Pill tone="fog">{({place:"地点",commute_preference:"通勤",time_preference:"时间",experience:"经历"} as Record<string,string>)[hit.memory_type ?? ""] || "记忆"}</Pill>
+                      <Pill tone="fog">{hit.status === "active" ? "正在用" : hit.status === "candidate" ? "待确认" : hit.status === "forgotten" ? "已忘掉" : "记忆"}</Pill>
+
                     </div>
                     <p className="body-text mt-8" style={{ marginBottom: 0 }}>
                       {hit.content}
                     </p>
-                    {hit.source_reference ? (
-                      <p className="micro" style={{ margin: "8px 0 0" }}>
-                        来源：{hit.source_reference}
-                      </p>
-                    ) : null}
-                    {hit.app_data ? (
-                      <details className="mt-8"><summary>查看保存的数据</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(hit.app_data.fields, null, 2)}</pre></details>
+                    {hit.source_reference || hit.app_data || typeof hit.score === "number" ? (
+                      <details className="mt-8"><summary>查看详情</summary>
+                        {hit.source_reference ? <p className="caption">来源：{hit.source_reference}</p> : null}
+                        {typeof hit.score === "number" ? <p className="caption">相关度 {hit.score.toFixed(2)}</p> : null}
+                        {hit.app_data ? <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(hit.app_data.fields, null, 2)}</pre> : null}
+                      </details>
                     ) : null}
                   </div>
                 ))}
@@ -132,10 +128,7 @@ export default function MemorySearchPage() {
             )
           ) : null}
 
-          {results?.next_cursor ? <PrimaryButton onClick={() => void search(Number(results.next_cursor))} disabled={busy}>继续检索下一页</PrimaryButton> : null}
-          <Notice title="关于检索">
-            按关键词匹配记忆正文；待确认内容在你确认后，才会参与后续建议。
-          </Notice>
+          {results?.next_cursor ? <PrimaryButton onClick={() => void search(Number(results.next_cursor))} disabled={busy}>加载更多</PrimaryButton> : null}
           <Link href="/me/memories" className="link-button mt-6">
             查看个人记忆
           </Link>

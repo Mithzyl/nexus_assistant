@@ -26,7 +26,7 @@ import {
 
 function SyncPill({ status }: { status: WorkSyncStatus }) {
   const tone = status === "ios_synced" ? "green" : status === "pending_ios" ? "amber" : "neutral";
-  return <Pill tone={tone}>{status === "local_only" ? "应用内预览" : status === "pending_ios" ? "待 iOS 同步" : "iOS 已同步"}</Pill>;
+  return <Pill tone={tone}>{status === "local_only" ? "应用内预览" : status === "pending_ios" ? "待苹果设备同步" : "已同步到苹果设备"}</Pill>;
 }
 
 export function WorkMatterDetail({ id }: { id: string }) {

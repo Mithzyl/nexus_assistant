@@ -23,12 +23,16 @@ export function LoginScreen() {
   const [inviteCode, setInviteCode] = useState("");
   const [options, setOptions] = useState<RegistrationOptions | null>(null);
   const [optionsError, setOptionsError] = useState(false);
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
+  const [inviteError, setInviteError] = useState("");
+  const [emailRegistered, setEmailRegistered] = useState(false);
   useEffect(() => {
     let active = true;
+    setOptionsError(false);
     registrationOptions().then((value) => { if (active) setOptions(value); })
       .catch(() => { if (active) setOptionsError(true); });
     return () => { active = false; };
-  }, []);
+  }, [optionsAttempt]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -60,15 +64,21 @@ export function LoginScreen() {
       setError("两次输入的密码不一致，请再确认一下。"); return;
     }
     if (creating && options?.invite_required && !inviteCode) {
-      setError("请填写注册邀请码。"); return;
+      setInviteError("请填写注册邀请码"); return;
     }
     setBusy(true);
     setError(null);
+    setInviteError("");
+    setEmailRegistered(false);
     try {
       if (creating) await register({ email, password, display_name: displayName, invite_code: inviteCode });
       else await login(email, password);
     } catch (caught) {
-      if (caught instanceof ApiError) {
+      if (creating && caught instanceof ApiError && caught.code === "invalid_invite_code") {
+        setInviteError("邀请码填错了，请核对后再试");
+      } else if (creating && caught instanceof ApiError && caught.code === "email_registered") {
+        setEmailRegistered(true);
+      } else if (caught instanceof ApiError) {
         setError(
           !creating && caught.status === 401
             ? "邮箱或密码不正确。"
@@ -114,7 +124,7 @@ export function LoginScreen() {
               required={creating}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="输入邮箱或账号"
+              placeholder="输入邮箱"
             />
           </label>
           {creating ? <label className="field" htmlFor="register-name">
@@ -161,8 +171,19 @@ export function LoginScreen() {
           </label> : null}
           {creating && options?.invite_required ? <label className="field" htmlFor="register-invite">
             <span className="field__label">注册邀请码</span>
-            <input id="register-invite" className="input" type="password" autoComplete="off" maxLength={256} value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} placeholder="填写管理员提供的邀请码" />
+            <input id="register-invite" className="input" type="password" autoComplete="off" maxLength={256} value={inviteCode} onChange={(event) => { setInviteCode(event.target.value); setInviteError(""); }} aria-invalid={Boolean(inviteError)} aria-describedby={inviteError ? "invite-error" : undefined} placeholder="填写管理员提供的邀请码" />
+            {inviteError ? <span id="invite-error" className="caption red" role="alert">{inviteError}</span> : null}
           </label> : null}
+          {emailRegistered ? <div role="alert" className="action-row">
+            <span>这个邮箱已经注册过了</span>
+            <button type="button" className="link-button" onClick={() => {
+              setCreating(false);
+              setEmailRegistered(false);
+              setPassword("");
+              setConfirmPassword("");
+              setInviteCode("");
+            }}>直接去登录</button>
+          </div> : null}
           {error ? (
             <p className="caption red" role="alert" style={{ margin: "2px 0 12px" }}>
               {error}
@@ -175,11 +196,13 @@ export function LoginScreen() {
         </form>
         {!creating && <NexusLogin />}
 
-        {(creating || options?.enabled) ? <button type="button" className="auth-switch" disabled={busy} onClick={() => { setCreating(!creating); setError(null); setPassword(""); setConfirmPassword(""); setInviteCode(""); setShowPassword(false); }}>
+        {(creating || options?.enabled) ? <button type="button" className="auth-switch" disabled={busy} onClick={() => { setCreating(!creating); setError(null); setInviteError(""); setEmailRegistered(false); setPassword(""); setConfirmPassword(""); setInviteCode(""); setShowPassword(false); }}>
           {creating ? "已有账号？返回登录" : "还没有账号？创建新账号"}
         </button> : null}
         {options && !options.enabled ? <p className="caption mt-20">暂未开放注册，请联系管理员。</p> : null}
-        {optionsError ? <p className="caption mt-20">暂时无法读取注册设置，请稍后刷新重试。已有账号仍可登录。</p> : null}
+        {optionsError ? <div className="caption mt-20" role="alert">没法加载注册设置
+          <button type="button" className="link-button" onClick={() => setOptionsAttempt((value) => value + 1)}>再试一次</button>
+        </div> : null}
       </main>
     </div>
   );

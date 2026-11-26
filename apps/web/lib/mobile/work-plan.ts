@@ -71,7 +71,7 @@ export const WORK_STATUS_LABEL: Record<WorkMatterStatus, string> = {
 
 export const SYNC_STATUS_LABEL: Record<WorkSyncStatus, string> = {
   local_only: "应用内预览 · 未写入云端",
-  pending_ios: "待 iOS 客户端同步",
+  pending_ios: "等待同步到苹果设备",
   ios_synced: "iOS 已同步",
 };
 

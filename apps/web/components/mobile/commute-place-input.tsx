@@ -28,10 +28,10 @@ export function CommutePlaceInput({ id, title, value, onChange }: {
         .then(result => {
           if (!alive) return;
           setRows(result.candidates);
-          if (result.reason_code && result.reason_code !== "place_not_found") setError("地点搜索暂时不可用，请稍后重试。");
-          else if (!result.candidates.length) setError("没有找到匹配地点，请加上城市或更详细的地址。");
+          if (result.reason_code && result.reason_code !== "place_not_found") setError("搜索出了点问题");
+          else if (!result.candidates.length) setError("没找到这个地方，加上城市名字试试");
         })
-        .catch(e => { if (alive) setError(e instanceof Error ? e.message : "地点搜索失败，请重试。"); })
+        .catch(() => { if (alive) setError("搜索出了点问题"); })
         .finally(() => { if (alive) setBusy(false); });
     }, 600);
     return () => { alive = false; clearTimeout(timer); controller.abort(); };
@@ -53,17 +53,18 @@ export function CommutePlaceInput({ id, title, value, onChange }: {
           disabled={p.coordinate_system === "unknown"}
           onClick={() => onChange({label:p.name,city:p.city,latitude:p.latitude,longitude:p.longitude,coordinate_system:p.coordinate_system === "unknown" ? null : p.coordinate_system})}>
           <strong>{p.name}</strong><span className="caption" style={{display:"block",marginTop:4}}>{[p.city,p.address].filter(Boolean).join(" · ") || "地址未提供"}</span>
+          {p.coordinate_system === "unknown" ? <span className="caption">这个地点暂时没法用来查路线</span> : null}
         </button>
       </li>)}
     </ul> : null}
-    {error ? <p role="alert" className="caption red">{error} <button type="button" className="link-button" onClick={() => setRetry(n => n+1)}>重试搜索</button></p> : null}
+    {error ? <p role="alert" className="caption red">{error} <button type="button" className="link-button" onClick={() => setRetry(n => n+1)}>再试一次</button></p> : null}
     <details style={{marginTop:8}}><summary className="micro">高级：手动填写坐标</summary>
       <label className="field"><span className="field__label">城市</span><input className="input" value={value.city ?? ""} placeholder="例如：柳州市" onChange={e => onChange({...value,city:e.target.value || null})}/></label>
       <div className="flex gap-10">{(["latitude","longitude"] as const).map(k => <label key={k} className="field grow">
         <span className="field__label">{k === "latitude" ? "纬度" : "经度"}</span>
         <input className="input" type="number" step="0.000001" value={value[k] || ""} onChange={e => onChange({...value,[k]:Number(e.target.value),coordinate_system:value.coordinate_system ?? "gcj02"})}/>
       </label>)}</div>
-      <label className="field"><span className="field__label">坐标系</span><select className="select" value={value.coordinate_system ?? "gcj02"} onChange={e => onChange({...value,coordinate_system:e.target.value as "gcj02" | "wgs84"})}><option value="gcj02">高德坐标</option><option value="wgs84">GPS 坐标</option></select></label>
+      <label className="field"><span className="field__label">坐标系</span><select className="select" value={value.coordinate_system ?? "gcj02"} onChange={e => onChange({...value,coordinate_system:e.target.value as "gcj02" | "wgs84"})}><option value="gcj02">高德坐标</option><option value="wgs84">卫星定位坐标</option></select></label>
     </details>
   </div>;
 }

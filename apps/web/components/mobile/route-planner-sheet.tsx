@@ -1,5 +1,8 @@
 "use client";
 
+import type { CommuteTransportMode } from "@/lib/mobile/api";
+import { commuteModeLabel, commuteModes } from "@/lib/mobile/commute-mode";
+
 import { useEffect, useRef, useState } from "react";
 import { Check, MapPin } from "lucide-react";
 
@@ -54,7 +57,7 @@ export function RoutePlannerSheet({
   const [city, setCity] = useState("");
   const [candidates, setCandidates] = useState<PlaceCandidate[]>([]);
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
-  const [mode, setMode] = useState<"driving" | "walking" | "transit">("driving");
+  const [mode, setMode] = useState<CommuteTransportMode>("driving");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const searchRequestId = useRef(0);
@@ -182,7 +185,7 @@ export function RoutePlannerSheet({
   };
 
   return (
-    <Sheet title="补充起点并测算路线" open={open} onClose={onClose}>
+    <Sheet title="换个起点重查" open={open} onClose={onClose}>
       {schedule ? (
         <div className="m-stack-12">
           <div className="card card--tight">
@@ -242,7 +245,7 @@ export function RoutePlannerSheet({
                 ))}
               </div>
             ) : (
-              <p className="caption">没有带坐标的上一项安排，请使用“搜索起点”。</p>
+              <p className="caption">上一项安排没有可用地点，请搜索起点。</p>
             )
           ) : (
             <>
@@ -316,13 +319,7 @@ export function RoutePlannerSheet({
           <div>
             <p className="field__label">出行方式</p>
             <div className="chip-row">
-              {(
-                [
-                  ["driving", "驾车"],
-                  ["walking", "步行"],
-                  ["transit", "公共交通"],
-                ] as const
-              ).map(([value, label]) => (
+              {commuteModes.map((value) => (
                 <button
                   key={value}
                   type="button"
@@ -330,7 +327,7 @@ export function RoutePlannerSheet({
                   aria-pressed={mode === value}
                   onClick={() => setMode(value)}
                 >
-                  {label}
+                  {commuteModeLabel(value)}
                 </button>
               ))}
             </div>
@@ -348,7 +345,7 @@ export function RoutePlannerSheet({
             onClick={() => void estimate()}
             disabled={busy !== null || !hasDestinationCoordinates}
           >
-            {busy === "estimate" ? "正在测算…" : "测算路线"}
+            {busy === "estimate" ? "正在查路线…" : "查路线"}
           </button>
           <p className="micro" style={{ margin: 0 }}>
             <MapPin size={12} style={{ display: "inline", verticalAlign: "-2px" }} />{" "}

@@ -15,7 +15,6 @@ import {
   Lock,
   LogOut,
   MapPin,
-  RefreshCw,
   Search,
   UserRound,
 } from "lucide-react";
@@ -24,7 +23,6 @@ import { DataConnections } from "@/components/mobile/data-connections";
 import { NexusLogin } from "@/components/mobile/nexus-login";
 import { useAuth, useUI } from "@/components/mobile/providers";
 import { LoginLink, ConfirmDialog, ScreenHeader } from "@/components/mobile/ui";
-import { formatDateTime } from "@/lib/mobile/format";
 import { useMatters } from "@/lib/mobile/use-matters";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
 import type { DataSource } from "@/lib/mobile/api";
@@ -77,17 +75,19 @@ export default function MePage() {
   const [logoutNote, setLogoutNote] = useState<string | null>(null);
 
   const accountTitle = (() => {
-    if (state === "loading") return "正在验证会话…";
-    if (signedIn && user) return user.display_name;
-    if (state === "offline") return user ? `${user.display_name}（离线）` : "登录状态还没确认";
+    if (state === "loading") return "正在确认登录…";
+    if (signedIn && user) return user.email;
+    if (state === "offline") return "连接断开了";
     if (state === "anonymous") return user ? user.display_name : "未登录";
     return "未登录";
   })();
 
+  const expiresSoon = Boolean(expiresAt && Date.parse(expiresAt) - Date.now() <= 86_400_000);
+
   const accountDetail = (() => {
     if (state === "loading") return "正在同步账号状态…";
-    if (signedIn) return "已登录，内容会同步到你的账号。";
-    if (state === "offline") return "现在没网；上次的登录和暂存内容都在。";
+    if (signedIn) return "";
+    if (state === "offline") return "";
     return "登录后，问答和通勤提醒会跟着账号走。";
   })();
 
@@ -107,8 +107,7 @@ export default function MePage() {
 
   return (
     <div className="m-screen m-stack-18" style={{ paddingBottom: 24 }}>
-      <ScreenHeader title="我的" subtitle="账号、个人记忆与偏好" />
-      {signedIn && <NexusLogin link />}
+      <ScreenHeader title="我的" subtitle="账号和设置" />
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
         <h2 className="section-title" style={{ fontSize: 17, marginBottom: 8 }}>
@@ -119,17 +118,10 @@ export default function MePage() {
             <UserRound size={40} className="fog" strokeWidth={1.3} style={{ flex: "0 0 auto" }} />
             <div className="grow">
               <p className="card-title">{accountTitle}</p>
-              <p className="caption" style={{ margin: "2px 0 0" }}>
-                {accountDetail}
-              </p>
-              {signedIn && user ? (
+              {accountDetail ? <p className="caption">{accountDetail}</p> : null}
+              {signedIn && expiresSoon ? (
                 <p className="micro" style={{ margin: "4px 0 0" }}>
-                  {user.email}
-                </p>
-              ) : null}
-              {signedIn && expiresAt ? (
-                <p className="micro" style={{ margin: "4px 0 0" }}>
-                  登录有效期至 {formatDateTime(expiresAt)}
+                  登录快过期了
                   {renewing ? " · 正在延长…" : ""}
                 </p>
               ) : null}
@@ -158,27 +150,13 @@ export default function MePage() {
               </LoginLink>
             ) : null}
             {state === "offline" ? (
-              <button
-                type="button"
-                className="btn btn--secondary btn--small"
-                onClick={() => {
-                  void renew();
-                  toast("正在重新连接");
-                }}
-              >
-                <RefreshCw size={13} /> 重新连接
-              </button>
+              <LoginLink className="btn btn--secondary btn--small">重新登录</LoginLink>
             ) : null}
             {signedIn ? (
               <>
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => void renew()}
-                  disabled={renewing}
-                >
-                  <RefreshCw size={13} /> {renewing ? "处理中…" : "延长登录"}
-                </button>
+                {expiresSoon || renewing ? <button type="button" className="link-button" onClick={() => void renew()} disabled={renewing}>
+                  {renewing ? "正在延长…" : "延长登录"}
+                </button> : null}
                 <button
                   type="button"
                   className="link-button"
@@ -189,6 +167,7 @@ export default function MePage() {
               </>
             ) : null}
           </div>
+          {signedIn ? <details className="mt-10"><summary>账号设置</summary><NexusLogin link /></details> : null}
         </div>
       </section>
 
@@ -242,13 +221,13 @@ export default function MePage() {
           <Row
             href="/me/lesson"
             icon={<Lightbulb size={14} strokeWidth={1.5} />}
-            title="记住一点经验"
+            title="本机笔记"
             detail="只保存你主动写下的内容"
           />
           <Row
             href="/me/memory-search"
             icon={<Search size={14} strokeWidth={1.5} />}
-            title="记忆检索"
+            title="搜记忆"
             detail="按关键词查找个人记忆"
           />
           <Row
@@ -261,7 +240,7 @@ export default function MePage() {
           <Row
             href="/me/commute/bark"
             icon={<Bell size={14} strokeWidth={1.5} />}
-            title="Bark 提醒"
+            title="手机锁屏提醒"
             detail="在手机接收通勤、助手追问和到期提醒"
           />
         </div>

@@ -22,9 +22,9 @@ export default function NexusCallback() {
         }
         window.location.replace(loginDestination(body.next));
       })
-      .catch(failure=>setError(failure instanceof Error?failure.message:"登录未能完成。"));
+      .catch(()=>setError("登录失败了"));
   },[]);
   return <main className="m-app" style={{padding:24}}><h1>登录生活助手</h1>
-    {error?<><p role="alert">{error}</p><Link href={retryHref}>返回原登录方式</Link></>:<p role="status">正在确认登录…</p>}
+    {error?<><p role="alert">{error}</p><Link href={retryHref}>回到登录页</Link></>:<p role="status">正在确认登录…</p>}
   </main>;
 }

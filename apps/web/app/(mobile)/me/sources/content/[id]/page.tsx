@@ -35,7 +35,7 @@ export default function ContentDetailPage({ params }: { params: { id: string } }
   return (
     <PageShell title="已同步内容" subtitle={data ? `${KIND_LABEL[data.kind]} · ${data.source_display_name}` : undefined}>
       {item.loading ? <LoadingCard label="正在读取内容…" /> : null}
-      {item.error ? <ErrorCard message={errorText(item.error)} onRetry={item.reload} /> : null}
+      {item.error ? <ErrorCard error={item.error} message={errorText(item.error)} onRetry={item.reload} /> : null}
       {!signedIn && state !== "loading" ? (
         <EmptyState title="登录后查看已同步内容" body="这些内容属于你的账号。">
           <LoginLink className="btn btn--primary">登录</LoginLink>
@@ -75,7 +75,7 @@ export default function ContentDetailPage({ params }: { params: { id: string } }
             </div>
           ) : (
             <Notice>
-              这条没有正文：可能没同步正文，也可能原文就没有。
+              这条内容里面是空的。<Link href="/me/sources" className="link-button">返回列表</Link>
             </Notice>
           )}
 

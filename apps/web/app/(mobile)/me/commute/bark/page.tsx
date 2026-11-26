@@ -15,7 +15,6 @@ import {
   ErrorCard,
   LoadingCard,
   PageShell,
-  Pill,
   SwitchRow,
 } from "@/components/mobile/ui";
 
@@ -40,7 +39,7 @@ export default function BarkPage() {
 
   const bind = async () => {
     if (!key.trim()) {
-      setError("请输入 Bark 的 device key。");
+      setError("请填写推送设备密钥。");
       return;
     }
     setBusy("bind");
@@ -116,15 +115,15 @@ export default function BarkPage() {
   };
 
   return (
-    <PageShell title="Bark 提醒" subtitle="在 Bark 接收通勤、助手追问和到期提醒。">
+    <PageShell title="手机锁屏提醒">
       {!signedIn && state !== "loading" ? (
-        <EmptyState title="登录后绑定 Bark" body="绑定设备后，可选择这个账号要接收的提醒。">
+        <EmptyState title="登录后设置手机锁屏提醒" body="绑定设备后，可选择这个账号要接收的提醒。">
           <LoginLink className="btn btn--primary">登录</LoginLink>
         </EmptyState>
       ) : null}
 
-      {bark.loading ? <LoadingCard label="正在读取 Bark 状态…" /> : null}
-      {bark.error ? <ErrorCard message={errorText(bark.error)} onRetry={bark.reload} /> : null}
+      {bark.loading ? <LoadingCard label="正在读取提醒设置…" /> : null}
+      {bark.error ? <ErrorCard error={bark.error} message={errorText(bark.error)} onRetry={bark.reload} /> : null}
 
       {signedIn && data ? (
         <>
@@ -133,28 +132,16 @@ export default function BarkPage() {
               <Bell size={16} className={configured ? "green" : "faint"} />
               <strong style={{ fontSize: 15 }}>
                 {!configured
-                  ? "还没有绑定 Bark"
+                  ? "还没有绑定手机提醒"
                   : auto || assistantNotifications
                     ? "已开启自动提醒"
-                    : "已绑定 Bark，自动提醒关闭"}
+                    : "已绑定手机，自动提醒关闭"}
               </strong>
-              <span className="grow" />
-              <Pill tone={auto || assistantNotifications ? "green" : configured ? "amber" : "neutral"}>
-                {auto || assistantNotifications
-                  ? "自动提醒"
-                  : data.state === "disabled"
-                    ? "仅手动测试"
-                    : "未配置"}
-              </Pill>
             </div>
-            <p className="caption" style={{ margin: "8px 0 0" }}>
-              {configured
-                ? `已绑定 ${data.base_url_host}。请在下方选择需要的自动提醒。`
-                : "绑定后，先发送一条测试提醒，确认设备可以接收。"}
-            </p>
+
             {configured && data.available === false ? (
               <p className="caption amber" style={{ margin: "6px 0 0" }}>
-                暂时无法发送 Bark 提醒，请稍后再试。
+                暂时发不出手机提醒，请稍后再试。
               </p>
             ) : null}
             {data.last_test_at ? (
@@ -169,8 +156,8 @@ export default function BarkPage() {
               title="通勤自动提醒"
               detail={
                 configured
-                  ? "每天最多两条自动提醒；关闭后只停止后续提醒。"
-                  : "先绑定 Key 才能开启自动提醒。"
+                  ? "前一晚发预告、早上发确认，路况有大变化时再提醒。"
+                  : "先填写推送设备密钥。"
               }
               checked={auto}
               disabled={!configured || busy !== null}
@@ -182,7 +169,7 @@ export default function BarkPage() {
               title="助手追问与到期提醒"
               detail={linksAvailable
                 ? "点击追问可回到原问题，点击待办或日程提醒可打开「今天」。"
-                : "服务端尚未配置 Web 跳转地址。"}
+                : "暂时没法点通知直接跳回原页面。"}
               checked={assistantNotifications}
               disabled={!configured || (!linksAvailable && !assistantNotifications) || busy !== null}
               busy={busy === "assistant_notifications_enabled"}
@@ -212,16 +199,12 @@ export default function BarkPage() {
             <div className={`card mt-14 ${testResult.accepted ? "card--green" : "card--amber"}`}>
               <p className="card-title" style={{ fontSize: 15 }}>
                 {testResult.status === "accepted"
-                  ? "已发送测试通知"
+                  ? "已经发出去啦，看看手机锁屏"
                   : testResult.status === "failed"
-                    ? "测试发送失败"
-                    : "还没收到测试结果"}
+                    ? "发送失败了"
+                    : "不确定有没有发成功，先看一眼手机"}
               </p>
-              <p className="caption" style={{ margin: "4px 0 0" }}>
-                {testResult.status === "accepted"
-                  ? "请留意手机通知。"
-                  : testResult.status === "unknown" ? "先查看手机通知，再决定是否重发。" : testResult.message}
-              </p>
+
               <p className="micro" style={{ margin: "6px 0 0" }}>
                 {formatDateTime(testResult.tested_at)}
               </p>
@@ -237,10 +220,10 @@ export default function BarkPage() {
           <div className="card mt-16">
             <p className="card-title" style={{ fontSize: 15 }}>
               <KeyRound size={14} style={{ display: "inline", verticalAlign: "-2px" }} />{" "}
-              {configured ? "更换 Bark 设备密钥" : "绑定 Bark"}
+              {configured ? "更换推送设备密钥" : "绑定手机提醒"}
             </p>
             <p className="caption" style={{ margin: "4px 0 10px" }}>
-              打开 Bark 复制设备密钥。
+              在手机的推送应用里复制设备密钥。
             </p>
             <label className="field" htmlFor="bark-key">
               <input
@@ -249,7 +232,7 @@ export default function BarkPage() {
                 type="password"
                 value={key}
                 onChange={(event) => setKey(event.target.value)}
-                placeholder="粘贴 Bark device key"
+                placeholder="粘贴推送设备密钥"
                 autoComplete="off"
                 spellCheck={false}
               />
@@ -260,7 +243,7 @@ export default function BarkPage() {
               onClick={() => void bind()}
               disabled={busy === "bind"}
             >
-              {busy === "bind" ? "正在保存…" : configured ? "替换 Key" : "保存绑定"}
+              {busy === "bind" ? "正在保存…" : configured ? "更换密钥" : "保存绑定"}
             </button>
             {configured ? (
               <button
@@ -279,8 +262,8 @@ export default function BarkPage() {
 
       <ConfirmDialog
         open={confirmUnbind}
-        title="解除 Bark 绑定？"
-        body="解除后停止接收 Bark 提醒。"
+        title="解除手机提醒绑定？"
+        body="解除后，这部手机将不再收到这些提醒。"
         confirmLabel="解除绑定"
         danger
         busy={busy === "unbind"}

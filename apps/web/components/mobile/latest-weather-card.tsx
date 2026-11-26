@@ -143,7 +143,7 @@ export function LatestWeatherCard({
 
           {advisory && !advisory.matches_current_plan ? (
             <p className="micro" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-              这条方案对应旧设置，和现在的不一致。
+              通勤设置改了，需要重新查路线。
             </p>
           ) : null}
         </>

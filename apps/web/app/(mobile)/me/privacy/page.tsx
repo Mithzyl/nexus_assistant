@@ -36,7 +36,7 @@ export default function PrivacyPage() {
         <h2 className="section-title" style={{ fontSize: 18 }}>我们不会做</h2>
         <ul className="body-text" style={{ paddingLeft: "1.2em", margin: "8px 0 0" }}>
           <li>不读取你的屏幕、相册、麦克风或其他应用。</li>
-          <li>不擅自修改正式日程；每次变更都需要你确认。</li>
+          <li>你明确交代好的安排，助手会直接帮你记下来。遇到时间冲突或者信息不够时，会先请你确认。</li>
           <li>不把当前设备的日历、提醒事项写回。</li>
           <li>不向页面暴露平台密钥或内部凭据。</li>
         </ul>
@@ -45,7 +45,7 @@ export default function PrivacyPage() {
       <section className="card mt-14">
         <h2 className="section-title" style={{ fontSize: 18 }}>删除与退出</h2>
         <p className="body-text" style={{ margin: "8px 0 0" }}>
-          在来源详情里可以删除上传记录或整个来源；本机暂存可以在“今天”的最近整理中删除；退出登录只影响当前设备。
+          在来源详情里可以删除上传记录或整个来源；本机笔记可以在「今天」删除；退出登录只影响当前设备。
         </p>
         <p className="caption" style={{ margin: "8px 0 0" }}>
           删除后，相关内容不会再被引用。账号中的其他内容会继续保留，直到你主动删除。

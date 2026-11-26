@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Clock3, Copy, ExternalLink, Map, MapPin } from "lucide-react";
 
+import type { CommuteTransportMode } from "@/lib/mobile/api";
+import { commuteModeLabel } from "@/lib/mobile/commute-mode";
 import { formatDateTime, formatDuration } from "@/lib/mobile/format";
 
 type RouteState = "enough" | "verified" | "tight" | "unverified" | "unavailable";
@@ -48,7 +50,7 @@ export function RouteTextCard({
   destinationLabel?: string | null;
   departureAt?: string | null;
   arrivalAt?: string | null;
-  mode?: "driving" | "walking" | "transit" | null;
+  mode?: CommuteTransportMode | null;
   durationSeconds?: number | null;
   distanceMeters?: number | null;
   walkingDistanceMeters?: number | null;
@@ -71,14 +73,7 @@ export function RouteTextCard({
   embedded?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
-  const modeLabel =
-    mode === "driving"
-      ? "驾车"
-      : mode === "walking"
-        ? "步行"
-        : mode === "transit"
-          ? "公共交通"
-          : "出行方式待确认";
+  const modeLabel = commuteModeLabel(mode);
   const stateLabel =
     state === "enough"
       ? "时间充足"
@@ -271,7 +266,7 @@ export function RouteTextCard({
         {onPlanRoute ? (
           <button type="button" className="link-button" onClick={onPlanRoute}>
             <Clock3 size={13} />{" "}
-            {state === "verified" ? "刷新路线" : "填出发点"}
+            {state === "verified" ? "换个起点重查" : "填写出发地"}
           </button>
         ) : null}
         {mapUrl ? (

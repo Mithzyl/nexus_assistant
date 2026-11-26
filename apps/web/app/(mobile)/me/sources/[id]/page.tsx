@@ -139,7 +139,7 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
       ) : null}
       {source.loading ? <LoadingCard label="正在读取来源…" /> : null}
       {source.error ? (
-        <ErrorCard message={errorText(source.error)} onRetry={source.reload} />
+        <ErrorCard error={source.error} message={errorText(source.error)} onRetry={source.reload} />
       ) : null}
 
       {data ? (
@@ -168,15 +168,15 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
 
           <div className="card mt-14">
             <SwitchRow
-              title="继续上传新批次"
-              detail="关闭后已有副本保留，只是不再接受新的上传；不等于删除。"
+              title="允许继续上传"
+              detail="关闭后，已上传的内容会保留。"
               checked={data.sync_enabled}
               busy={saving === "sync"}
               onChange={() => void update({ sync_enabled: !data.sync_enabled }, "sync")}
             />
             <hr className="divider" />
             <SwitchRow
-              title="允许助手读取"
+              title="允许助手查看"
               detail="关闭后助手工具不再读取该来源；你仍可在这里查询已有副本。"
               checked={data.assistant_enabled}
               busy={saving === "assistant"}
@@ -269,8 +269,8 @@ export default function SourceDetailPage({ params }: { params: { id: string } })
         title={confirm === "items" ? "删除副本？" : "删除整个来源？"}
         body={
           confirm === "items"
-            ? "清空账号副本，保留上传授权。"
-            : "删除此来源及其全部副本。"
+            ? "只删掉里面存的内容，保留这个来源。"
+            : "把这个来源和里面的内容全删掉。"
         }
         confirmLabel={confirm === "items" ? "删除副本" : "删除来源"}
         danger

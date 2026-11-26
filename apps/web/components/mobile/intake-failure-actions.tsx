@@ -10,17 +10,19 @@ export function IntakeFailureActions({ context, onEdit, onCheck, details }: {
 }) {
   const state = context?.write_state ?? "uncertain";
   const message = {
-    applied: "日程或待办已保存，但助手回复失败。",
-    not_applied: "这次没有保存任何更改。",
-    uncertain: "还没确认是否保存成功，先去「今天」页看看。",
+    applied: "已经替你存好了。",
+    not_applied: "没能保存成功",
+    uncertain: "暂时不确定有没有保存成功",
   }[state];
   return <>
-    <p className="ask-failure__body">{message}</p>
-    {state !== "not_applied" && context?.applied_receipts?.map((receipt, i) => <p key={i}>{receipt.summary}</p>)}
+    <p className="ask-failure__body">{state === "applied" && context?.applied_receipts?.length
+      ? `已经替你存好了：${context.applied_receipts.map((receipt) => receipt.summary).join("；")}`
+      : message}</p>
+    {state === "uncertain" && context?.applied_receipts?.map((receipt, i) => <p key={i}>{receipt.summary}</p>)}
     <div className="ask-failure__actions">
-      {state !== "not_applied" && <a className="btn btn--secondary btn--small" href="/today">去「今天」页核对</a>}
-      {state === "uncertain" && onCheck && <button type="button" className="link-button" onClick={onCheck}>查询原结果</button>}
-      {state === "not_applied" && onEdit && <button type="button" className="btn btn--secondary btn--small" onClick={onEdit}>重新编辑</button>}
+      {state === "uncertain" && onCheck && <button type="button" className="btn btn--secondary btn--small" onClick={onCheck}>查一下结果</button>}
+      {state !== "not_applied" && <a className="link-button" href="/today">{state === "applied" ? "去看看" : "去「今天」看看"}</a>}
+      {state === "not_applied" && onEdit && <button type="button" className="btn btn--secondary btn--small" onClick={onEdit}>改改再发</button>}
       {details}
     </div>
   </>;

@@ -65,7 +65,7 @@ export function MatterSupplementReplySheet({
   }, [open, target?.textId, target?.relationType]);
 
   const isAnswer = target?.relationType === "answer";
-  const title = isAnswer ? "回答这条追问" : "纠正这段内容";
+  const title = isAnswer ? "回复助手" : "纠正这段内容";
 
   /** Save once; a failed request keeps the text and key for a safe retry. */
   const submit = async () => {

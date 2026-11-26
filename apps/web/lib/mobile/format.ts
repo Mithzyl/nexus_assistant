@@ -18,7 +18,7 @@ export function formatServiceDate(value: string | null | undefined, fallback = n
 /** Persisted service dates stay ISO for the API, not for display. */
 export function timezoneLabel(value: string | null | undefined): string | null {
   if (!value) return null;
-  if (value === "Asia/Shanghai") return "北京时间 (GMT+8)";
+  if (value === "Asia/Shanghai") return "北京时间";
   const city = value.split("/").pop()?.replaceAll("_", " ");
   return city ? `当地时间 · ${city}` : value;
 }

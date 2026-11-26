@@ -79,7 +79,7 @@ function RefundBody({ matter }: { matter: DemoMatter }) {
               <strong>{received ? "到账状态已更新" : "等待明确的到账依据"}</strong>
               <small>
                 {received
-                  ? "回执与原事务关联，保留依据供你核对"
+                  ? "回执与原事项关联，保留依据供你核对"
                   : "仅有退款通知，不会提前标记完成"}
               </small>
             </div>
@@ -107,7 +107,7 @@ function RefundBody({ matter }: { matter: DemoMatter }) {
         <>
           <div className="notice notice--green mt-14">
             <strong>同一件退款已完成，没有多建一笔。</strong>
-            <p style={{ margin: "4px 0 0" }}>到账依据保留在事务里，可以撤销这次更新。</p>
+            <p style={{ margin: "4px 0 0" }}>到账依据保留在事项里，可以撤销这次更新。</p>
           </div>
           <button
             type="button"
@@ -231,7 +231,7 @@ function WishBody({ matter }: { matter: DemoMatter }) {
               <strong style={{ fontSize: 15 }}>10月24日 15:00—16:00</strong>
             </p>
             <p className="caption mt-4" style={{ marginBottom: 0 }}>
-              你已确认 · 已加入今天和事务（本地示例）
+              你已确认 · 已加入今天和事项（本地示例）
             </p>
           </div>
           <button
@@ -510,10 +510,10 @@ export function MatterDetail({ id }: { id: string }) {
 
   if (!demo.enabled) {
     return (
-      <PageShell title="事务详情">
+      <PageShell title="事项详情">
         <EmptyState
-          title="事务详情需要登录账号"
-          body="当前后端没有事务、退款或订单功能，正常模式不展示示例详情。你可以在“我的”里显式开启演示模式查看交互。"
+          title="事项详情需要登录账号"
+          body="当前后端没有事项、退款或订单功能，正常模式不展示示例详情。你可以在“我的”里显式开启演示模式查看交互。"
         >
           <button type="button" className="btn btn--secondary" onClick={() => demo.setEnabled(true)}>
             开启演示模式
@@ -525,13 +525,13 @@ export function MatterDetail({ id }: { id: string }) {
 
   if (!matter) {
     return (
-      <PageShell title="事务详情">
+      <PageShell title="事项详情">
         <EmptyState
           title="找不到这件事"
           body="它可能已被删除，或者只存在于另一个演示会话里。"
         >
           <button type="button" className="btn btn--secondary" onClick={() => router.push("/matters")}>
-            返回事务列表
+            返回事项列表
           </button>
         </EmptyState>
       </PageShell>
@@ -557,7 +557,7 @@ export function MatterDetail({ id }: { id: string }) {
       <div className="mt-12">
         <LinkRow
           icon={<MapPin size={14} />}
-          title="所有事务"
+          title="所有事项"
           detail="回到列表继续查看"
           onClick={() => router.push("/matters")}
         />

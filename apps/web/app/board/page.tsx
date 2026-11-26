@@ -14,9 +14,10 @@ export default function BoardPage() {
           <ChevronLeft size={18} strokeWidth={1.5} aria-hidden="true" />
           返回生活助手
         </Link>
-        <h1 className="board-legacy__title">旧版看板</h1>
+        <h1 className="board-legacy__title">这只是一个只读示例</h1>
       </header>
       <div className="board-legacy__body">
+        <Link className="btn btn--primary" href="/matters">去事项页新建</Link>
         <Board />
       </div>
     </div>

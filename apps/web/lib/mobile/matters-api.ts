@@ -444,7 +444,7 @@ export function estimateRoute(input: {
   origin?: { latitude: number; longitude: number; coordinate_system: string; city?: string | null };
   origin_schedule_id?: string;
   destination: { latitude: number; longitude: number; coordinate_system: string; city?: string | null };
-  mode: "driving" | "walking" | "transit";
+  mode: import("./api").CommuteTransportMode;
   depart_at?: string;
   arrive_by?: string;
   schedule_id?: string;

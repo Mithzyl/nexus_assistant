@@ -3,22 +3,22 @@
 import type { Advisory } from "./api";
 
 export const AI_REASON_LABEL: Record<string, string> = {
-  route_snapshot_missing: "本次未进行 AI 分析：尚未取得可用路线和耗时。",
-  route_provider_unavailable: "本次未进行 AI 分析：没有取得可用路线和耗时，暂时无法生成出发建议。",
-  route_snapshot_stale: "本次未进行 AI 分析：路线数据已过期，请更新路线后再分析。",
+  route_snapshot_missing: "本次未进行 助手分析：尚未取得可用路线和耗时。",
+  route_provider_unavailable: "本次未进行 助手分析：没有取得可用路线和耗时，暂时无法生成出发建议。",
+  route_snapshot_stale: "本次未进行 助手分析：路线数据已过期，请更新路线后再分析。",
   route_provider_unconfigured: "路线服务尚未开通",
   ai_nexus_not_configured: "还没开通助手分析",
-  ai_timeout: "AI 分析超时，结果未确认",
+  ai_timeout: "助手分析超时，结果未确认",
   agent_workflow_internal_error: "模型服务本次处理失败；路线和天气结果已保留，可查看基础出发建议。",
   ai_workflow_failed: "AI 工作流失败",
   ai_upstream_error: "AI 服务调用异常",
-  ai_output_invalid_json: "AI 输出不是严格 JSON",
-  ai_duration_not_from_snapshot: "AI 采用的地图耗时不在路线快照中",
-  ai_departure_arithmetic_invalid: "AI 计算的出发时间与算术不一致",
-  ai_duration_source_invalid: "AI 的耗时来源与字段不一致",
-  ai_extra_buffer_invalid: "AI 的额外预留无效",
-  ai_route_reference_invalid: "AI 引用了不存在的路线",
-  ai_result_empty: "AI 没有返回可读结果",
+  ai_output_invalid_json: "助手的回复格式有误",
+  ai_duration_not_from_snapshot: "助手采用的地图耗时不在路线快照中",
+  ai_departure_arithmetic_invalid: "助手计算的出发时间与算术不一致",
+  ai_duration_source_invalid: "助手的耗时来源与字段不一致",
+  ai_extra_buffer_invalid: "助手的额外预留无效",
+  ai_route_reference_invalid: "助手引用了不存在的路线",
+  ai_result_empty: "助手没有返回可读结果",
   account_missing: "账号不存在",
 };
 
@@ -92,7 +92,7 @@ export function aiStatus(advisory: Advisory): {
     return { label: "分析可用（非模型文案）", tone: "fog", available: true };
   }
   if (["route_snapshot_missing", "route_provider_unavailable", "route_provider_unconfigured", "route_snapshot_stale"].includes(ai.reason ?? "")) {
-    return { label: "本次未进行 AI 分析", tone: "neutral", available: false };
+    return { label: "本次未进行 助手分析", tone: "neutral", available: false };
   }
   if (ai.status === "rejected") {
     return { label: "模型分析被拒绝", tone: "red", available: false };
@@ -103,7 +103,7 @@ export function aiStatus(advisory: Advisory): {
 export function aiReasonText(advisory: Advisory): string | null {
   const reason = advisory.ai_analysis?.reason;
   if (!reason) return null;
-  return AI_REASON_LABEL[reason] || `AI 分析不可用（${reason}）`;
+  return AI_REASON_LABEL[reason] || `助手分析不可用（${reason}）`;
 }
 
 export function durationSourceLabel(source: string | null | undefined): string {
@@ -114,6 +114,7 @@ export function durationSourceLabel(source: string | null | undefined): string {
 
 export type AdvisoryApplicability = {
   applicable: boolean;
+  reason: "changed" | "expired" | "history" | "unavailable" | "current";
   label: string;
   detail: string;
   tone: "green" | "amber" | "red" | "neutral";
@@ -139,7 +140,8 @@ export function advisoryApplicability(
   if (!planMatches) {
     return {
       applicable: false,
-      label: "设置已更新",
+      reason: "changed",
+      label: "通勤设置已修改",
       detail: "通勤设置改过了，建议重新核对路线。这是改之前算的方案。",
       tone: "neutral",
     };
@@ -147,18 +149,20 @@ export function advisoryApplicability(
   if (expired) {
     return {
       applicable: false,
+      reason: "expired",
       label: "已过期",
       detail: "这条方案过期了，出发前重新核对一下。",
       tone: "neutral",
     };
   }
   if (!currentServiceDate && Date.parse(advisory.target_arrival_at) > now && advisory.quality !== "unavailable") {
-    return { applicable: true, label: "下次通勤预估",
+    return { applicable: true, reason: "current", label: "下次通勤预计",
       detail: `${advisory.local_service_date} 的出行预估；临近出发时再看一次更准。`, tone: "neutral" };
   }
   if (!currentServiceDate) {
     return {
       applicable: false,
+      reason: "history",
       label: "历史建议",
       detail: `这条建议对应 ${advisory.local_service_date} 的通勤，不是今天的结果。`,
       tone: "neutral",
@@ -167,7 +171,8 @@ export function advisoryApplicability(
   if (advisory.quality === "unavailable") {
     return {
       applicable: false,
-      label: "没有可用结果",
+      reason: "unavailable",
+      label: "这次没查到路线",
       detail: "这次没算出可用的路线或天气。",
       tone: "amber",
     };
@@ -175,14 +180,16 @@ export function advisoryApplicability(
   if (routeUnconfigured(advisory)) {
     return {
       applicable: true,
-      label: "无新路线结论",
+      reason: "current",
+      label: "这次没有新路线",
       detail: "路线服务还没开通；这里只能参考已有的天气和路线记录。",
       tone: "amber",
     };
   }
   return {
     applicable: true,
-    label: "在有效期内",
+    reason: "current",
+    label: "当前建议",
     detail: "这是最新方案，可以按它安排出门。",
     tone: "green",
   };

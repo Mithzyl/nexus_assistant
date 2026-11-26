@@ -104,28 +104,17 @@ function todosEqual(left: EditableTodo[], right: EditableTodo[]): boolean {
 function conflictText(conflict: MatterConflict | null): string | null {
   if (!conflict?.has_conflict) return null;
   const item = conflict.conflicts[0];
-  if (!item) return "这两段安排时间撞上了，先核对一下。";
-  if (item.eta_status === "unverified") {
-    return `${item.title}：路程时间还没核实，暂时算不出是否来得及。${item.reason}`;
-  }
-  if (item.relation === "overlap") return `${item.title}：与这次安排时间重叠。`;
-  return `${item.title}：${item.reason}`;
+  if (!item) return "这两件事时间冲突了。";
+  if (item.relation === "overlap") return `和 ${dateTimeLabel(item.starts_at)} 的「${item.title}」时间冲突了。`;
+  return "这两件事挨得太近，怕来不及。";
 }
 
 function sheetTitle(mode: string): string {
-  if (mode === "archive") return "停止跟进";
-  if (mode === "create") return "整理成事项";
-  if (mode === "schedule") return "调整日程";
-  if (mode === "todo") return "调整待办";
-  return "确认事项变更";
-}
-
-function primarySummary(mode: string): string {
-  if (mode === "archive") return "归档并停止提醒";
-  if (mode === "create") return "新建事项";
-  if (mode === "schedule") return "只调整日程";
-  if (mode === "todo") return "只调整待办";
-  return "修改事项";
+  if (mode === "archive") return "确认归档";
+  if (mode === "create") return "确认添加";
+  if (mode === "schedule") return "确认改期";
+  if (mode === "todo") return "确认修改待办";
+  return "确认修改事项";
 }
 
 export function MatterDraftSheet({
@@ -887,10 +876,10 @@ export function MatterDraftSheet({
   };
 
   return (
-    <Sheet title={isArchiveDraft ? `确认暂停「${current?.payload.title || "这件事"}」？` : sheetTitle(effectiveMode)} open={open} onClose={requestClose}>
+    <Sheet title={mode === "create" && current?.payload.schedule ? "确认新日程" : sheetTitle(effectiveMode)} open={open} onClose={requestClose}>
       <div className="m-stack-12">
         <div className="draft-kind">
-          <span className="draft-kind__label">待确认 · {primarySummary(effectiveMode)}</span>
+          <span className="draft-kind__label">待确认的安排</span>
         </div>
         {loading ? <p className="caption">正在读取最新草稿…</p> : null}
         {loadError ? <p className="danger-text">{loadError}</p> : null}
@@ -1405,8 +1394,8 @@ export function MatterDraftSheet({
                           {actionBusy === "place"
                             ? "正在保存地点…"
                             : pickedMapLocation
-                              ? "确认地图位置并重新计算路线"
-                              : "使用这个地点并重新计算路线"}
+                              ? "确认地图位置并查路线"
+                              : "使用这个地点并查路线"}
                         </button>
                       ) : null}
                       {placeError ? (
@@ -1584,15 +1573,11 @@ export function MatterDraftSheet({
                         onClick={() => void applyOption(option.option_id)}
                       >
                         <span className="choice-card__dot">
-                          {selectedOption === option.option_id ? (
-                            <Check size={12} />
-                          ) : (
-                            option.option_id
-                          )}
+                          {selectedOption === option.option_id ? <Check size={12} /> : null}
                         </span>
                         <span className="grow">
                           <span className="choice-card__title">
-                            {option.label}
+                            {option.proposed_start ? `改到 ${dateTimeLabel(option.proposed_start)}` : option.label}
                             {option.recommended ? " · 推荐" : ""}
                           </span>
                           <span className="choice-card__detail">{option.detail}</span>
@@ -1603,7 +1588,7 @@ export function MatterDraftSheet({
                           ) : null}
                           {!option.executable ? (
                             <span className="choice-card__detail danger-text">
-                              暂不能选：{option.unavailable_reason || "请选择其他方案"}
+                              {option.unavailable_reason || "这个时间用不了，请选其他时间"}
                             </span>
                           ) : null}
                         </span>
@@ -1619,7 +1604,7 @@ export function MatterDraftSheet({
                     style={{ marginTop: 3 }}
                   />
                   <span className="caption" style={{ margin: 0 }}>
-                    我已了解仍存在的行程风险，确认继续。
+                    知道有冲突，仍按原时间
                   </span>
                 </label>
               </div>
@@ -1690,7 +1675,7 @@ export function MatterDraftSheet({
             {message ? <p className="caption" style={{ margin: 0 }}>{message}</p> : null}
             {outcome === "unknown" ? (
               <p className="danger-text" style={{ margin: 0 }}>
-                结果待确认。请刷新或重试原操作。
+                还没确认有没有存好
               </p>
             ) : null}
 
@@ -1701,13 +1686,13 @@ export function MatterDraftSheet({
                 onClick={() => void patch()}
                 disabled={busy || actionBusy !== null || isTerminal}
               >
-                {actionBusy === "patch" ? "正在保存…" : "保存修改并核对"}
+                {actionBusy === "patch" ? "正在保存…" : "保存草稿"}
               </button>
             ) : (
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={() => void confirm()}
+                onClick={() => void (outcome === "unknown" ? load() : confirm())}
                 disabled={
                   busy ||
                   actionBusy !== null ||
@@ -1723,10 +1708,10 @@ export function MatterDraftSheet({
                 {busy
                   ? "正在确认…"
                   : outcome === "unknown"
-                    ? "重试同一次确认"
-                    : isArchiveDraft
-                      ? "确认暂停跟进"
-                      : "确认更新"}
+                    ? "查看结果"
+                    : mode === "create"
+                      ? "确认添加"
+                      : sheetTitle(effectiveMode)}
               </button>
             )}
             <div className="action-row draft-secondary-actions">
@@ -1736,7 +1721,7 @@ export function MatterDraftSheet({
                 onClick={() => void load()}
                 disabled={busy || loading || actionBusy !== null}
               >
-                <RefreshCw size={14} /> 刷新
+                <RefreshCw size={14} /> 再看一次
               </button>
 
               {current.status === "preview" ? (

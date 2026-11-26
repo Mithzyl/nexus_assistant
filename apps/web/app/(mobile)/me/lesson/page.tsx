@@ -34,8 +34,8 @@ export default function LessonPage() {
 
   return (
     <PageShell
-      title="记住一点经验"
-      subtitle="你主动写下的内容，可以随时回来查看。"
+      title="本机笔记"
+      subtitle="笔记只存放在当前设备。"
     >
       {saved ? (
         <>
@@ -51,7 +51,7 @@ export default function LessonPage() {
           </div>
           <div className="mt-14" style={{ display: "grid", gap: 8 }}>
             <Link href={saved.demo ? "/me/memories" : "/today"} className="btn btn--primary">
-              {saved.demo ? "去个人记忆看看" : "回到今天"}
+              {saved.demo ? "去个人记忆看看" : "查看本机笔记"}
             </Link>
             <button
               type="button"
@@ -84,7 +84,7 @@ export default function LessonPage() {
             </span>
           </label>
           <PrimaryButton onClick={save} disabled={!text.trim()}>
-            {demo.enabled ? "保存到演示记忆" : "保存为本机暂存"}
+            {demo.enabled ? "保存到演示记忆" : "保存本机笔记"}
           </PrimaryButton>
           <Notice tone="amber" title={demo.enabled ? "演示模式" : "关于保存"}>
             {demo.enabled
@@ -92,7 +92,7 @@ export default function LessonPage() {
               : "这条内容会先保存在当前设备的暂存里。"}
           </Notice>
           <Link href="/me/memories" className="link-button mt-6">
-            查看个人记忆说明
+            存进个人记忆
           </Link>
         </>
       )}

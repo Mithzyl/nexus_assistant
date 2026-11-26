@@ -3,6 +3,7 @@
 import { uuid } from "./format";
 
 const INSTALL_KEY = "pa.web.installation.id";
+export const CAPTURE_LOGIN_DRAFT_KEY = "pa.web.capture.before-login";
 
 function safeGet(key: string): string | null {
   if (typeof window === "undefined") return null;

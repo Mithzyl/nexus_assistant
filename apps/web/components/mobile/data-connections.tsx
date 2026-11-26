@@ -98,6 +98,7 @@ export function DataConnections({
   const [shortcutCredential, setShortcutCredential] =
     useState<ShortcutTokenCreated | null>(null);
   const [shortcutBusy, setShortcutBusy] = useState<string | null>(null);
+  const [shortcutToRevoke, setShortcutToRevoke] = useState<string | null>(null);
   const [shortcutError, setShortcutError] = useState<string | null>(null);
   const [copiedSecret, setCopiedSecret] = useState<"feed" | "credential" | null>(null);
 
@@ -262,6 +263,7 @@ export function DataConnections({
     setShortcutError(null);
     try {
       const revoked = await revokeShortcutToken(tokenId);
+      setShortcutToRevoke(null);
       if (shortcutCredential?.token_id === revoked.token_id) setShortcutCredential(null);
       shortcutTokens.setData(
         (shortcutTokens.data ?? []).map((token) =>
@@ -305,7 +307,7 @@ export function DataConnections({
           <summary>
             <span className="tile tile--sm"><Radio size={15} /></span>
             <span className="grow">
-              <span className="connection-card__title">日历订阅（.ics）</span>
+              <span className="connection-card__title">同步到手机日历</span>
               <span className="connection-card__detail">
                 {currentSubscription
                   ? `${currentSubscription.enabled ? "已开启" : "已关闭"} · ${matterLabel(matters, currentSubscription.matter_ids)}`
@@ -376,7 +378,7 @@ export function DataConnections({
                     className="btn btn--quiet btn--small"
                     onClick={() => void copySecret("feed", privateSubscription.feed_url)}
                   >
-                    <Clipboard size={13} /> {copiedSecret === "feed" ? "已复制" : "复制地址"}
+                    <Clipboard size={13} /> {copiedSecret === "feed" ? "已复制" : "复制链接"}
                   </button>
                   <button
                     type="button"
@@ -386,7 +388,7 @@ export function DataConnections({
                       setOpenedSubscription(false);
                     }}
                   >
-                    清除并关闭
+                    先收起来
                   </button>
                 </div>
                 {openedSubscription ? (
@@ -404,7 +406,7 @@ export function DataConnections({
                   onClick={() => void createOrRotate(false)}
                   disabled={calendarBusy !== null || selectedMatterIds.length === 0}
                 >
-                  {calendarBusy === "create" ? "正在生成…" : "生成私人订阅"}
+                  {calendarBusy === "create" ? "正在生成…" : "生成订阅链接"}
                 </button>
               ) : (
                 <>
@@ -422,7 +424,7 @@ export function DataConnections({
                     onClick={() => setConfirmCalendarAction("rotate")}
                     disabled={calendarBusy !== null}
                   >
-                    <RotateCw size={13} /> 重新生成
+                    <RotateCw size={13} /> 换一个新链接
                   </button>
                   {currentSubscription.enabled ? (
                     <button
@@ -441,11 +443,11 @@ export function DataConnections({
           </div>
         </details>
 
-        <details className="connection-card">
+        <details id="shortcut-upload" className="connection-card">
           <summary>
             <span className="tile tile--sm"><Smartphone size={15} /></span>
             <span className="grow">
-              <span className="connection-card__title">快捷指令接入</span>
+              <span className="connection-card__title">用手机快捷指令上传</span>
               <span className="connection-card__detail">
                 {recentSync
                   ? `最近成功上传 ${formatDateTime(recentSync)}`
@@ -457,7 +459,7 @@ export function DataConnections({
             </Pill>
           </summary>
           <div className="connection-card__body">
-            <p className="micro">生成连接码后，填入快捷指令并运行一次。</p>
+            <p className="micro">复制后贴进苹果手机的「快捷指令」里运行一次就行。</p>
             {shortcutSources.length > 0 ? (
               <label className="field">
                 <span className="field__label">使用已有上传来源</span>
@@ -499,11 +501,11 @@ export function DataConnections({
               </div>
             )}
             <label className="field">
-              <span className="field__label">连接码备注</span>
+              <span className="field__label">上传连接码备注</span>
               <input
                 className="input"
                 value={shortcutName}
-                placeholder="例如 iPhone 快捷指令"
+                placeholder="例如 我的手机"
                 maxLength={120}
                 onChange={(event) => setShortcutName(event.target.value)}
               />
@@ -515,15 +517,15 @@ export function DataConnections({
               disabled={!signedIn || sourcesLoading || sourcesError || !shortcutName.trim() || shortcutBusy !== null}
             >
               {shortcutBusy === "create"
-                ? "正在生成连接码…"
+                ? "正在生成上传连接码…"
                 : shortcutSources.length > 0
-                  ? "生成连接码"
-                  : "建立连接并生成连接码"}
+                  ? "生成上传连接码"
+                  : "建立连接并生成上传连接码"}
             </button>
             {shortcutError ? <p className="danger-text">{shortcutError}</p> : null}
             {shortcutCredential ? (
               <div className="private-link-box">
-                <strong>设备连接码，仅本次显示</strong>
+                <strong>上传连接码，仅本次显示</strong>
                 <p className="micro">{shortcutCredential.credential}</p>
                 <div className="action-row">
                   <button
@@ -531,14 +533,14 @@ export function DataConnections({
                     className="btn btn--quiet btn--small"
                     onClick={() => void copySecret("credential", shortcutCredential.credential)}
                   >
-                    <Clipboard size={13} /> {copiedSecret === "credential" ? "已复制" : "复制连接码"}
+                    <Clipboard size={13} /> {copiedSecret === "credential" ? "已复制" : "复制上传连接码"}
                   </button>
                   <button
                     type="button"
                     className="btn btn--quiet btn--small"
                     onClick={() => setShortcutCredential(null)}
                   >
-                    清除并关闭
+                    先收起来
                   </button>
                 </div>
               </div>
@@ -557,10 +559,10 @@ export function DataConnections({
                       <button
                         type="button"
                         className="link-button danger-text"
-                        onClick={() => void revokeShortcut(token.token_id)}
+                        onClick={() => setShortcutToRevoke(token.token_id)}
                         disabled={shortcutBusy !== null}
                       >
-                        <Trash2 size={12} /> 撤销
+                        <Trash2 size={12} /> 停用这个连接码
                       </button>
                     ) : null}
                   </div>
@@ -584,7 +586,7 @@ export function DataConnections({
                 重新读取
               </button>
             </div>
-            <p className="micro">请妥善保管连接码。</p>
+            <p className="micro">请妥善保管上传连接码。</p>
           </div>
         </details>
       </div>
@@ -594,14 +596,25 @@ export function DataConnections({
       </p>
 
       <ConfirmDialog
+        open={shortcutToRevoke !== null}
+        title="停用这个上传连接码？"
+        body="停用后，以前用这个连接码的手机就不能再传数据了。已上传的内容会保留。"
+        confirmLabel="停用这个连接码"
+        danger
+        busy={shortcutBusy !== null}
+        onCancel={() => setShortcutToRevoke(null)}
+        onConfirm={() => { if (shortcutToRevoke) void revokeShortcut(shortcutToRevoke); }}
+      />
+
+      <ConfirmDialog
         open={confirmCalendarAction !== null}
-        title={confirmCalendarAction === "rotate" ? "重新生成订阅链接？" : "关闭日历订阅？"}
+        title={confirmCalendarAction === "rotate" ? "换一个新链接？" : "关闭日历订阅？"}
         body={
           confirmCalendarAction === "rotate"
-            ? "旧订阅链接会立即失效，手机可能需要重新订阅。"
+            ? "换了之后，以前那个旧链接就不能用了。"
             : "关闭后手机不再读取订阅；已下载到手机的内容可能需要手动移除。"
         }
-        confirmLabel={confirmCalendarAction === "rotate" ? "重新生成" : "关闭订阅"}
+        confirmLabel={confirmCalendarAction === "rotate" ? "换一个新链接" : "关闭订阅"}
         danger={confirmCalendarAction === "close"}
         busy={calendarBusy !== null}
         onCancel={() => setConfirmCalendarAction(null)}

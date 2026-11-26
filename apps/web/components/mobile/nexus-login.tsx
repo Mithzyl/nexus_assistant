@@ -25,10 +25,10 @@ export function NexusLogin({link=false}:{link?:boolean}) {
       if (!response.ok) throw Error(result.error?.message || "请求失败。");
       window.location.assign(result.url);
     }
-    catch(e){setError(e instanceof Error?e.message:"请求失败。");setBusy(false);}
+    catch{setError("登录失败了");setBusy(false);}
   }
   if(!enabled)return null;
-  return <div className="mt-20"><button type="button" className="auth-switch" disabled={busy} onClick={()=>void start()}>{busy?"正在连接…":link?"关联 Nexus 账号":"使用 Nexus 登录"}</button>
-    {link&&<p className="caption">将前往 Nexus 确认关联；不会自动合并历史数据或共享记忆。</p>}
-    {error&&<p role="alert">{error}</p>}</div>;
+  return <div className="mt-20"><button type="button" className="auth-switch" disabled={busy} onClick={()=>void start()}>{busy?"正在连接…":link?"关联外部账号":"使用外部账号登录"}</button>
+    {link&&<p className="caption">关联后仍可分别管理两边的历史和记忆。</p>}
+    {error&&<div role="alert">{error} <button type="button" className="link-button" onClick={()=>setError("")}>{link?"回到账号设置":"回到登录页"}</button></div>}</div>;
 }

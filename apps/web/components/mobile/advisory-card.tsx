@@ -95,10 +95,14 @@ export function AdvisoryCard({
         {resultBits.length > 0 ? (
           <p className="commute-conclusion__result">{resultBits.join(" · ")}</p>
         ) : null}
-        <p className="commute-conclusion__meta">
-          <MapPin size={14} strokeWidth={1.5} aria-hidden="true" />
-          <span>{plan.origin.label} → {plan.destination.label}</span>
-        </p>
+        <details className="commute-address commute-conclusion__meta">
+          <summary>
+            <MapPin size={14} strokeWidth={1.5} aria-hidden="true" />
+            <span className="commute-address__preview">{plan.origin.label} → {plan.destination.label}</span>
+            <span className="commute-address__collapse">收起地址</span>
+          </summary>
+          <div>出发地：{plan.origin.label}<br />目的地：{plan.destination.label}</div>
+        </details>
         <p className="commute-conclusion__meta">
           <CloudRain size={14} strokeWidth={1.5} aria-hidden="true" />
           <span>{weatherText}</span>
@@ -112,7 +116,7 @@ export function AdvisoryCard({
         </div>
         <div className="commute-time__rows">
           <div className="commute-time__row">
-            <span>到岗时间</span>
+            <span>到达时间</span>
             <b>{target || "待确认"}</b>
           </div>
           <div className="commute-time__row">

@@ -144,6 +144,8 @@ export interface CommuteLocation {
   longitude: number;
 }
 
+export type CommuteTransportMode = "driving" | "walking" | "transit" | "bicycling" | "electrobike";
+
 export interface CommutePlan {
   id: string;
   name: string;
@@ -152,7 +154,7 @@ export interface CommutePlan {
   weekdays: number[];
   arrival_local_time: string;
   check_local_time: string;
-  transport_mode: "driving" | "walking" | "transit";
+  transport_mode: CommuteTransportMode;
   effective_from?: string | null;
   matter_id?: string | null;
   first_schedule_id?: string | null;
@@ -719,7 +721,7 @@ export interface TodayRoute {
   message: string | null;
   advisory_id: string | null;
   duration_seconds: number | null;
-  mode: "driving" | "walking" | "transit" | null;
+  mode: CommuteTransportMode | null;
   fetched_at: string | null;
   origin_basis: "user_confirmed" | "previous_schedule" | "memory" | null;
 }
@@ -1216,7 +1218,7 @@ export interface PlaceSearchResponse {
 export interface RouteEstimate {
   status: "available" | "unavailable";
   provider: string;
-  mode: "driving" | "walking" | "transit";
+  mode: CommuteTransportMode;
   duration_seconds: number | null;
   distance_meters: number | null;
   walking_distance_meters: number | null;
@@ -1270,7 +1272,7 @@ export interface ScheduledRoute {
   message: string | null;
   schedule_id: string;
   provider: string | null;
-  mode: "driving" | "walking" | "transit" | null;
+  mode: CommuteTransportMode | null;
   duration_seconds: number | null;
   distance_meters: number | null;
   walking_distance_meters: number | null;

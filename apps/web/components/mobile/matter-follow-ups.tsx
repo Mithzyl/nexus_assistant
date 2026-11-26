@@ -336,7 +336,7 @@ export function MatterFollowUps({
                   onClick={() => void changeState(followUp)}
                 >
                   {isPaused ? <Play size={12} /> : <Pause size={12} />}
-                  {isPaused ? "恢复" : "暂停"}
+                  {isPaused ? "继续" : "暂停"}
                 </button>
                 {latest?.local_run_id ? (
                   <button
@@ -345,7 +345,7 @@ export function MatterFollowUps({
                     disabled={Boolean(busy)}
                     onClick={() => void openResult(latest.local_run_id as string)}
                   >
-                    查看结果
+                    查看记录
                   </button>
                 ) : null}
               </div>
@@ -368,7 +368,7 @@ export function MatterFollowUps({
             <ApiOperationCard context={result.pending_context} />
           </div>
         ) : null}
-        {!resultLoading && !result ? <p className="caption">还没有读取到这条记录。</p> : null}
+        {!resultLoading && !result ? <p className="caption">暂时看不到这次跟进的结果。</p> : null}
       </Sheet>
     </section>
   );

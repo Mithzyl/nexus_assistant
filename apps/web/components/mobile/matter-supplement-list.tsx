@@ -44,23 +44,23 @@ const PURPOSE_LABEL: Record<MatterSupplementText["purpose"], string> = {
 
 const RELATION_LABEL: Record<string, string> = {
   correction: "纠正",
-  answer: "回答",
-  related: "旧关联",
+  answer: "回复",
+  related: "早前的补充",
 };
 
 const STATUS: Record<MatterSupplement["ai_status"], { label: string; tone: string }> = {
-  queued: { label: "排队整理", tone: "pill" },
-  running: { label: "正在整理", tone: "pill pill--fog" },
+  queued: { label: "正在整理你补充的内容…", tone: "pill" },
+  running: { label: "正在整理你补充的内容…", tone: "pill pill--fog" },
   succeeded: { label: "已整理", tone: "pill pill--green" },
-  no_supplement: { label: "暂无补充", tone: "pill" },
-  failed: { label: "整理失败", tone: "pill pill--red" },
+  no_supplement: { label: "已经记下来了", tone: "pill" },
+  failed: { label: "内容已经记下来了，但整理没完成", tone: "pill pill--red" },
   unknown: { label: "结果待核对", tone: "pill pill--amber" },
 };
 
 /** Prefer the recorded action over the compatibility `user_revision` purpose. */
 function userTextLabel(text: MatterSupplementText): string {
   if (text.relation_type === "correction") return "你的纠正";
-  if (text.relation_type === "answer") return "你的回答";
+  if (text.relation_type === "answer") return "你的回复";
   return PURPOSE_LABEL[text.purpose];
 }
 
@@ -78,8 +78,8 @@ function actionErrorText(error: unknown): string {
 function relationSummary(text: MatterSupplementText): string {
   const parts: string[] = [];
   if (text.correction_count > 0) parts.push(`${text.correction_count} 条纠正`);
-  if (text.answer_count > 0) parts.push(`${text.answer_count} 条回答`);
-  if (text.untyped_relation_count > 0) parts.push(`${text.untyped_relation_count} 条旧关联`);
+  if (text.answer_count > 0) parts.push(`${text.answer_count} 条回复`);
+  if (text.untyped_relation_count > 0) parts.push(`${text.untyped_relation_count} 条早前的补充`);
   return parts.join(" · ");
 }
 
@@ -404,7 +404,7 @@ export function MatterSupplementList({
                           })
                         }
                       >
-                        回答
+                        回复
                       </button>
                     ) : (
                       <button
@@ -468,7 +468,7 @@ export function MatterSupplementList({
                 disabled={busyId === supplement.supplement_id}
               >
                 <RotateCcw size={13} />
-                {busyId === supplement.supplement_id ? "正在重试…" : "重试"}
+                {busyId === supplement.supplement_id ? "正在整理…" : "重新整理"}
               </button>
             ) : null}
             {supplement.ai_status === "failed" && !canRetry ? (

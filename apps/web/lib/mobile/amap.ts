@@ -150,7 +150,7 @@ export function loadAmap(): Promise<AMapNamespace> {
       cleanup();
       window.__superappAmapLoader = undefined;
       script.remove();
-      reject(new Error("高德地图资源加载失败，请检查网络或 Web 端地图配置。"));
+      reject(new Error("地图没加载出来，请检查网络后再试。"));
     };
 
     script.addEventListener("load", onLoad, { once: true });

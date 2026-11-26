@@ -34,7 +34,7 @@ export default function MattersPage() {
 
   const groups: Array<{ status: "active" | "waiting" | "archived"; label: string }> = [
     { status: "active", label: "正在推进" },
-    { status: "waiting", label: "等待外部反馈" },
+    { status: "waiting", label: "跟进中" },
     { status: "archived", label: "已归档" },
   ];
 
@@ -81,39 +81,30 @@ export default function MattersPage() {
         </div>
       ) : matters.error ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
-          <ErrorCard message={matters.error.message} onRetry={matters.refresh} />
+          <ErrorCard error={matters.error} message={matters.error.message} onRetry={matters.refresh} />
         </div>
       ) : matters.items.length === 0 ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
           <EmptyState
-            title="还没有正在跟进的事项"
-            body="发一段消息或会议安排，助手会帮你理清头绪。"
+            title="还没有任何事项"
           >
-            <div className="m-stack-8">
-              <Link href="/ask" className="btn btn--primary">交给助手整理</Link>
-              <button type="button" className="btn btn--quiet" onClick={() => openCapture("choose")}>
-                新建一条事项
-              </button>
-            </div>
+            <Link href="/ask" className="btn btn--primary">让助手帮你理一理</Link>
           </EmptyState>
         </div>
       ) : (
         <>
           {groups.map((group) => {
             const rows = matters.items.filter((matter) => matter.status === group.status);
+            if (rows.length === 0) return null;
             return (
               <section key={group.status} className="matter-group">
                 <div className="matter-group__head flex items-center justify-between gap-12" style={{ padding: "0 var(--m-gutter)" }}>
                   <h2 className="section-title" style={{ marginBottom: 0 }}>{group.label}</h2>
                   <span className="micro">{rows.length}</span>
                 </div>
-                {rows.length === 0 ? (
-                  <p className="micro matter-group__empty" style={{ padding: "0 var(--m-gutter)" }}>这一组还没有事项。</p>
-                ) : (
-                  <div className="m-stack-12" style={{ padding: "0 var(--m-gutter)" }}>
-                    {rows.map((matter) => <MatterCard key={matter.matter_id} matter={matter} />)}
-                  </div>
-                )}
+                <div className="m-stack-12" style={{ padding: "0 var(--m-gutter)" }}>
+                  {rows.map((matter) => <MatterCard key={matter.matter_id} matter={matter} />)}
+                </div>
               </section>
             );
           })}

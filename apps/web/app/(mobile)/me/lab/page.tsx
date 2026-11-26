@@ -33,7 +33,7 @@ export default function LabPage() {
     <PageShell title="实验室" subtitle="概念预览与旧版演示，独立于正式数据" fallbackHref="/me">
       <div className="m-stack-18" style={{ padding: "0 var(--m-gutter)" }}>
         <Notice title="概念预览" tone="amber">
-          实验室内容只在本机演示，和正式数据分开。
+          示例只存在这台设备。
         </Notice>
 
         <section>
@@ -92,12 +92,12 @@ export default function LabPage() {
 
         <section className="card card--tight">
           <SwitchRow
-            title="演示模式"
-            detail="关闭后，“今天”和“事项”回到真实空状态；当前设备预览数据保留但不再展示。"
+            title={demo.enabled ? "退出示例，看回我自己的数据" : "查看示例"}
+            detail="示例和你的正式事项分开保存。"
             checked={demo.enabled}
             onChange={() => {
               demo.setEnabled(!demo.enabled);
-              toast(demo.enabled ? "已关闭演示模式" : "已开启演示模式，仅使用当前设备示例");
+              toast(demo.enabled ? "已退出示例" : "已开启演示模式，仅使用当前设备示例");
             }}
           />
         </section>
@@ -109,7 +109,7 @@ export default function LabPage() {
               <span className="tile tile--sm"><Archive size={14} strokeWidth={1.5} /></span>
               <span className="row__body">
                 <span className="row__title" style={{ display: "block" }}>旧版看板</span>
-                <span className="row__detail" style={{ display: "block" }}>保留的桌面看板</span>
+                <span className="row__detail" style={{ display: "block" }}>只读示例</span>
               </span>
               <ChevronRight size={16} className="chevron" aria-hidden="true" />
             </Link>

@@ -92,6 +92,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         window.innerHeight - (viewport?.height ?? window.innerHeight) - (viewport?.offsetTop ?? 0),
       );
       root.style.setProperty("--m-keyboard-offset", `${Math.round(offset)}px`);
+      root.style.setProperty("--m-visible-height", `${Math.round(viewport?.height ?? window.innerHeight)}px`);
       if (shellRef.current) {
         shellRef.current.dataset.keyboard = offset > 90 ? "true" : "false";
       }
@@ -104,6 +105,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       viewport?.removeEventListener("resize", update);
       viewport?.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
+      root.style.removeProperty("--m-visible-height");
     };
   }, []);
 

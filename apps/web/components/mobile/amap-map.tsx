@@ -258,10 +258,10 @@ export function AmapMapCanvas({
       </div>
       <p className="amap-panel__notice" role="status">
         {status === "loading"
-          ? "正在向高德请求相关区域的地图资源。不会读取当前位置，也不会查询路线。"
+          ? "正在打开地图…"
           : status === "error"
-            ? "地图没有加载；搜索候选和文字路线仍可使用。"
-            : "地图只显示下方已确认的坐标，不会自动读取当前位置或测算路线。"}
+            ? "地图没加载出来，可以查看下方的地点或文字路线。"
+            : null}
       </p>
       <div className="amap-panel__canvas">
         <div

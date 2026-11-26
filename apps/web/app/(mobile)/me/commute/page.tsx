@@ -1,5 +1,7 @@
 "use client";
 
+import { commuteModeLabel } from "@/lib/mobile/commute-mode";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bell, ChevronRight, MapPin, Plus } from "lucide-react";
@@ -60,7 +62,7 @@ export default function CommutePage() {
           <>
             {plans.loading ? <LoadingCard label="正在读取通勤计划…" /> : null}
             {plans.error ? (
-              <ErrorCard message={errorText(plans.error)} onRetry={plans.reload} />
+              <ErrorCard error={plans.error} message={errorText(plans.error)} onRetry={plans.reload} />
             ) : null}
 
             {!plans.loading && !plans.error && (plans.data?.length ?? 0) === 0 ? (
@@ -92,8 +94,8 @@ export default function CommutePage() {
                         {plan.name}
                       </span>
                       <span className="caption" style={{ display: "block", marginTop: 2 }}>
-                        {weekdayText(plan.weekdays)} · {plan.arrival_local_time} 到岗 ·{" "}
-                        {plan.transport_mode === "driving" ? "驾车" : plan.transport_mode === "transit" ? "公交" : "步行"}
+                        {weekdayText(plan.weekdays)} · {plan.arrival_local_time} 到达 ·{" "}
+                        {commuteModeLabel(plan.transport_mode)}
                       </span>
                       <span className="micro" style={{ display: "block", marginTop: 2 }}>
                         {plan.origin.label} → {plan.destination.label}
@@ -115,7 +117,7 @@ export default function CommutePage() {
                   </span>
                   <span className="grow">
                     <span className="card-title" style={{ display: "block", fontSize: 15 }}>
-                      Bark 提醒
+                      手机锁屏提醒
                     </span>
                     <span className="caption" style={{ display: "block", marginTop: 2 }}>
                       绑定账号后接收通勤提醒

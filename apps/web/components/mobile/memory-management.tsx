@@ -1,4 +1,5 @@
 "use client";
+import { ConfirmDialog } from "./ui";
 import { MemoryHistory } from "./memory-history";
 import { MemoryAttribution, type MemorySource } from "./memory-attribution";
 import { useEffect, useRef, useState } from "react";
@@ -34,9 +35,12 @@ interface Result {
 const labels: Record<string, string> = { label: "名称", address: "地址", coordinate_system: "坐标系", latitude: "纬度（可选）", longitude: "经度（可选）", origin: "出发地", destination: "目的地", travel_mode: "出行方式", weekdays: "星期（1 为周一，用逗号分隔）", timezone: "时区", preferred_departure: "出发时间（可选）", activity: "活动", preferred_time: "偏好时间", occurred_on: "发生日期", description: "经历", lesson: "经验（可选）" };
 const fields: Record<string, string[]> = { place: ["label", "address", "coordinate_system", "latitude", "longitude"], commute_preference: ["origin", "destination", "travel_mode", "weekdays", "timezone", "preferred_departure"], time_preference: ["activity", "preferred_time", "timezone"], experience: ["occurred_on", "description", "lesson"] };
 const options: Record<string, string[]> = { coordinate_system: ["WGS84", "GCJ02", "BD09"], travel_mode: ["walk", "bicycle", "transit", "drive"] };
-const optionLabels: Record<string, string> = { walk: "步行", bicycle: "骑行", transit: "公共交通", drive: "驾车" };
+const optionLabels: Record<string, string> = { WGS84: "卫星定位", GCJ02: "高德地图", BD09: "百度地图", walk: "步行", bicycle: "骑行", transit: "公共交通", drive: "驾车" };
 /** Manage Assistant-owned memories, preserving original authorship and exact-version undo. */
 export function MemoryManagement() {
+    const [pendingAction, setPendingAction] = useState<{
+        title: string; body: string; label: string; action: Record<string, unknown>;
+    } | null>(null);
     const [historyId, setHistoryId] = useState<string | null>(null);
     const [page, setPage] = useState<Page | null>(null), [settings, setSettings] = useState<Settings | null>(null), [offset, setOffset] = useState(0);
     const [error, setError] = useState(""), [notice, setNotice] = useState(""), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
@@ -130,16 +134,25 @@ export function MemoryManagement() {
   {historyId ? <MemoryHistory key={historyId} entryId={historyId} onClose={() => setHistoryId(null)} /> : null}
   <section className="card m-stack-10" aria-label="个人记忆管理">
    <p>开启后，助手会参考这些习惯来安排日程。</p>
-   {settings ? <button className="btn btn--secondary" disabled={busy || loading} onClick={() => { if (window.confirm(settings.enabled ? '关闭自动读取和保存？已有记忆会保留。' : '开启本应用记忆？'))
-        void mutate({ action: 'settings', enabled: !settings.enabled, expected_version: settings.version }); }}>{settings.enabled ? '关闭记忆' : '开启记忆'}</button> : null}
+   {settings ? <button className="btn btn--secondary" disabled={busy || loading} onClick={() => setPendingAction({
+     title: settings.enabled ? "关闭记忆？" : "开启记忆？",
+     body: settings.enabled ? "已保存的记忆会保留。" : "开启后，助手可以参考记忆。",
+     label: settings.enabled ? "关闭记忆" : "开启记忆",
+     action: { action: "settings", enabled: !settings.enabled, expected_version: settings.version },
+   })}>{settings.enabled ? '关闭记忆' : '开启记忆'}</button> : null}
    {error ? <p role="alert">{error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
    <button className="link-button" disabled={busy || loading} onClick={() => { setError(''); void load(offset).catch(e => setError(e.message)); }}>刷新记忆</button>
-   {undo ? <button className="btn btn--secondary" disabled={busy} onClick={() => void mutate({ action: 'undo', entry_id: undo.entry_id, expected_version: undo.applied_version })}>撤销改动</button> : null}
+   {undo ? <button className="btn btn--secondary" disabled={busy} onClick={() => setPendingAction({
+     title: "撤销刚才的记忆修改？", body: "会恢复刚才修改前的记忆。", label: "撤销改动",
+     action: { action: "undo", entry_id: undo.entry_id, expected_version: undo.applied_version },
+   })}>撤销改动</button> : null}
    {loading ? <p role="status">正在读取记忆…</p> : page ? <>
     {!page.items.length ? <p>当前页没有记忆。</p> : page.items.map(entry => <article key={entry.entry_id} className="m-stack-10" style={{ overflowWrap: 'anywhere' }}>
-     <p>{entry.text}</p><MemoryAttribution source={entry.source} text={entry.text} recordedAt={entry.updated_at} /><p className="caption">{entry.status === 'active' ? '使用中' : entry.status === 'candidate' ? '待确认' : '已忘记'} · 版本 {entry.version}</p>
-     <div className="action-row action-row--compact"><button className="link-button" onClick={() => setHistoryId(entry.entry_id)}>历史</button><button className="link-button" disabled={busy} onClick={() => edit(entry)}>纠正</button><button className="link-button" disabled={busy} onClick={() => { if (window.confirm('忘记这条记忆？聊天、日历和事项不会删除。'))
-                void mutate({ action: 'forget', entry_id: entry.entry_id, expected_version: entry.version }); }}>忘记</button></div>
+     <p>{entry.text}</p><MemoryAttribution source={entry.source} text={entry.text} recordedAt={entry.updated_at} /><p className="caption">{entry.status === 'active' ? '正在用' : entry.status === 'candidate' ? '待确认' : '已忘掉'}</p>
+     <div className="action-row action-row--compact"><button className="link-button" onClick={() => setHistoryId(entry.entry_id)}>历史</button><button className="link-button" disabled={busy} onClick={() => edit(entry)}>纠正</button><button className="link-button" disabled={busy} onClick={() => setPendingAction({
+       title: "忘掉这段记忆？", body: "以后助手不会再用这段记忆。聊天、日历和事项都会保留。",
+       label: "忘掉记忆", action: { action: "forget", entry_id: entry.entry_id, expected_version: entry.version },
+     })}>忘掉</button></div>
     </article>)}
     <div className="action-row"><button className="btn btn--secondary btn--small" disabled={busy || offset === 0} onClick={() => void load(Math.max(0, offset - 20)).catch(e => setError(e.message))}>上一页</button><button className="btn btn--secondary btn--small" disabled={busy || page.next_offset === null} onClick={() => void load(page.next_offset!).catch(e => setError(e.message))}>下一页</button></div>
    </> : null}
@@ -147,12 +160,19 @@ export function MemoryManagement() {
   <form id="new-memory" className="card m-stack-10" onSubmit={event => { event.preventDefault(); save(); }}>
    <h2>{editing ? '纠正记忆' : '新增记忆'}</h2>
    <label>内容<textarea className="textarea" required maxLength={4000} value={text} onChange={e => { changeForm(); setText(e.target.value); }}/></label>
+   <details><summary>更多选项</summary>
    <label>类型<select value={kind} disabled={!!editing?.typed_data} onChange={e => { changeForm(); setKind(e.target.value); setValues({}); }}><option value="">普通文字</option><option value="place">地点</option><option value="commute_preference">通勤偏好</option><option value="time_preference">时间偏好</option><option value="experience">过往经历</option></select></label>
    {(fields[kind] ?? []).map(field => <label key={field}>{labels[field]}{options[field] ? <select required value={values[field] ?? ''} onChange={e => { changeForm(); setValues(v => ({ ...v, [field]: e.target.value })); }}><option value="">请选择</option>{options[field].map(v => <option key={v} value={v}>{optionLabels[v] ?? v}</option>)}</select> : <input className="input" type={field === 'occurred_on' ? 'date' : field.includes('time') && field !== 'timezone' || field === 'preferred_departure' ? 'time' : 'text'} required={!['latitude', 'longitude', 'preferred_departure', 'lesson'].includes(field)} value={values[field] ?? ''} onChange={e => { changeForm(); setValues(v => ({ ...v, [field]: e.target.value })); }}/>}</label>)}
    {kind ? <label><input type="checkbox" checked={confirmedType} onChange={e => { operation.current = null; setConfirmedType(e.target.checked); }}/>我已核对以上内容</label> : null}
+   </details>
    <label><input type="checkbox" checked={sensitive} onChange={e => { operation.current = null; setSensitive(e.target.checked); }}/>我确认保存此内容中的敏感信息（如地址）</label>
    <button className="btn btn--primary" disabled={busy || !text.trim() || !!kind && !confirmedType}>{busy ? '正在处理…' : editing ? '保存纠正' : '保存记忆'}</button>
    {editing ? <button type="button" className="link-button" onClick={() => { changeForm(); setEditing(null); setText(''); setKind(''); setValues({}); }}>取消纠正</button> : null}
   </form>
+  <ConfirmDialog open={Boolean(pendingAction)} title={pendingAction?.title || ""} body={pendingAction?.body || ""}
+    confirmLabel={pendingAction?.label || ""} danger={pendingAction?.action.action === "forget"} busy={busy}
+    onCancel={() => setPendingAction(null)} onConfirm={() => {
+      if (pendingAction) void mutate(pendingAction.action).finally(() => setPendingAction(null));
+    }} />
  </div>;
 }

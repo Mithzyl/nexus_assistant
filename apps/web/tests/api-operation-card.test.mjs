@@ -69,9 +69,9 @@ test("failed final answers only offer editing after confirmed non-write", () => 
   for (const state of ["applied", "uncertain", "not_applied"]) {
     const context = {write_state: state, applied_receipts: state === "not_applied" ? [] : [{summary: "创建评审日程"}]};
     const html = renderToStaticMarkup(createElement(IntakeFailureActions, {context, onEdit() {}, onCheck() {}}));
-    assert.equal(html.includes("重新编辑"), state === "not_applied");
+    assert.equal(html.includes("改改再发"), state === "not_applied");
     assert.equal(html.includes("/today"), state !== "not_applied");
     assert.equal(html.includes("创建评审日程"), state !== "not_applied");
-    assert.equal(html.includes("查询原结果"), state === "uncertain");
+    assert.equal(html.includes("查一下结果"), state === "uncertain");
   }
 });

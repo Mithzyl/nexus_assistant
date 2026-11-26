@@ -62,7 +62,7 @@ export function ConflictSheet({
       {conflict ? (
         <div className="m-stack-12">
           <p className="caption" style={{ margin: 0 }}>
-            影响「{conflict.matterTitle}」。确认后只修改当前设备预览，正式日程和 iOS 都不受影响；
+            影响「{conflict.matterTitle}」。确认后只修改当前设备预览，正式日程和苹果设备中的内容都会保留；
             关闭不会提交。
           </p>
           <div className="m-stack-8" role="radiogroup" aria-label="调整方案">

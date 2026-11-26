@@ -423,7 +423,7 @@ export function AskProvider({ children }: { children: React.ReactNode }) {
                         ...item,
                         pollingPaused: true,
                         errorMessage:
-                          "这条记录暂时没同步回来；本机的还留着，稍后再核对。",
+                          "暂时没找到之前的内容，先查看这台设备上的原文。",
                       }
                     : item,
                 ),

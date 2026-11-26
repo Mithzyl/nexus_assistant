@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, ChevronRight, FileText, MapPin, PenLine, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 
@@ -32,6 +32,7 @@ import { formatServiceDate, relativeTime, timezoneLabel } from "@/lib/mobile/for
 import { deadlineTiming, todayChangeSummary } from "@/lib/mobile/matter-draft.mjs";
 import { confirmSummary, acknowledgeReminder, completeMatterTodo, getDraft, createMatterEditDraft, newOperationKey, requestTodayRefresh } from "@/lib/mobile/matters-api";
 import { useToday } from "@/lib/mobile/use-today";
+import { CAPTURE_LOGIN_DRAFT_KEY, readSession } from "@/lib/mobile/storage";
 
 function localDay(): string {
   const now = new Date();
@@ -62,13 +63,13 @@ function dateTime(iso: string, timeZone?: string): string {
 
 function reminderNote(item: MatterReminder): string {
   if (item.source === "ios_eventkit" || item.source === "ios_reminders") {
-    return item.sync_status === "ios_synced" ? "来自 Apple 日历" : "来自 Apple 日历";
+    return item.sync_status === "ios_synced" ? "来自 苹果日历" : "来自 苹果日历";
   }
   if (item.status === "acknowledged") return "应用内提醒 · 已确认";
   if (item.status === "cancelled") return "应用内提醒 · 已取消";
-  if (item.status === "due") return "应用内提醒到点了 · 等你确认";
-  if (item.sync_status === "pending_ios") return "应用内提醒 · Apple 日历待更新";
-  if (item.sync_status === "ios_synced") return "应用内提醒 · Apple 日历已更新";
+  if (item.status === "due") return "提醒到点了";
+  if (item.sync_status === "pending_ios") return "应用内提醒 · 苹果日历待更新";
+  if (item.sync_status === "ios_synced") return "应用内提醒 · 苹果日历已更新";
   return "提醒已设置";
 }
 
@@ -124,6 +125,17 @@ export default function TodayPage() {
   );
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
   const [acknowledgeError, setAcknowledgeError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!signedIn || new URLSearchParams(window.location.search).get("capture") !== "resume") return;
+    const saved = readSession<{ preset?: "choose" | "say" } | null>(CAPTURE_LOGIN_DRAFT_KEY, null);
+    if (saved?.preset === "say" || saved?.preset === "choose") openCapture(saved.preset);
+  }, [signedIn, openCapture]);
+
+  const unfinishedSchedule = todayData.data?.schedules.find((item) =>
+    item.status === "scheduled" && !item.ends_at && Date.parse(item.starts_at) <= Date.now());
+  const unfinishedScheduleHref = unfinishedSchedule?.matter_id
+    ? `/matters/${encodeURIComponent(unfinishedSchedule.matter_id)}#schedule-${encodeURIComponent(unfinishedSchedule.schedule_id)}`
+    : "#today-timeline";
 
   const dueReminders = useMemo(
     () => (todayData.data?.reminders ?? []).filter((item) => item.status === "due"),
@@ -156,7 +168,7 @@ export default function TodayPage() {
         at: item.starts_at,
         title: item.title,
         matterTitle: item.matter_title,
-        detail: `${item.location || "地点未填"} · ${item.source === "ios_eventkit" ? "Apple 日历日程" : "应用内日程"}`,
+        detail: item.location || "",
         kind: "schedule",
         matterId: item.matter_id,
         routeDetail: route.detail,
@@ -192,11 +204,11 @@ export default function TodayPage() {
   const overview = (() => {
     if (todayData.loading && !todayData.data) return "正在同步今天的安排…";
     if (todayData.error) return "今天的安排暂时没同步上，稍后再试。";
-    if (!todayData.data) return "今天还没有安排。";
+    if (!todayData.data) return "";
     const items =
       deadlines.length + todayData.data.drafts.length + dueReminders.length + captureReplies.length;
     if (items > 0) return `先处理 ${items} 项需要确认或跟进的内容。`;
-    if (rows.length === 0) return "今天暂时没有安排 · 有想做的事可以随时交代给助手";
+    if (rows.length === 0) return "";
     return `今天有 ${todayData.data.schedules.length} 项日程${
       todayData.data.reminders.length > 0 ? `、${todayData.data.reminders.length} 个提醒` : ""
     }。`;
@@ -231,7 +243,7 @@ export default function TodayPage() {
 
   const displayDate = formatServiceDate(todayData.data?.date);
   const displayTimezone = timezoneLabel(todayData.data?.timezone);
-  const showTimezone = Boolean(displayTimezone && displayTimezone !== "北京时间 (GMT+8)");
+  const showTimezone = Boolean(displayTimezone && displayTimezone !== "北京时间");
 
   return (
     <div className="m-screen m-stack-18" style={{ paddingBottom: 16 }}>
@@ -266,7 +278,7 @@ export default function TodayPage() {
           <span className="quick-btn__title">
             <Sparkles size={16} strokeWidth={1.5} aria-hidden="true" /> 交给助手整理
           </span>
-          <span className="quick-btn__hint">粘贴消息、会议或待办</span>
+          <span className="quick-btn__hint">贴一段聊天记录或会议通知</span>
         </button>
         <button
           type="button"
@@ -276,7 +288,7 @@ export default function TodayPage() {
           <span className="quick-btn__title">
             <PenLine size={16} strokeWidth={1.5} aria-hidden="true" /> 随手记一条
           </span>
-          <span className="quick-btn__hint">记下想法或单条待办</span>
+          <span className="quick-btn__hint">记个想法，或一件小事</span>
         </button>
       </div>
 
@@ -296,7 +308,7 @@ export default function TodayPage() {
         </section>
       ) : null}
 
-      {signedIn ? <TodayNextActions onReschedule={openSuggestedEdit} /> : null}
+      {signedIn ? <TodayNextActions onReschedule={openSuggestedEdit} onCapture={() => openCapture("say")} unfinishedScheduleHref={unfinishedScheduleHref} /> : null}
       {signedIn ? <TodayCommuteCard /> : null}
 
       {!signedIn ? null : todayData.loading && !todayData.data ? (
@@ -305,17 +317,20 @@ export default function TodayPage() {
         </div>
       ) : todayData.error ? (
         <div style={{ padding: "0 var(--m-gutter)" }}>
-          <ErrorCard message={todayData.error.message} onRetry={todayData.refresh} />
+          <ErrorCard error={todayData.error} message={todayData.error.message} onRetry={todayData.refresh} />
         </div>
       ) : todayData.data ? (
         <>
-          <section className="today-reminder-note" aria-label="提醒送达方式">
-            <span>到期提醒会保留在这里。</span>
-            <Link href="/me/notifications">管理浏览器通知</Link>
+          <section className="today-reminder-note" aria-label="提醒设置">
+            {dueReminders.length === 0 ? <span>暂时没有到点的提醒。</span> : null}
+            <div className="action-row">
+              <Link href="/me/commute/bark" className="link-button">手机锁屏提醒</Link>
+              <Link href="/me/notifications" className="link-button">浏览器通知</Link>
+            </div>
           </section>
           {dueReminders.length > 0 ? (
             <section style={{ padding: "0 var(--m-gutter)" }}>
-              <SectionHeading title="到点提醒" trailing="等你确认" />
+              <SectionHeading title="到点提醒" />
               <div className="m-stack-10">
                 {dueReminders.map((reminder) => (
                   <div key={reminder.reminder_id} className="deadline-card deadline-card--overdue deadline-card--with-actions">
@@ -386,7 +401,7 @@ export default function TodayPage() {
 
           {todayData.data.drafts.length > 0 ? (
             <section style={{ padding: "0 var(--m-gutter)" }}>
-              <SectionHeading title="待确认" trailing={`${todayData.data.drafts.length} 条`} />
+              <SectionHeading title="待确认的安排" trailing={`${todayData.data.drafts.length} 条`} />
               <div className="m-stack-10">
                 {todayData.data.drafts.map((item) => (
                   <button
@@ -424,10 +439,10 @@ export default function TodayPage() {
             </section>
           ) : null}
 
-          <section style={{ padding: "0 var(--m-gutter)" }}>
-            <SectionHeading title="今日时间线" trailing="按时间排好" />
+          <section id="today-timeline" style={{ padding: "0 var(--m-gutter)" }}>
+            <SectionHeading title="今日时间线" />
             {rows.length === 0 ? (
-              <EmptyState title="今天暂时没有安排" body="有想做的事，随时交给助手整理。" />
+              <EmptyState title="今天还没有安排"><button className="btn btn--secondary" type="button" onClick={() => openCapture("say")}>记一条</button></EmptyState>
             ) : (
               <div className="m-stack-8">
                 {rows.map((row) => (
@@ -435,24 +450,13 @@ export default function TodayPage() {
                     <span className="timeline-time">{time(row.at, todayData.data?.timezone)}</span>
                     <span className="timeline-dot" aria-hidden="true" />
                     <span className="grow">
-                      <span className="card-title" style={{ display: "block", fontSize: 15 }}>
-                        {row.title}
-                      </span>
-                      {row.matterTitle ? (
-                        row.matterId ? (
-                          <Link
-                            href={`/matters/${row.matterId}`}
-                            className="caption timeline-matter"
-                          >
-                            {row.matterTitle}
-                          </Link>
-                        ) : (
-                          <span className="caption timeline-matter">{row.matterTitle}</span>
-                        )
+                      {row.matterId ? (
+                        <Link href={`/matters/${row.matterId}`} className="card-title timeline-matter">{row.title}</Link>
+                      ) : <span className="card-title">{row.title}</span>}
+                      {row.matterTitle?.trim() && row.matterTitle.trim() !== row.title.trim() ? (
+                        <span className="caption timeline-matter">{row.matterTitle}</span>
                       ) : null}
-                      <span className="caption" style={{ display: "block", margin: "2px 0 0" }}>
-                        {row.detail}
-                      </span>
+                      {row.detail ? <span className="caption timeline-matter">{row.detail}</span> : null}
                       {row.schedule ? (
                         <RouteTextCard
                           embedded
@@ -550,11 +554,8 @@ export default function TodayPage() {
         </>
       ) : null}
 
-      <section style={{ padding: "0 var(--m-gutter)" }}>
-        <SectionHeading title="最近整理" trailing="本机暂存" />
-        {records.length === 0 ? (
-          <EmptyState title="还没有暂存内容" body="随手记的发送结果可以在「问助手」查看。" />
-        ) : (
+      {records.length > 0 ? <section style={{ padding: "0 var(--m-gutter)" }}>
+        <SectionHeading title="留在这台设备上的笔记" />
           <div className="list-card">
             {records.slice(0, 5).map((record, index) => (
               <div key={record.id}>
@@ -568,7 +569,7 @@ export default function TodayPage() {
                       {record.title}
                     </span>
                     <span className="row__detail" style={{ display: "block" }}>
-                      仅保存在当前设备 · {relativeTime(record.createdAt)}
+                      {relativeTime(record.createdAt)}
                     </span>
                   </span>
                   <ChevronRight size={16} className="chevron" aria-hidden="true" />
@@ -576,11 +577,10 @@ export default function TodayPage() {
               </div>
             ))}
           </div>
-        )}
-        <p className="micro" style={{ margin: "8px 0 0" }}>
-          仅保存在当前设备，可随时删除。
-        </p>
-      </section>
+      </section> : null}
+      {signedIn ? <div style={{ padding: "0 var(--m-gutter)" }}>
+        <Link href="/ask" className="link-button">去看助手整理记录</Link>
+      </div> : null}
 
       {!signedIn ? (
         <section style={{ padding: "0 var(--m-gutter)" }}>
@@ -591,7 +591,7 @@ export default function TodayPage() {
         </section>
       ) : null}
 
-      <Sheet title="暂存详情" open={Boolean(selectedRecord)} onClose={() => setSelectedRecord(null)}>
+      <Sheet title="本机笔记" open={Boolean(selectedRecord)} onClose={() => setSelectedRecord(null)}>
         {selectedRecord ? (
           <>
             <p className="card-title">{selectedRecord.title}</p>
@@ -611,7 +611,7 @@ export default function TodayPage() {
               className="btn btn--danger mt-16"
               onClick={() => setConfirmDelete(true)}
             >
-              <Trash2 size={15} /> 删除这条暂存
+              <Trash2 size={15} /> 删除本机笔记
             </button>
           </>
         ) : null}
@@ -619,8 +619,8 @@ export default function TodayPage() {
 
       <ConfirmDialog
         open={confirmDelete}
-        title="删除这条暂存？"
-        body="删除这份暂存后无法恢复。"
+        title="删除这份本机笔记？"
+        body="将删除这台设备上的笔记，已发给助手的内容会保留。"
         confirmLabel="删除"
         danger
         onCancel={() => setConfirmDelete(false)}

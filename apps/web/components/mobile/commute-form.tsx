@@ -3,6 +3,7 @@
 /** Editable commute plan form with the same validation as the server schema. */
 
 import { useState } from "react";
+import { commuteModeLabel, commuteModes } from "@/lib/mobile/commute-mode";
 import { CommutePlaceInput } from "./commute-place-input";
 
 import type { CommuteLocation, CommutePlanDraft } from "@/lib/mobile/api";
@@ -44,16 +45,16 @@ function validate(draft: CommutePlanDraft): string | null {
   if (draft.weekdays.length === 0) return "至少选择一个星期。";
   if (draft.weekdays.some((day) => day < 1 || day > 7)) return "星期取值无效。";
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.arrival_local_time)) return "到达时间格式无效。";
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.check_local_time)) return "检查时间格式无效。";
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.check_local_time)) return "请填写早上确认路况的时间。";
   if (draft.check_local_time >= draft.arrival_local_time) {
-    return "检查时间要早于到达时间，不能跨过午夜。";
+    return "请把早上确认路况的时间设在到达时间之前。";
   }
-  if (draft.buffer_minutes < 0 || draft.buffer_minutes > 120) return "缓冲时间应在 0–120 分钟。";
+  if (draft.buffer_minutes < 0 || draft.buffer_minutes > 120) return "备用时间请填 0 到 120 分钟。";
   if (
     draft.rain_probability_threshold < 0 ||
     draft.rain_probability_threshold > 1
   ) {
-    return "降雨阈值应在 0–1 之间。";
+    return "下雨概率请填 0% 到 100%。";
   }
   for (const point of [draft.origin, draft.destination]) {
     if (point.latitude === 0 && point.longitude === 0) {
@@ -85,7 +86,7 @@ export function CommuteForm({
   const [draft, setDraft] = useState<CommutePlanDraft>(initial ?? DEFAULT_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [geoBusy, setGeoBusy] = useState<"origin" | "destination" | null>(null);
-  const [geoError, setGeoError] = useState<string | null>(null);
+  const [geoError, setGeoError] = useState<"origin" | "destination" | null>(null);
 
   const set = <K extends keyof CommutePlanDraft>(key: K, value: CommutePlanDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -94,7 +95,7 @@ export function CommuteForm({
   const useCurrentLocation = (key: "origin" | "destination") => {
     setGeoError(null);
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setGeoError("这个浏览器没有定位能力；仍可使用已保存地点或手动坐标。");
+      setGeoError(key);
       return;
     }
     setGeoBusy(key);
@@ -114,7 +115,7 @@ export function CommuteForm({
       },
       () => {
         setGeoBusy(null);
-        setGeoError("没有取得当前位置。仍可搜索并选择地点。");
+        setGeoError(key);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
@@ -185,7 +186,7 @@ export function CommuteForm({
           />
         </label>
         <label className="field grow" htmlFor="commute-check">
-          <span className="field__label">检查时间</span>
+          <span className="field__label">每天早上几点帮你确认路况</span>
           <input
             id="commute-check"
             className="input"
@@ -198,22 +199,24 @@ export function CommuteForm({
 
       <div className="flex gap-10">
         <label className="field grow" htmlFor="commute-mode">
-          <span className="field__label">交通方式</span>
+          <span className="field__label" id="commute-mode-label">交通方式</span>
           <select
             id="commute-mode"
+            aria-labelledby="commute-mode-label"
             className="select"
             value={draft.transport_mode}
             onChange={(event) =>
               set("transport_mode", event.target.value as CommutePlanDraft["transport_mode"])
             }
           >
-            <option value="driving">驾车</option>
-            <option value="transit">公交</option>
-            <option value="walking">步行</option>
+            {!commuteModes.includes(draft.transport_mode) ? (
+              <option value={draft.transport_mode} disabled>其他出行方式</option>
+            ) : null}
+            {commuteModes.map((mode) => <option key={mode} value={mode}>{commuteModeLabel(mode)}</option>)}
           </select>
         </label>
         <label className="field grow" htmlFor="commute-buffer">
-          <span className="field__label">缓冲（分钟）</span>
+          <span className="field__label">平时多留几分钟备用</span>
           <input
             id="commute-buffer"
             className="input"
@@ -228,20 +231,20 @@ export function CommuteForm({
 
       <div className="flex gap-10">
         <label className="field grow" htmlFor="commute-rain">
-          <span className="field__label">降雨阈值（0–1）</span>
+          <span className="field__label">下雨概率达到多少就提前出门（%）</span>
           <input
             id="commute-rain"
             className="input"
             type="number"
             min={0}
-            max={1}
-            step={0.05}
-            value={draft.rain_probability_threshold}
-            onChange={(event) => set("rain_probability_threshold", Number(event.target.value))}
+            max={100}
+            step="any"
+            value={Number((draft.rain_probability_threshold * 100).toFixed(10))}
+            onChange={(event) => set("rain_probability_threshold", Number(event.target.value) / 100)}
           />
         </label>
         <label className="field grow" htmlFor="commute-rain-extra">
-          <span className="field__label">雨天额外缓冲</span>
+          <span className="field__label">下雨天多留几分钟</span>
           <input
             id="commute-rain-extra"
             className="input"
@@ -278,7 +281,7 @@ export function CommuteForm({
               <span className="micro" style={{ display: "block", marginBottom: 4 }}>
                 复用已保存地点
               </span>
-              <div className="chip-row">
+              <div className="chip-row" id={`${key}-saved-places`}>
                 {savedPlaces.map((place) => (
                   <button
                     key={`${key}-${place.label}-${place.latitude}-${place.longitude}-${place.coordinate_system ?? ""}`}
@@ -303,9 +306,14 @@ export function CommuteForm({
       ))}
 
       {geoError ? (
-        <p className="caption red" role="status" style={{ margin: "0 0 10px" }}>
-          {geoError}
-        </p>
+        <div className="caption" role="status">
+          没拿到你的位置，手动搜一下吧
+          <div className="action-row">
+            <button type="button" className="link-button" onClick={() => document.getElementById(`${geoError}-place`)?.focus()}>搜地点</button>
+            {savedPlaces.length ? <button type="button" className="link-button" onClick={() =>
+              document.querySelector<HTMLButtonElement>(`#${geoError}-saved-places button`)?.focus()}>用存好的地点</button> : null}
+          </div>
+        </div>
       ) : null}
 
       <button
@@ -319,7 +327,7 @@ export function CommuteForm({
             通勤提醒
           </span>
           <span className="caption" style={{ display: "block", marginTop: 2 }}>
-            通过 Bark 接收前晚预告、早间确认和突发变更。
+            前一晚发预告、早上发确认，路况有大变化时再提醒。
           </span>
         </span>
         <span className="switch" aria-checked={draft.notify_enabled} role="switch" />

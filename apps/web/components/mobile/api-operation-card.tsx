@@ -62,10 +62,13 @@ function Block({ block }: { block: ResponseBlock }) {
 /** Render a model-composed result, plan or information card with server-derived status. */
 export function EmbeddedResponseCard({ card }: { card: EmbeddedCard }) {
   const status = { completed: "已完成", failed: "未完成", unknown: "待核对", suggestion: "建议安排", info: "参考信息" }[card.status];
+  const titleIncludesStatus = card.status === "completed" && /已完成|已保存|已创建|已更新|已取消|已删除/.test(card.title)
+    || card.status === "failed" && /失败|未完成|没能/.test(card.title)
+    || Boolean(status && card.title.includes(status));
   return <article className={styles.card} aria-label={card.title} data-status={card.status}>
     <header className={styles.header}>
       <h3>{card.title}</h3>
-      {card.kind !== "result" || card.status !== "completed" ? <span className={styles.badge}>{status}</span> : null}
+      {!titleIncludesStatus && (card.kind !== "result" || card.status !== "completed") ? <span className={styles.badge}>{status}</span> : null}
     </header>
     {card.subtitle ? <p className={styles.muted}>{card.subtitle}</p> : null}
     <div className={styles.blocks}>{card.blocks.map((block, i) => <Block key={i} block={block} />)}</div>

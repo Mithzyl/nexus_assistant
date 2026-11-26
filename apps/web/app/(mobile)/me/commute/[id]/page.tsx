@@ -38,6 +38,7 @@ import {
 import { useAuth, useUI } from "@/components/mobile/providers";
 import { AdvisoryCard } from "@/components/mobile/advisory-card";
 import { CommuteForm } from "@/components/mobile/commute-form";
+import { formatInTimeZone, serviceDateInTimeZone } from "@/lib/mobile/commute-day";
 import { CommuteDayPanel } from "@/components/mobile/commute-day-panel";
 import { HistoryAdvisoryCard } from "@/components/mobile/history-advisory-card";
 import {
@@ -310,7 +311,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   : read.status === "failed"
                     ? read.error?.message || "分析失败。"
                     : read.status === "unknown"
-                      ? "暂时无法确认这次结果，稍后可以继续核对。"
+                      ? "暂时无法确认这次结果，稍后可以看看查到哪一步了。"
                       : "这次分析已取消。",
             );
             return;
@@ -325,8 +326,8 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         }
         setMessage(
           current.status === "queued"
-            ? "这次更新还在排队，记录已保存；可以继续核对。"
-            : "这次更新比平时久一些，记录已保存；可以继续核对。",
+            ? "这次更新还在排队，记录已保存；可以看看查到哪一步了。"
+            : "这次更新比平时久一些，记录已保存；可以看看查到哪一步了。",
         );
       } finally {
         pollingRef.current = false;
@@ -641,21 +642,18 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
         setMessage("计划改过了，上次分析作废。");
       }
       // The server already refreshed the next valid day; do not request it again.
-      if (updated.next_day?.applied) {
-        toast("已保存，下次出发时间已更新");
-      } else if (updated.next_day && updated.next_day.applied === false) {
-        toast("已保存，暂未算出出发时间");
-        setMessage("可在单日通勤里刷新路线。");
-      } else {
-        toast("通勤计划已保存");
-      }
+      const localToday = serviceDateInTimeZone(new Date(), updated.timezone);
+      const tomorrow = new Date(Date.parse(localToday) + 86_400_000).toISOString().slice(0, 10);
+      const refreshedDeparture = formatInTimeZone(updated.next_day?.schedule?.starts_at, updated.timezone, false);
+      toast(updated.next_day?.applied && updated.next_day.service_date === tomorrow && refreshedDeparture && refreshedDeparture < "12:00"
+        ? "保存好了，明早的出发时间也跟着更新了" : "设置已保存");
       setTab("advice");
       await loadLatest();
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
-        setSaveError("通勤设置刚在别处改过，重新加载后再保存。");
+        setSaveError("设置刚刚被更新过，请刷新页面后再改");
       } else if (caught instanceof ApiError && caught.status === 428) {
-        setSaveError("页面信息有点旧，刷新后再试。");
+        setSaveError("页面信息有点旧了，刷新一下再改");
         await plan.reload();
       } else {
         setSaveError(caught instanceof ApiError ? caught.message : "保存未能完成。");
@@ -759,7 +757,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
     (pending.status === "succeeded" || pending.status === "degraded") &&
     !pending.advisoryId &&
     !active;
-  const reanalyzeLabel = active ? "继续等待" : "刷新路线";
+  const reanalyzeLabel = active ? "看看查到哪一步了" : "重新查路线";
 
   const openHistory = () => {
     const node = document.getElementById("commute-history") as HTMLDetailsElement | null;
@@ -773,7 +771,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
 
   return (
     <PageShell
-      title="上班通勤"
+      title={plan.data?.name || "通勤计划"}
       action={
         plan.data ? (
           <Pill tone={plan.data.enabled ? "fog" : "neutral"}>
@@ -789,7 +787,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
       ) : null}
 
       {plan.loading ? <LoadingCard label="正在读取通勤计划…" /> : null}
-      {plan.error ? <ErrorCard message={errorText(plan.error)} onRetry={plan.reload} /> : null}
+      {plan.error ? <ErrorCard error={plan.error} message={errorText(plan.error)} onRetry={plan.reload} /> : null}
 
       {plan.data ? (
         <>
@@ -847,7 +845,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                           <p className="commute-runtime__subtitle">{checkPhaseText}</p>
                         </div>
                       </div>
-                      <div className="commute-runtime__facts">
+                      <details><summary>查看运行细节</summary><div className="commute-runtime__facts">
                         <span>已等待 {elapsedLabel}</span>
                         {pending.attemptCount ? <span>第 {pending.attemptCount} 次尝试</span> : null}
                         {lastCheckText ? <span>最近核对 {lastCheckText}</span> : null}
@@ -857,8 +855,9 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                         {workerHint ||
                           (polling
                             ? "完成后会自动换成新的出发建议。"
-                            : "任务已保存，可以继续核对。")}
+                            : "任务已保存，可以看看查到哪一步了。")}
                       </p>
+                      </details>
                       <button
                         type="button"
                         className="link-button mt-6"
@@ -868,7 +867,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                         }}
                         disabled={actionBusy !== null}
                       >
-                        继续核对
+                        看看查到哪一步了
                       </button>
                     </div>
                   ) : null}
@@ -895,11 +894,11 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                     <div className="card card--amber">
                       <p className="card-title amber" style={{ fontSize: 15 }}>暂时无法确认这次结果</p>
                       <p className="caption" style={{ margin: "4px 0 0" }}>
-                        {pending?.error || "记录已保存，可以继续核对。"}
+                        {pending?.error || "记录已保存，可以看看查到哪一步了。"}
                       </p>
                       <div className="ask-actions">
                         <button type="button" className="link-button" onClick={() => void viewCheckResult()} disabled={actionBusy !== null}>
-                          继续核对
+                          看看查到哪一步了
                         </button>
                         {historyRows.length > 0 ? (
                           <button type="button" className="link-button" onClick={openHistory}>历史记录</button>
@@ -928,7 +927,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   ) : null}
 
                   {!advisory && !adviceLoading && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !active && !adviceError && !routeNeedsNotice && historyRows.length === 0 ? (
-                    <EmptyState title="还没有出行方案" body="刷新路线后，这里会显示出发时间、路线和天气。">
+                    <EmptyState title="还没查过路线">
                       <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
                         {reanalyzeLabel}
                       </button>
@@ -936,7 +935,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                   ) : null}
 
                   {!currentAdvisory && !adviceLoading && !active && !showCheckFailure && !showCheckUnknown && !noAdviceResult && !adviceError && historyRows.length > 0 ? (
-                    <EmptyState title="当前没有可用方案" body="刷新路线后，这里会显示最新结果。">
+                    <EmptyState title="这次没查到路线">
                       <button type="button" className="btn btn--secondary" onClick={() => void startAnalysis()} disabled={actionBusy !== null}>
                         {reanalyzeLabel}
                       </button>
@@ -947,6 +946,7 @@ export default function CommuteDetailPage({ params }: { params: { id: string } }
                 <aside className="commute-side">
                   {plan.data?.enabled ? (
                     <CommuteDayPanel
+                      onOpenSettings={() => setTab("settings")}
                       planId={plan.data.id}
                       plan={plan.data}
                       onPlanChanged={() => void plan.reload()}

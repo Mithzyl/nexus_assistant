@@ -72,11 +72,11 @@ interface IntakeRequestKey {
 }
 
 const intakeStageLabel: Partial<Record<IntakeStage, string>> = {
-  queued: "已记下，等待后台整理",
-  understanding: "正在理解需求与相关记忆…",
-  fetching_schema: "正在读取接口说明…",
-  executing_tool: "正在查询或校验保存…",
-  generating_reply: "正在整理回复…",
+  queued: "已收到",
+  understanding: "正在看你的要求…",
+  fetching_schema: "正在帮你查和整理…",
+  executing_tool: "正在帮你查和整理…",
+  generating_reply: "快好了，正在写回复…",
 };
 
 /** Prefer the persisted stage while keeping a fallback for older APIs. */
@@ -93,12 +93,7 @@ function scheduleCandidatePrompt(candidate: IntakeScheduleCandidate): string {
   }`;
 }
 
-const SUGGESTIONS = [
-  "咖啡机退款到哪一步了？",
-  "明晚看电影要带什么？",
-  "柳江边散步安排在哪天？",
-  "旅行准备到哪一步了？",
-];
+const SUGGESTIONS = ["我现在最该先做什么？", "明天记得提醒我取快递。"];
 
 function StatusCard({
   item,
@@ -322,6 +317,7 @@ function AccountAskPage() {
   const [trackedKey, setTrackedKey] = useState<string | null>(null);
   const [trackedResult, setTrackedResult] = useState<MatterIntakeResult | null>(null);
   const [linkedReply, setLinkedReply] = useState<MatterIntakeResult | null>(null);
+  const [finishedReplyLink, setFinishedReplyLink] = useState(false);
   const recovering = !processing && trackedResult?.outcome === "processing";
   const [supplementQuestion, setSupplementQuestion] = useState<string | null>(null);
   const [clarificationContext, setClarificationContext] =
@@ -340,7 +336,7 @@ function AccountAskPage() {
   const [draftsError, setDraftsError] = useState("");
   const intakeKey = useRef<IntakeRequestKey | null>(null);
   const hydratedAnswerKey = useRef<string | null>(null);
-  const intakeHistorySeq = useRef(0);
+  const intakeHistorySeq = useRef({ history: 0, drafts: 0 });
   const { toast } = useUI();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -377,9 +373,12 @@ function AccountAskPage() {
 
   useEffect(() => {
     restoredComposerKey.current = null;
+    if (state === "loading") return;
+    // Wait for the account key before consuming a draft passed from another page.
     const captured = readSession<string>("pa.web.ask.draft", "");
     if (captured) {
       setDraft(captured);
+      writeSession(composerStorageKey, captured);
       writeSession("pa.web.ask.draft", "");
     } else {
       setDraft(readSession<string>(composerStorageKey, ""));
@@ -388,7 +387,7 @@ function AccountAskPage() {
       restoredComposerKey.current = composerStorageKey;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [composerStorageKey, user?.user_id]);
+  }, [composerStorageKey, state]);
 
   useEffect(() => {
     if (restoredComposerKey.current !== composerStorageKey) return;
@@ -410,31 +409,45 @@ function AccountAskPage() {
     writeJson(intakeAnswerStorageKey, intakeAnswers.slice(0, 20));
   }, [intakeAnswerStorageKey, intakeAnswers]);
 
-  const refreshServerIntake = useCallback(async (signal?: AbortSignal) => {
+  /** Refresh either list independently without replacing the other list's pending request. */
+  const refreshServerIntake = useCallback(async (signal?: AbortSignal, part: "all" | "drafts" | "history" = "all") => {
     if (state !== "signedIn") return;
-    const requestId = ++intakeHistorySeq.current;
-    setIntakeHistoryLoading(true);
-    const current = () => !signal?.aborted && requestId === intakeHistorySeq.current;
-    await Promise.all([
-      listDrafts("preview", null, signal).then((rows) => {
+    const loadDrafts = async () => {
+      const requestId = ++intakeHistorySeq.current.drafts;
+      const current = () => !signal?.aborted && requestId === intakeHistorySeq.current.drafts;
+      try {
+        const rows = await listDrafts("preview", null, signal);
         if (!current()) return;
         setPendingDrafts(rows);
         writeSession(draftsKey, rows);
         setDraftsError("");
-      }).catch(() => { if (current()) setDraftsError("待确认草稿同步失败"); }),
-      listIntakeResults(20, signal).then((rows) => {
+      } catch {
+        if (current()) setDraftsError("待确认的安排没加载出来");
+      }
+    };
+    const loadHistory = async () => {
+      const requestId = ++intakeHistorySeq.current.history;
+      const current = () => !signal?.aborted && requestId === intakeHistorySeq.current.history;
+      setIntakeHistoryLoading(true);
+      try {
+        const rows = await listIntakeResults(20, signal);
         if (!current()) return;
         setServerIntakeResults(rows);
         writeSession(historyKey, rows);
         setIntakeHistoryError("");
-      }).catch(() => { if (current()) setIntakeHistoryError("问答历史同步失败"); })
-        .finally(() => { if (current()) setIntakeHistoryLoading(false); }),
-    ]);
+      } catch {
+        if (current()) setIntakeHistoryError("聊天历史没加载出来");
+      } finally {
+        if (current()) setIntakeHistoryLoading(false);
+      }
+    };
+    await Promise.all([part !== "history" && loadDrafts(), part !== "drafts" && loadHistory()]);
   }, [state, draftsKey, historyKey]);
 
   useEffect(() => {
     const controller = new AbortController();
-    intakeHistorySeq.current += 1;
+    intakeHistorySeq.current.drafts += 1;
+    intakeHistorySeq.current.history += 1;
     setReplyExpiresAt(null);
     setDismissedReply(state === "signedIn" && readSession<string | boolean>(dismissedReplyStorageKey, false));
     setIntakeDraft(null);
@@ -444,6 +457,7 @@ function AccountAskPage() {
     setContinuationRunId(null);
     setRecoveryRunId(null);
     setLinkedReply(null);
+    setFinishedReplyLink(false);
     setTrackedResult(null);
     intakeKey.current = state === "signedIn"
       ? readSession<IntakeRequestKey | null>(intakeRequestStorageKey, null)
@@ -454,7 +468,7 @@ function AccountAskPage() {
     } else {
       setIntakeHistoryLoading(false);
     }
-    return () => { controller.abort(); intakeHistorySeq.current += 1; };
+    return () => { controller.abort(); };
   }, [dismissedReplyStorageKey, intakeRequestStorageKey, refreshServerIntake, state, user?.user_id]);
 
   useEffect(() => {
@@ -463,11 +477,17 @@ function AccountAskPage() {
     if (!requested) return;
     const controller = new AbortController();
     getIntakeResult(requested, controller.signal).then((result) => {
-      if (!controller.signal.aborted && (result.reply_state === "awaiting_reply" || result.reply_state === "expired")) {
+      if (controller.signal.aborted) return;
+      if (result.reply_state === "awaiting_reply" || result.reply_state === "expired") {
         setLinkedReply(result);
+      } else {
+        setFinishedReplyLink(true);
       }
     }).catch(() => {
-      if (!controller.signal.aborted) setComposerError("找不到可回复的随手记。");
+      if (!controller.signal.aborted) {
+        setFinishedReplyLink(true);
+        setComposerError("没找到原来的问题");
+      }
     });
     return () => controller.abort();
   }, [state, user?.user_id]);
@@ -516,7 +536,7 @@ function AccountAskPage() {
         // Keep its saved key and text so an explicit retry can reuse both.
         if (caught instanceof ApiError && caught.status === 404 && !processing && ++missingAttempts >= 5) {
           again = false;
-          setOperationFailure("暂时查不到原请求，原文已保留。");
+          setOperationFailure("暂时找不到刚才发送的内容。");
         }
       } finally {
         if (again && !controller.signal.aborted) timer = window.setTimeout(poll, 600 * (1 + missingAttempts));
@@ -594,7 +614,7 @@ function AccountAskPage() {
       setClarificationContext({});
       await refreshServerIntake();
     } catch (caught) {
-      setComposerError(caught instanceof Error ? caught.message : "暂时无法取消这条追问。");
+      setComposerError(caught instanceof Error ? caught.message : "暂时跳不过去，请再试一次。");
     } finally {
       setDismissingReply(false);
     }
@@ -815,9 +835,9 @@ function AccountAskPage() {
         setContinuationRunId(null);
         setClarificationContext({});
       } else if (result.outcome === "processing" || result.outcome === "unknown") {
-        setOperationFailure("结果还在确认，稍后再看看。");
+        setOperationFailure("正在确认有没有保存好。");
       } else {
-        setOperationFailure("这次没有可继续的结果，内容还在。");
+        setOperationFailure("暂时没找到这次的结果。");
       }
       await refreshServerIntake();
     } catch (caught) {
@@ -859,7 +879,7 @@ function AccountAskPage() {
 
   return (
     <div className="m-screen" style={{ paddingBottom: 220 }}>
-      <ScreenHeader title="问助手" subtitle="说一件事、一个问题或最新进展" />
+      <ScreenHeader title="问助手" />
 
       <section style={{ padding: "0 var(--m-gutter)" }}>
         {state === "signedIn" && user ? (
@@ -918,9 +938,6 @@ function AccountAskPage() {
             <p className="card-title amber" style={{ fontSize: 15 }}>
               有 {pendingDrafts.length} 条待确认变更
             </p>
-            <p className="caption" style={{ margin: "4px 0 0" }}>
-              从账号同步，重新打开也不会重复出现。
-            </p>
             <div className="m-stack-8 mt-10">
               {pendingDrafts.slice(0, 3).map((draftItem) => (
                 <button key={draftItem.draft_id} type="button" className="btn btn--secondary" onClick={() => setIntakeDraft(draftItem)}>
@@ -937,9 +954,11 @@ function AccountAskPage() {
       ) : null}
 
       {intakeHistoryLoading && unifiedHistory.length === 0 ? <LoadingCard label="正在同步历史…" /> : null}
-      {intakeHistoryError || draftsError ? <div role="alert">
-        {[intakeHistoryError, draftsError].filter(Boolean).join("、")}。
-        <button type="button" onClick={() => void refreshServerIntake()}>重试</button>
+      {draftsError ? <div className="card" role="alert">{draftsError}
+        <button type="button" className="link-button" onClick={() => void refreshServerIntake(undefined, "drafts")}>再试一次</button>
+      </div> : null}
+      {intakeHistoryError ? <div className="card" role="alert">{intakeHistoryError}
+        <button type="button" className="link-button" onClick={() => void refreshServerIntake(undefined, "history")}>再试一次</button>
       </div> : null}
       {unifiedHistory.length > 0 ? (
         <section className="ask-stream" style={{ marginBottom: 16 }}>
@@ -962,12 +981,13 @@ function AccountAskPage() {
             const confirmed = serverItem && item.confirm_status === "confirmed";
             const inactivePreview = serverItem && item.confirm_status === "unconfirmed" && lifecycle && lifecycle !== "active";
             const isFailure = outcome === "failed" || outcome === "unknown";
+            const showHistoryChoices = Boolean(serverRunId && serverRunId !== activeReplyRunId && !hasContinuation);
             const historyNote = confirmed
-              ? lifecycle === "archived" ? `所属事项「${item.target_title}」现已归档`
-                : lifecycle === "deleted" ? "所属事项后来已被删除，相关安排不再保留"
-                : lifecycle === "source_revoked" ? "相关资料来源已取消授权，当前不再展示详情"
+              ? lifecycle === "archived" ? "这件事项已经归档"
+                : lifecycle === "deleted" ? "这件事项已经删掉了"
+                : lifecycle === "source_revoked" ? "原本的资料已经取消授权"
                 : `已更新至「${item.target_title ?? "事项"}」`
-              : inactivePreview ? `该调整当时未确认，且${lifecycle === "source_revoked" ? "相关资料来源已取消授权" : `所属事项现已${lifecycle === "archived" ? "归档" : "删除"}`}` : null;
+              : inactivePreview ? (lifecycle === "source_revoked" ? "原本的资料已经取消授权" : lifecycle === "archived" ? "这件事项已经归档" : "这件事项已经删掉了") : null;
             const createdAt = serverItem ? item.created_at : item.createdAt;
             const key = serverItem ? item.local_run_id : item.id;
             const source = serverItem ? item.source ?? "chat" : item.source ?? "chat";
@@ -994,13 +1014,12 @@ function AccountAskPage() {
                         setDraft(question);
                         inputRef.current?.focus();
                       }} onCheck={serverItem ? () => void recoverResult(item.local_run_id) : undefined} details={
-                        <details className="ask-stored">
-                          <summary>查看已存内容</summary>
-                          <p>原话已保留。</p>
-                          {serverItem && item.error?.details_reference_id ? (
-                            <p>问题编号：{item.error.details_reference_id}</p>
-                          ) : null}
-                        </details>
+                        serverItem && item.error?.details_reference_id ? (
+                          <details className="ask-stored">
+                            <summary>查看问题编号</summary>
+                            <p>{item.error.details_reference_id}</p>
+                          </details>
+                        ) : null
                       } />
                     </div>
                   ) : null}
@@ -1008,7 +1027,7 @@ function AccountAskPage() {
                   {answer ? <Markdown source={answer} /> : null}
                   {clarify ? <p className="body-text" style={{ margin: 0 }}>{clarify}</p> : null}
                   {serverRunId && pendingContext ? <ApiOperationCard context={pendingContext} /> : null}
-                  {outcome === "needs_clarification" && !hasContinuation && serverRunId && pendingContext?.choices?.length ? <div className="chip-row mt-8">{pendingContext.choices.map((choice) => <button type="button" className="chip" key={choice} disabled={processing || dismissingReply} onClick={() => void send(choice, serverRunId)}>{choice}</button>)}</div> : null}
+                  {outcome === "needs_clarification" && showHistoryChoices && serverRunId && pendingContext?.choices?.length ? <div className="chip-row mt-8">{pendingContext.choices.map((choice) => <button type="button" className="chip" key={choice} disabled={processing || dismissingReply} onClick={() => void send(choice, serverRunId)}>{choice}</button>)}</div> : null}
                   {outcome === "processing" && !answer ? (
                     <p className="ask-message__note" role="status">{serverItem ? progressLabel(item.stage) : "助手正在处理…"}</p>
                   ) : null}
@@ -1019,10 +1038,6 @@ function AccountAskPage() {
                       ))}
                     </div>
                   ) : null}
-                  {!answer && !clarify && !historyNote && !isFailure && outcome !== "processing" ? (
-                    <p className="ask-message__note">这次没有后续内容了。</p>
-                  ) : null}
-
                   {state === "signedIn" && pendingContext?.memory_operation_ids?.map((operationId) => (
                     <MemoryWriteReceipts key={operationId} operationId={operationId} />
                   ))}
@@ -1047,7 +1062,7 @@ function AccountAskPage() {
                   ) : null}
                 </div>
               </div>
-              {scheduleCandidates.length > 0 ? (
+              {showHistoryChoices && scheduleCandidates.length > 0 ? (
                 <div className="m-stack-8 mt-8" aria-label="选择要修改的日程">
                   {scheduleCandidates.map((candidate) => (
                     <button
@@ -1072,11 +1087,7 @@ function AccountAskPage() {
                           {candidate.ends_at ? ` 至 ${formatDateTime(candidate.ends_at)}` : ""}
                           {candidate.location ? ` · ${candidate.location}` : ""}
                         </span>
-                        <span className="choice-card__detail">
-                          {hasContinuation
-                            ? "已经接着处理了，这条选项不用再点。"
-                            : "选好目标后，助手会继续处理。"}
-                        </span>
+
                       </span>
                     </button>
                   ))}
@@ -1091,7 +1102,7 @@ function AccountAskPage() {
       {liveTurn ? <section className="ask-stream" aria-live="polite" ref={latestIntakeRef}>
         <div className="bubble-user">{liveTurn.question}</div>
         <div className="card mt-10">
-          <span className="micro">{liveTurn.answer ? "正在整理回复…" : progressLabel(trackedResult?.stage)}</span>
+          <span className="micro">{liveTurn.answer ? "快好了，正在写回复…" : progressLabel(trackedResult?.stage)}</span>
           {liveTurn.answer ? <Markdown source={liveTurn.answer} /> : <span className="spinner" />}
         </div>
       </section> : null}
@@ -1099,12 +1110,6 @@ function AccountAskPage() {
       {state === "signedIn" && !liveTurn && !intakeHistoryLoading && !intakeHistoryError && timeline.length === 0 && unifiedHistory.length === 0 ? (
         <section style={{ padding: "0 var(--m-gutter)" }}>
           <div className="card">
-            <p className="card-title" style={{ fontSize: 18 }}>
-              直接说，交给助手整理
-            </p>
-            <p className="body-text muted mt-8">
-              想问什么、想改什么，直接说就好。需要补充的信息，助手会再问你。
-            </p>
             <div className="mt-12" style={{ display: "grid", gap: 8 }}>
               {SUGGESTIONS.map((suggestion) => (
                 <button
@@ -1112,7 +1117,7 @@ function AccountAskPage() {
                   type="button"
                   onClick={() => {
                     setDraft(suggestion);
-                    void send(suggestion);
+                    inputRef.current?.focus();
                   }}
                   style={{
                     display: "flex",
@@ -1200,10 +1205,25 @@ function AccountAskPage() {
         </p>
       ) : null}
 
-      {activeReplyQuestion ? (
+      <div className="ask-dock">
+      {finishedReplyLink ? (
         <div className="composer-operation" role="status">
-          <strong>正在回复追问</strong>
-          <p>{activeReplyQuestion}</p>
+          <strong>{composerError || "这个问题之前已经处理过了"}</strong>
+          <button type="button" className="link-button" onClick={() => {
+            setFinishedReplyLink(false);
+            setComposerError(null);
+            setDismissedReply(true);
+            window.history.replaceState(window.history.state, "", "/ask");
+            inputRef.current?.focus();
+          }}>问个新问题</button>
+        </div>
+      ) : null}
+
+      {!finishedReplyLink && activeReplyQuestion ? (
+        <div className="composer-operation composer-reply" role="region" aria-label="接着回答">
+          <strong>正在接着回答：{activeReplyQuestion}</strong>
+          {linkedReply?.reply_state === "expired" ? <p>这是比较早之前留下的问题，你现在依然可以接着回复。</p> : null}
+          <div className="composer-reply__options">
           {activeReplyContext.missing_information?.length ? (
             <div className="chip-row" style={{ marginBottom: 8 }}>
               {activeReplyContext.missing_information.map((item) => (
@@ -1239,25 +1259,23 @@ function AccountAskPage() {
               ))}
             </div>
           ) : null}
-          {linkedReply && activeReplyContext.choices?.length ? (
+          {activeReplyContext.choices?.length ? (
             <div className="chip-row">
               {activeReplyContext.choices.map((choice) => (
                 <button type="button" className="chip" key={choice} disabled={processing || recovering}
-                  onClick={() => void send(choice, linkedReply.local_run_id)}>{choice}</button>
+                  onClick={() => void send(choice, activeReplyRunId)}>{choice}</button>
               ))}
             </div>
           ) : null}
-          <span>
-            下方会接续刚才的事项和已填写内容发送，不需要重述背景。
-          </span>
+          </div>
           <button
             type="button"
             className="link-button mt-6"
-            aria-label="取消回复追问"
+            aria-label="跳过这个问题"
             disabled={processing || dismissingReply}
             onClick={() => void dismissReply()}
           >
-            {dismissingReply ? "正在取消…" : "× 取消"}
+            {dismissingReply ? "正在跳过…" : "跳过"}
           </button>
         </div>
       ) : null}
@@ -1265,14 +1283,14 @@ function AccountAskPage() {
       {operationFailure && !(recoveryRunId && serverIntakeResults.some((row) => row.local_run_id === recoveryRunId && ["failed", "unknown"].includes(row.outcome))) ? (
         <div className="composer-operation composer-operation--amber" role="alert">
           <strong>
-            {operationFailure.includes("正在核实") ? "正在核实结果" : "还没拿到确定结果"}
+            {operationFailure.includes("正在核实") ? "正在核实结果" : "还没确认有没有保存好"}
           </strong>
           <p>{operationFailure}</p>
           {streamFailureContext ? <IntakeFailureActions context={streamFailureContext}
             onEdit={() => inputRef.current?.focus()} onCheck={() => void recoverResult()} /> :
           <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
             <button type="button" className="btn btn--secondary btn--small" onClick={() => void recoverResult()}>
-              查询原结果
+              查一下结果
             </button>
 
           </div>}
@@ -1295,7 +1313,7 @@ function AccountAskPage() {
               if (canSend) void send();
             }
           }}
-          placeholder={state === "signedIn" ? "说一件事、一个问题或最新进展" : "登录后才能交给助手"}
+          placeholder={state === "signedIn" ? "有什么事，直接告诉我…" : "登录后才能交给助手"}
           aria-label="交给助手"
           maxLength={4000}
         />
@@ -1308,6 +1326,7 @@ function AccountAskPage() {
         >
           {processing ? <span className="spinner" style={{ width: 15, height: 15 }} /> : <ArrowUp size={17} strokeWidth={2.4} />}
         </button>
+      </div>
       </div>
 
       <MatterDraftSheet

@@ -32,7 +32,7 @@ export function HistoryAdvisoryCard({
     <details className="card card--tight history-advice">
       <summary className="history-advice__summary">
         <span className="history-advice__date">{formatServiceDate(advisory.local_service_date)}</span>
-        <span className="history-advice__time">{departure ? `${departure} 出发` : "时间待确认"}</span>
+        <span className="history-advice__time">{departure ? `当时建议 ${departure} 出发` : "时间待确认"}</span>
         <Pill tone={applicability.tone}>{applicability.label}</Pill>
       </summary>
       <div className="history-advice__body">

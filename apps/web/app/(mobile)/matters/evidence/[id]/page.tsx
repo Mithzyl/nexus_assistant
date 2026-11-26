@@ -17,7 +17,7 @@ export default function EvidencePage({ params }: { params: { id: string } }) {
           title="没有找到这份依据"
           body="原始依据来自演示数据，正式模式里不会出现。"
         >
-          <Link href="/matters" className="btn btn--secondary">返回事务</Link>
+          <Link href="/matters" className="btn btn--secondary">返回事项</Link>
         </EmptyState>
       </PageShell>
     );

@@ -50,11 +50,13 @@ export function CommuteDayPanel({
   planId,
   plan,
   onPlanChanged,
+  onOpenSettings,
 }: {
   planId: string;
   plan: CommutePlan;
   /** Reload the long-term plan so later edits use the new revision. */
   onPlanChanged?: () => void;
+  onOpenSettings?: () => void;
 }) {
   const searchParams = useSearchParams();
   const linkedDate = linkedCommuteDate(searchParams?.getAll("service_date") ?? [], () => "");
@@ -66,6 +68,7 @@ export function CommuteDayPanel({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const dateInput = useRef<HTMLInputElement>(null);
   const requestSeq = useRef(0);
   const operationKey = useRef<{ signature: string; key: string } | null>(null);
   const refreshKey = useRef<{ signature: string; key: string } | null>(null);
@@ -225,6 +228,7 @@ export function CommuteDayPanel({
         <span className="field__label">日期</span>
         <input
           className="input"
+          ref={dateInput}
           type="date"
           value={serviceDate}
           onChange={(event) => setServiceDate(event.target.value)}
@@ -300,11 +304,19 @@ export function CommuteDayPanel({
             </div>
           ) : null}
 
-          {day.status !== "upcoming" ? (
-            <p className="micro" style={{ margin: 0 }}>
-              这里只能改还没到点的日子；过去的只供查看。
-            </p>
-          ) : null}
+          {day.status === "past" ? <p className="caption">这天已经过去了，只能查看</p> : null}
+          {day.status === "inactive" ? <div className="action-row">
+            <span>这天的通勤已经停用了</span>
+            {onOpenSettings ? <button type="button" className="link-button" onClick={onOpenSettings}>去开启</button> : null}
+          </div> : null}
+          {day.status === "ineligible" ? <div className="action-row">
+            <span>这天本来就没有安排通勤</span>
+            <button type="button" className="link-button" onClick={() => dateInput.current?.focus()}>换一天看看</button>
+          </div> : null}
+          {day.status === "upcoming" && day.version == null ? <div className="action-row">
+            <span>页面信息有点旧了，刷新一下再改</span>
+            <button type="button" className="link-button" onClick={() => void loadDay(serviceDate)}>再试一次</button>
+          </div> : null}
 
           <div className="flex gap-8" style={{ flexWrap: "wrap" }}>
             <button
@@ -321,7 +333,7 @@ export function CommuteDayPanel({
               disabled={busy || day.status !== "upcoming"}
               onClick={() => void refreshDay()}
             >
-              {refreshing ? "正在刷新…" : "刷新路线"}
+              {refreshing ? "正在查路线…" : "重新查路线"}
             </button>
           </div>
 
