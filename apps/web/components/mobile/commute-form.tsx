@@ -316,14 +316,32 @@ export function CommuteForm({
       >
         <span className="grow" style={{ textAlign: "left" }}>
           <span className="card-title" style={{ display: "block", fontSize: 15 }}>
-            到达前提醒
+            通勤提醒
           </span>
           <span className="caption" style={{ display: "block", marginTop: 2 }}>
-            由账号里的通勤检查来跑；绑定 Bark 后，关掉页面也能收到提醒。
+            通过 Bark 接收前晚预告、早间确认和突发变更。
           </span>
         </span>
         <span className="switch" aria-checked={draft.notify_enabled} role="switch" />
       </button>
+
+      {draft.notify_enabled ? (
+        <div className="grid-2 mt-12">
+          <label className="field">
+            <span className="field__label">前晚预告时间</span>
+            <input className="input" type="time" value={draft.evening_notice_local_time ?? "22:00"}
+              onChange={(event) => set("evening_notice_local_time", event.target.value || null)} />
+          </label>
+          <label className="field">
+            <span className="field__label">前晚预告方式</span>
+            <select className="select" value={draft.evening_notice_level ?? "passive"}
+              onChange={(event) => set("evening_notice_level", event.target.value === "active" ? "active" : "passive")}>
+              <option value="passive">静默</option>
+              <option value="active">普通通知</option>
+            </select>
+          </label>
+        </div>
+      ) : null}
 
       <div className="notice mt-12">
         <strong>路线与出发时间</strong>

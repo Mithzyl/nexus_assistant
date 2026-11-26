@@ -9,6 +9,8 @@
  * state so the same `schedule_id` stays visible.
  */
 
+import { useSearchParams } from "next/navigation";
+import { linkedCommuteDate } from "@/lib/mobile/commute-date.mjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CommuteDayState, CommutePlan } from "@/lib/mobile/api";
@@ -43,6 +45,7 @@ function isValidLocalTime(value: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
+/** Query a notification-linked day or the next service date and keep the user's date picker editable. */
 export function CommuteDayPanel({
   planId,
   plan,
@@ -53,7 +56,9 @@ export function CommuteDayPanel({
   /** Reload the long-term plan so later edits use the new revision. */
   onPlanChanged?: () => void;
 }) {
-  const [serviceDate, setServiceDate] = useState(() => nextServiceDate(plan, new Date()));
+  const searchParams = useSearchParams();
+  const linkedDate = linkedCommuteDate(searchParams?.getAll("service_date") ?? [], () => "");
+  const [serviceDate, setServiceDate] = useState(() => linkedDate || nextServiceDate(plan, new Date()));
   const [day, setDay] = useState<CommuteDayState | null>(null);
   const [arrival, setArrival] = useState("");
   const [loading, setLoading] = useState(false);
@@ -69,9 +74,9 @@ export function CommuteDayPanel({
   // Follow the plan's own schedule when its configuration changes, not on every
   // revision bump caused by saving a single day.
   useEffect(() => {
-    setServiceDate(nextServiceDate(plan, new Date()));
+    setServiceDate(linkedDate || nextServiceDate(plan, new Date()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planKey]);
+  }, [planKey, linkedDate]);
 
   const loadDay = useCallback(
     async (target: string) => {

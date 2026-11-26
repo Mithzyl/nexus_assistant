@@ -160,6 +160,8 @@ export interface CommutePlan {
   rain_probability_threshold: number;
   rain_extra_buffer_minutes: number;
   notify_enabled: boolean;
+  evening_notice_local_time?: string | null;
+  evening_notice_level?: "passive" | "active" | null;
   origin: CommuteLocation;
   destination: CommuteLocation;
   revision: number;
