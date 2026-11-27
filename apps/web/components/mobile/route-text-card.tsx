@@ -19,6 +19,7 @@ export interface RouteMapTarget {
 }
 
 /** Text-first route evidence with an optional on-demand map action. */
+/** Display measured trip details and ask for an origin only when the caller allows it. */
 export function RouteTextCard({
   originLabel,
   destinationLabel,
@@ -43,6 +44,9 @@ export function RouteTextCard({
   onPlanRoute,
   onViewRoute,
   replanHref,
+  commuteHref,
+  historical = false,
+  allowOriginPrompt = true,
   arrivalLabel = "到达",
   embedded = false,
 }: {
@@ -69,20 +73,24 @@ export function RouteTextCard({
   onPlanRoute?: () => void;
   onViewRoute?: () => void;
   replanHref?: string;
+  commuteHref?: string;
+  historical?: boolean;
+  allowOriginPrompt?: boolean;
   arrivalLabel?: string;
   embedded?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const modeLabel = commuteModeLabel(mode);
   const stateLabel =
-    state === "enough"
+    historical ? "上次路线"
+      : state === "enough"
       ? "时间充足"
       : state === "verified"
         ? "路线已确认"
         : state === "tight"
           ? "时间可能不够"
           : state === "unverified"
-            ? "待补充路线"
+            ? commuteHref ? "路线待更新" : "待补充路线"
             : "暂时无法测算";
   const fareLabel =
     mode === "transit" || fareKind === "amap_transit_fare"
@@ -141,11 +149,11 @@ export function RouteTextCard({
     originLabel === "出发地待补充" ||
     originLabel === "还没填出发地" ||
     originLabel === "出发地未提供";
-  if (missingOrigin && (state === "unverified" || state === "unavailable")) {
+  if (allowOriginPrompt && missingOrigin && (state === "unverified" || state === "unavailable")) {
     return (
       <section className={`route-text-card route-text-card--prompt${embedded ? " route-text-card--embedded" : ""}`}>
         <p className="route-text-card__prompt-title">你还没说从哪出发。</p>
-        <p className="route-text-card__prompt-body">补上之后，我按路程倒推出门时间。</p>
+        <p className="route-text-card__prompt-body">填好出发点，就能帮你算好几点出门</p>
         {onPlanRoute ? (
           <button type="button" className="btn btn--primary btn--small" onClick={onPlanRoute}>
             填出发点
@@ -187,7 +195,7 @@ export function RouteTextCard({
         <div className="grow">
           <p className="route-text-card__eyebrow">路线</p>
           <p className="route-text-card__title">
-            {originLabel || "还没填出发地"} <span aria-hidden="true">→</span>{" "}
+            {originLabel ? <>{originLabel} <span aria-hidden="true">→</span>{" "}</> : null}
             {destinationLabel || "目的地待确认"}
           </p>
         </div>
@@ -195,14 +203,16 @@ export function RouteTextCard({
       </div>
 
       <div className="route-text-card__facts">
-        <span><Clock3 size={13} /> {modeLabel}</span>
+        {mode ? <span><Clock3 size={13} /> {modeLabel}</span> : null}
         {departureAt ? <span>出发 {formatDateTime(departureAt)}</span> : null}
         <span>
           {arrivalAt
             ? `${arrivalLabel} ${formatDateTime(arrivalAt)}`
             : `${arrivalLabel}时间未定`}
         </span>
-        <span>{durationSeconds !== null && durationSeconds !== undefined ? formatDuration(durationSeconds) : "路程耗时未记录"}</span>
+        <span>{durationSeconds !== null && durationSeconds !== undefined
+          ? `${historical ? "上次测算" : ""}${formatDuration(durationSeconds)}`
+          : "路程耗时未记录"}</span>
         {mode !== "transit" &&
         distanceMeters !== null &&
         distanceMeters !== undefined ? (
@@ -254,15 +264,10 @@ export function RouteTextCard({
       {state !== "verified" && notice ? (
         <p className="route-text-card__notice">{notice}</p>
       ) : null}
-      {(!originLabel || originLabel === "还没填出发地") &&
-      (state === "unverified" || state === "unavailable") ? (
-        <p className="route-text-card__notice">
-          补上出发地后，就能算出出门时间和到达时间。
-        </p>
-      ) : null}
       {weatherLine ? <p className="route-text-card__weather">{weatherLine}</p> : null}
 
       <div className="route-text-card__actions">
+        {commuteHref ? <a className="link-button" href={commuteHref}>查看当天通勤</a> : null}
         {onPlanRoute ? (
           <button type="button" className="link-button" onClick={onPlanRoute}>
             <Clock3 size={13} />{" "}

@@ -73,19 +73,54 @@ function reminderNote(item: MatterReminder): string {
   return "提醒已设置";
 }
 
-function routeState(schedule: TodaySchedule): {
-  label: string;
-  tone: "neutral" | "amber" | "green" | "red";
-  detail: string | null;
-} {
-  const message = schedule.route.message || "这条路线还没算过时间。";
-  if (schedule.route.status === "available") {
-    return { label: "路线已核实", tone: "green", detail: null };
-  }
-  if (schedule.route.status === "unavailable") {
-    return { label: "路线没取到", tone: "red", detail: message };
-  }
-  return { label: "路线还没核实", tone: "amber", detail: "点一下“刷新路线”，看看要多久到。" };
+/** Display known commute endpoints independently of the saved route's freshness. */
+function TimelineRoute({ schedule, timezone, onViewRoute }: {
+  schedule: TodaySchedule;
+  timezone?: string;
+  onViewRoute: () => void;
+}) {
+  const route = schedule.route;
+  const commute = route.commute;
+  const available = route.status === "available";
+  if (!commute && !available && !schedule.location && schedule.latitude == null) return null;
+  const originLabel = commute?.origin_label || (route.origin_basis === "previous_schedule"
+    ? "从上一项安排出发"
+    : route.origin_basis === "user_confirmed" ? "从已确认起点出发"
+    : route.origin_known ? "已记录出发点" : null);
+  const historical = !available && Boolean(commute?.saved_route);
+  return (
+    <RouteTextCard
+      embedded
+      originLabel={originLabel}
+      destinationLabel={commute?.destination_label || schedule.location || schedule.title}
+      arrivalAt={schedule.starts_at}
+      arrivalLabel="安排时间"
+      mode={route.mode ?? commute?.saved_route?.mode}
+      durationSeconds={route.duration_seconds ?? commute?.saved_route?.duration_seconds}
+      transfersSummary={commute?.saved_route?.transfers_summary}
+      state={route.status === "available" ? "verified" : route.status}
+      historical={historical}
+      allowOriginPrompt={!commute && route.origin_known !== true}
+      commuteHref={commute
+        ? `/me/commute/${encodeURIComponent(commute.plan_id)}?service_date=${encodeURIComponent(commute.service_date)}`
+        : undefined}
+      notice={available && route.fetched_at
+        ? `路线更新于 ${dateTime(route.fetched_at, timezone)}`
+        : commute ? undefined : route.message}
+      replanHref={!commute && schedule.matter_id
+        ? `/matters/${encodeURIComponent(schedule.matter_id)}`
+        : undefined}
+      onViewRoute={available ? onViewRoute : undefined}
+      mapTarget={{
+        label: schedule.location_address || schedule.location,
+        latitude: schedule.latitude,
+        longitude: schedule.longitude,
+        coordinateSystem: schedule.coordinate_system,
+        address: schedule.location_address,
+        city: schedule.location_city,
+      }}
+    />
+  );
 }
 
 function draftQuestion(draft: TodayDraft): string {
@@ -103,9 +138,6 @@ interface TimelineRow {
   detail: string;
   kind: "schedule" | "reminder";
   matterId: string | null;
-  routeDetail?: string | null;
-  routeLabel?: string;
-  routeTone?: "neutral" | "amber" | "green" | "red";
   schedule?: TodaySchedule;
 }
 
@@ -162,7 +194,6 @@ export default function TodayPage() {
     const data = todayData.data;
     if (!data) return [];
     const scheduleRows: TimelineRow[] = data.schedules.map((item) => {
-      const route = routeState(item);
       return {
         id: `schedule-${item.schedule_id}`,
         at: item.starts_at,
@@ -171,9 +202,6 @@ export default function TodayPage() {
         detail: item.location || "",
         kind: "schedule",
         matterId: item.matter_id,
-        routeDetail: route.detail,
-        routeLabel: route.label,
-        routeTone: route.tone,
         schedule: item,
       };
     });
@@ -451,59 +479,17 @@ export default function TodayPage() {
                       ) : null}
                       {row.detail ? <span className="caption timeline-matter">{row.detail}</span> : null}
                       {row.schedule ? (
-                        <RouteTextCard
-                          embedded
-                          originLabel={
-                            row.schedule.route.origin_basis === "previous_schedule"
-                              ? "从上一项安排出发"
-                              : row.schedule.route.origin_basis === "user_confirmed"
-                                ? "从已确认起点出发"
-                                : "出发地未提供"
-                          }
-                          destinationLabel={row.schedule.location || row.schedule.title}
-                          arrivalAt={row.schedule.starts_at}
-                          arrivalLabel="安排时间"
-                          mode={row.schedule.route.mode}
-                          durationSeconds={row.schedule.route.duration_seconds}
-                          state={
-                            row.schedule.route.status === "available"
-                              ? "verified"
-                              : row.schedule.route.status === "unavailable"
-                                ? "unavailable"
-                                : "unverified"
-                          }
-                          notice={
-                            row.schedule.route.status === "available"
-                              ? row.schedule.route.fetched_at
-                                ? `路线更新于 ${dateTime(row.schedule.route.fetched_at, todayData.data?.timezone)}`
-                                : "路线已刷新。"
-                              : row.schedule.route.message || "尚无与该日程关联的路线结果。"
-                          }
-                          replanHref={
-                            row.matterId
-                              ? `/matters/${row.matterId}`
-                              : undefined
-                          }
-                          onViewRoute={
-                            row.schedule.route.status === "available"
-                              ? () => setRouteMapSchedule(row.schedule ?? null)
-                              : undefined
-                          }
-                          mapTarget={{
-                            label: row.schedule.location_address || row.schedule.location,
-                            latitude: row.schedule.latitude,
-                            longitude: row.schedule.longitude,
-                            coordinateSystem: row.schedule.coordinate_system,
-                            address: row.schedule.location_address,
-                            city: row.schedule.location_city,
-                          }}
+                        <TimelineRoute
+                          schedule={row.schedule}
+                          timezone={todayData.data?.timezone}
+                          onViewRoute={() => setRouteMapSchedule(row.schedule ?? null)}
                         />
                       ) : null}
                     </span>
                     {row.kind === "reminder" ? (
-                      <Bell size={14} className="fog" />
+                      <Bell size={18} className="timeline-type-icon" aria-hidden="true" />
                     ) : (
-                      <MapPin size={14} className="fog" />
+                      <MapPin size={18} className="timeline-type-icon" aria-hidden="true" />
                     )}
                   </div>
                 ))}

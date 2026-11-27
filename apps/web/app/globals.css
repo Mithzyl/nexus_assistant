@@ -1312,6 +1312,17 @@ a {
 .timeline-link + .timeline-link, .timeline-row + .timeline-row { border-top: 0.5px solid var(--m-line); }
 .timeline-time { width: 42px; flex: 0 0 auto; padding-top: 2px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--m-muted); }
 .timeline-dot { width: 7px; height: 7px; margin-top: 6px; flex: 0 0 auto; border-radius: 999px; background: var(--m-fog); }
+.timeline-link.card { gap: 8px; padding: 14px; }
+.timeline-link > .timeline-time {
+  width: auto;
+  padding-top: 0;
+  color: var(--m-ink);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.timeline-link > .timeline-dot { margin-top: 9px; }
+.timeline-type-icon { flex: none; margin-top: 3px; color: var(--m-fog-deep); }
 .schedule-block { padding-top: 2px; }
 .todo-row {
   display: flex;

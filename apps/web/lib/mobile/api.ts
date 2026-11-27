@@ -724,6 +724,18 @@ export interface TodayRoute {
   mode: CommuteTransportMode | null;
   fetched_at: string | null;
   origin_basis: "user_confirmed" | "previous_schedule" | "memory" | null;
+  origin_known?: boolean | null;
+  commute?: {
+    plan_id: string;
+    service_date: string;
+    origin_label: string;
+    destination_label: string;
+    saved_route: {
+      duration_seconds: number;
+      mode: CommuteTransportMode | null;
+      transfers_summary: string | null;
+    } | null;
+  } | null;
 }
 
 export interface TodaySchedule extends MatterSchedule {
