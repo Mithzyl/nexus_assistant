@@ -1435,12 +1435,19 @@ async def get_intake_result(
 
 
 async def _project_history(db, user, runs):
-    """Project owned runs in order, preloading only the relations required by legacy previews."""
+    """Project owned runs, loading current attachment drafts and legacy preview relations together."""
     legacy_ids = [r.local_run_id for r in runs if not (
         (r.context_json or {}).get('api_flow') or 'api_operations' in (r.context_json or {}))]
+    attachment_draft_ids = {
+        draft['draft_id'] for run in runs
+        if (draft := ((run.context_json or {}).get('api_flow') or {}).get('attachment_draft'))
+    }
     drafts = list(await db.scalars(select(MatterDraft).where(
-        MatterDraft.user_id == user.user_id, MatterDraft.ai_run_id.in_(legacy_ids)))) if legacy_ids else []
+        MatterDraft.user_id == user.user_id, or_(MatterDraft.ai_run_id.in_(legacy_ids),
+                                                MatterDraft.draft_id.in_(attachment_draft_ids))
+    ))) if legacy_ids or attachment_draft_ids else []
     by_run = {d.ai_run_id: d for d in drafts}
+    by_draft = {d.draft_id: d for d in drafts}
     matter_ids = {d.matter_id or (d.result_json or {}).get('matter_id') for d in drafts}
     matter_ids.update(c.get('matter_id') for d in drafts for c in d.candidates_json or [] if isinstance(c, dict))
     schedule_ids = {d.base_schedule_id or (d.result_json or {}).get('schedule_id') for d in drafts}
@@ -1456,14 +1463,26 @@ async def _project_history(db, user, runs):
     matters = await owned_rows(Matter, Matter.matter_id, matter_ids)
     schedules = await owned_rows(ScheduleEvent, ScheduleEvent.schedule_id, schedule_ids)
     sources = await owned_rows(ContentSource, ContentSource.source_id, {r.data_source_id for r in schedules.values()})
-    return [_project_intake_run(r, by_run.get(r.local_run_id), matters, schedules, sources) for r in runs]
+    def related_draft(run):
+        """Resolve the latest prepared attachment draft or the legacy linked preview."""
+        draft = ((run.context_json or {}).get('api_flow') or {}).get('attachment_draft')
+        return by_draft.get(draft['draft_id']) if draft else by_run.get(run.local_run_id)
+
+    return [_project_intake_run(r, related_draft(r), matters, schedules, sources) for r in runs]
 
 
 def _project_intake_run(run, historical, matters, schedules, sources):
     """Apply lifecycle and source visibility to prefetched rows without issuing SQL."""
     if (run.context_json or {}).get('api_flow') or 'api_operations' in (run.context_json or {}):
         from assistant_api.services.operation_intake import response_for
-        return {**response_for(run), 'request_text': (run.context_json or {}).get('text', ''),
+        current = response_for(run)
+        if historical and current.get('draft'):
+            current['draft'] = _serialize_draft(historical)
+            current['draft_id'] = historical.draft_id
+            current['confirm_status'] = (
+                'confirmed' if historical.status == 'confirmed'
+                else 'unconfirmed' if historical.status == 'preview' else 'unknown')
+        return {**current, 'request_text': (run.context_json or {}).get('text', ''),
                 'created_at': run.created_at, 'completed_at': run.completed_at}
     draft = historical
     resolution = _intake_resolution(run)

@@ -178,6 +178,8 @@ def create_app(
     app.include_router(display_cards.router)
     from assistant_api.routers import image_attachments
     app.include_router(image_attachments.router)
+    from assistant_api.routers import markdown_attachments
+    app.include_router(markdown_attachments.router)
     from assistant_api.routers import records
     app.include_router(records.router)
     from assistant_api.routers import next_actions

@@ -23,7 +23,7 @@ from assistant_api.core.deps import (
 )
 from assistant_api.schemas import matters as schemas
 from assistant_api.routers.places import require_body_parameters
-from assistant_api.core.errors import InvalidRequestError, NotFoundError
+from assistant_api.core.errors import ConflictError, InvalidRequestError, NotFoundError
 from assistant_api.models import ScheduleEvent, NexusRun
 from assistant_api.services import operation_intake, run_service
 from assistant_api.services.intake_failures import public_failure, stream_failure
@@ -171,6 +171,7 @@ async def intake_stream(request: Request, payload: schemas.IntakeRequest,
                     ignore_pending_clarification=payload.ignore_pending_clarification,
                     dismissed_reply_run_id=payload.dismissed_reply_run_id,
                     memory_disclosures=[item.model_dump() for item in payload.memory_disclosures],
+                    attachments=[item.model_dump(mode="json") for item in payload.attachments],
                     on_committed=lambda: queue.put_nowait(("accepted", {})))
                 if result["outcome"] in {"failed", "unknown", "cancelled"}:
                     row = await db.get(NexusRun, result["local_run_id"]) if result.get("local_run_id") else None
@@ -236,6 +237,7 @@ async def intake(
         ignore_pending_clarification=payload.ignore_pending_clarification,
         dismissed_reply_run_id=payload.dismissed_reply_run_id,
         memory_disclosures=[item.model_dump() for item in payload.memory_disclosures],
+        attachments=[item.model_dump(mode="json") for item in payload.attachments],
     )
     return _intake_response(result=result, response=response)
 
@@ -267,6 +269,7 @@ async def intake_for_matter(
         ignore_pending_clarification=payload.ignore_pending_clarification,
         dismissed_reply_run_id=payload.dismissed_reply_run_id,
         memory_disclosures=[item.model_dump() for item in payload.memory_disclosures],
+        attachments=[item.model_dump(mode="json") for item in payload.attachments],
     )
     return _intake_response(result=result, response=response)
 
@@ -448,6 +451,10 @@ async def confirm_draft(
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=128),
 ) -> dict:
     '使用实际draft_id、当前version和Idempotency-Key，一次事务保存。用户输入明确即执行此保存步骤，不再请求用户确认。preview不是保存成功；applied=false时读取返回conflict再选择方案，不宣称成功。sync_to_ios仅用户要求同步时启用；create_schedule=false只是不保存本次日程提议。返回matter、schedule、reminders及change_id；需要待办完整结果再GET事项详情。'
+    if request.scope.get('assistant_execution_run_id'):
+        original = await matters._get_draft(db, user, draft_id)
+        if (original.payload_json or {}).get('attachments'):
+            raise ConflictError('attachment_confirmation_required', '请在页面上确认附件中的安排。')
     result = await matters.confirm_draft(
         db, runtime, settings, user, draft_id, payload, idempotency_key,client=client
     )

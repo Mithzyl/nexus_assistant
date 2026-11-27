@@ -23,6 +23,7 @@ dependencies = [
   "uvicorn>=0.30",
   "pywebpush>=2.0,<3",
   "Pillow>=13,<14",
+  "markdown-it-py>=4,<5",
 ]
 
 [project.optional-dependencies]

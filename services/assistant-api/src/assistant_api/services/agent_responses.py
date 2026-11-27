@@ -17,9 +17,9 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from assistant_api.core.errors import ConflictError, ForbiddenError, NotFoundError
-from assistant_api.models import AgentResponseReceipt, DisplayCard, NexusRun, User
+from assistant_api.models import AgentResponseReceipt, DisplayCard, MatterDraft, NexusRun, User
 from assistant_api.services.api_operations import OperationCall, OperationCatalog, OperationDecision, execute_call, resolve_result_references
-from assistant_api.services import response_cards
+from assistant_api.services import intake_attachments, response_cards
 
 
 def outcome(execution_id, status, message=None, *, result=None, code=None):
@@ -111,6 +111,9 @@ def final_projection(text, flow, progress_card=None):
                                     'capture_conflict': conflict}}
     if decision['decision'] == 'answer':
         pending['cards'] = project_reply_cards(decision.get('cards', []), flow, progress_card)
+        if draft := flow.get('attachment_draft'):
+            return {'outcome': 'draft', 'draft': draft, 'answer': decision['answer'],
+                    'clarify': None, 'pending_context': pending}
         return {'outcome': 'answer', 'answer': decision['answer'], 'clarify': None, 'pending_context': pending}
     if decision['decision'] in {'ask_user', 'clarify'}:
         cards=decision.get('cards', [])
@@ -310,6 +313,10 @@ async def process_response(db, app, payload):
     except (ValueError, RecursionError) as exc:
         return await finish(db, root, receipt, flow, outcome(identity, 'failed',
             validation_feedback(exc, validation_stage), code='invalid_parameters'))
+    if not intake_attachments.can_execute_attachment_operation(flow, operation, call):
+        return await finish(db, root, receipt, flow, outcome(identity, 'failed',
+            '附件只能作为资料。先创建用户可确认的草稿，时间或目标不明确时请询问。此次没有保存业务记录。',
+            code='attachment_confirmation_required'))
     if flow.get('trigger_source') == 'follow_up':
         from assistant_api.models import FollowUp, FollowUpExecution
         from assistant_api.services.follow_ups import execution_is_current
@@ -377,6 +384,21 @@ async def process_response(db, app, payload):
         flow.setdefault("display_cards", {})[card.card_id] = published_card(card)
     if business["status"] == "succeeded" and operation.operation_id == "propose_matter_progress_card":
         flow["progress_proposal"] = actual.body
+    if flow.get('attachment_review') and business['status'] == 'succeeded' and operation.effect == 'preview':
+        details = business.get('data')
+        if isinstance(details, dict) and details.get('draft_id'):
+            draft = await db.get(MatterDraft, details['draft_id'], populate_existing=True)
+            if draft and draft.user_id == user.user_id and draft.status == 'preview':
+                from assistant_api.services.matters import _serialize_draft
+                draft.payload_json = {**draft.payload_json, 'attachments': flow['attachments']}
+                draft.ai_run_id = draft.ai_run_id or root.local_run_id
+                ids = flow.setdefault('attachment_draft_ids', [])
+                if draft.draft_id not in ids:
+                    ids.append(draft.draft_id)
+                flow['attachment_draft'] = _serialize_draft(draft)
+                # The flow is JSON stored in SQLite. Project dates exactly as the API does.
+                from fastapi.encoders import jsonable_encoder
+                flow['attachment_draft'] = jsonable_encoder(flow['attachment_draft'])
     flow.setdefault('results', {})[str(flow['step'])] = copy.deepcopy(business)
     flow['visible_result'] = business
     flow['step'] += 1

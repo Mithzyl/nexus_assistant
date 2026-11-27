@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     register_invite_code: SecretStr = SecretStr("")
 
     environment: str = "development"
+    # Reserved for a future image provider. This release never sends image bytes to models.
+    vision_enabled: bool = False
     web_push_enabled: bool = False
     web_push_public_key: str | None = None
     web_push_private_key_path: Path | None = None

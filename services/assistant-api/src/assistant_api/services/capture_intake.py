@@ -55,9 +55,15 @@ async def worker_tick(app) -> bool:
         try:
             request = ExecutionContext(app, user.user_id)
             saved = row.context_json
+            flow = saved['api_flow']
             context = await operation_intake.prepare_context(request, db, user,
-                text=saved['text'], idempotency_key=saved['api_flow']['request_key'],
-                entry_mode='async_capture', ignore_pending_reply=True, exclude_run_id=run_id)
+                text=saved['text'], idempotency_key=flow['request_key'], entry_mode=flow['entry_mode'],
+                ignore_pending_reply=flow['ignore_pending_reply'], exclude_run_id=run_id,
+                matter_id=flow.get('matter_id'), continuation_run_id=flow.get('reply_to_run_id'),
+                attachment_refs=flow.get('submitted_attachments'))
+            context['api_flow'].update(
+                ignore_pending_clarification=flow.get('ignore_pending_clarification', False),
+                dismissed_reply_run_id=flow.get('dismissed_reply_run_id'))
             prepared = await db.execute(update(NexusRun).where(
                 NexusRun.local_run_id == run_id, NexusRun.status == 'pending',
                 NexusRun.capture_lease_expires_at == expires, NexusRun.capture_dispatch_started_at.is_(None),

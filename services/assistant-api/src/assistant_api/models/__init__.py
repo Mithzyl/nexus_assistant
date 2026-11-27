@@ -106,3 +106,7 @@ __all__ += ["DisplayCard"]
 from assistant_api.models.image_attachment import ImageAttachment
 
 __all__ += ["ImageAttachment"]
+
+from assistant_api.models.markdown_attachment import MarkdownAttachment
+
+__all__ += ["MarkdownAttachment"]

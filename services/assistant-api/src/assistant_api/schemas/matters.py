@@ -16,6 +16,7 @@ from assistant_api.commute.schemas import UtcDateTime, CommutePlanRead
 from assistant_api.commute.providers.base import TransportMode
 from assistant_api.commute.timeutil import ensure_aware
 
+from assistant_api.schemas.attachments import AttachmentReference
 from assistant_api.schemas.places import (
     CoordinateSystem, PlaceSearchType, PlaceLookupRequest, PlaceLookupCandidate,
     PlaceLookupResponse, PlacePointRequest, PlacePointLocation, PlacePointResponse,
@@ -467,7 +468,8 @@ class MemoryDisclosure(BaseModel):
 class IntakeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str = Field(min_length=1, max_length=4000)
+    text: str = Field(default="", max_length=4000)
+    attachments: list[AttachmentReference] = Field(default_factory=list, max_length=4)
     idempotency_key: str = Field(min_length=8, max_length=128)
     continuation_run_id: str | None = Field(default=None, min_length=8, max_length=36)
     ignore_pending_reply: bool = False
