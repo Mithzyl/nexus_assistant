@@ -2682,12 +2682,6 @@ details.commute-conclusion__meta { display: block; }
 
 .today-commute__eyebrow svg { color: var(--m-fog); }
 
-.today-commute__head-link {
-  color: var(--m-faint);
-  font-size: 11px;
-  text-decoration: none;
-}
-
 .today-commute__work {
   display: flex;
   align-items: baseline;
@@ -2774,8 +2768,6 @@ details.commute-conclusion__meta { display: block; }
   text-decoration: none;
 }
 
-.today-commute__link--muted { color: var(--m-faint); font-weight: 500; }
-
 .today-commute__title {
   margin: 10px 0 0;
   color: var(--m-ink);
@@ -2834,45 +2826,6 @@ details.commute-conclusion__meta { display: block; }
   .today-commute__time { font-size: 42px; }
   .today-commute__plan-meta { display: none; }
 }
-
-.today-reminder-note {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 var(--m-gutter) 12px;
-  padding: 9px 12px;
-  border: 1px solid var(--m-line);
-  border-radius: 12px;
-  background: var(--m-card);
-  color: var(--m-muted);
-  font-size: 11.5px;
-}
-
-.today-reminder-note__state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.today-reminder-note__state i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--m-green);
-}
-
-.today-reminder-note button {
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--m-fog-deep);
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
-}
-
-.today-reminder-note__muted { margin-left: auto; color: var(--m-faint); }
 
 /* Assistant message: conclusion first, no type labels ---------------------- */
 .ask-message {

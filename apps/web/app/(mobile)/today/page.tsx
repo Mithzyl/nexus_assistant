@@ -321,15 +321,8 @@ export default function TodayPage() {
         </div>
       ) : todayData.data ? (
         <>
-          <section className="today-reminder-note" aria-label="提醒设置">
-            {dueReminders.length === 0 ? <span>暂时没有到点的提醒。</span> : null}
-            <div className="action-row">
-              <Link href="/me/commute/bark" className="link-button">手机锁屏提醒</Link>
-              <Link href="/me/notifications" className="link-button">浏览器通知</Link>
-            </div>
-          </section>
           {dueReminders.length > 0 ? (
-            <section style={{ padding: "0 var(--m-gutter)" }}>
+            <section aria-label="到点提醒" style={{ padding: "0 var(--m-gutter)" }}>
               <SectionHeading title="到点提醒" />
               <div className="m-stack-10">
                 {dueReminders.map((reminder) => (

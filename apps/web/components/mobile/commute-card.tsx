@@ -11,7 +11,9 @@ import type { Advisory, CommutePlan } from "@/lib/mobile/api";
 import { ApiError } from "@/lib/mobile/api";
 import { formatDuration, formatServiceDate } from "@/lib/mobile/format";
 import { useApiResource } from "@/lib/mobile/use-api-resource";
-import { formatInTimeZone, serviceDateInTimeZone } from "@/lib/mobile/commute-day";
+import {
+  addServiceDays, formatInTimeZone, localTimeInTimeZone, serviceDateInTimeZone, serviceWeekday,
+} from "@/lib/mobile/commute-day";
 import { advisoryApplicability } from "@/lib/mobile/advisory";
 import { useAuth } from "./providers";
 import { LoginLink } from "./ui";
@@ -38,13 +40,14 @@ function weatherText(advisory: Advisory): string {
   const weather = advisory.weather;
   if (!weather) return "天气数据暂缺";
   const bits: string[] = [];
-  if (weather.temperature_c !== null) bits.push(`${Math.round(weather.temperature_c)}°C`);
+  if (weather.temperature_c !== null) bits.push(`${Math.round(weather.temperature_c)}℃`);
   if (weather.precipitation_probability_known && weather.precipitation_probability_max !== null) {
     bits.push(`降雨概率 ${Math.round(weather.precipitation_probability_max * 100)}%`);
   }
   return bits.length > 0 ? bits.join(" · ") : "天气数据暂缺";
 }
 
+/** Show the first commute plan and distinguish a finished day from advice that needs refreshing. */
 export function TodayCommuteCard() {
   const { state } = useAuth();
   const signedIn = state === "signedIn";
@@ -62,25 +65,36 @@ export function TodayCommuteCard() {
     advisory.error instanceof ApiError &&
     (advisory.error.status === 404 || advisory.error.code === "NO_ADVISORY");
   const data = advisory.data;
-  const applicability =
-    data && plan ? advisoryApplicability(data, plan.revision) : null;
-  const current = applicability?.applicable ? data : null;
-  const departure = current && plan ? formatInTimeZone(current.recommended_departure_at, plan.timezone, false) : "";
-  const today = plan ? serviceDateInTimeZone(new Date(), plan.timezone) : "";
-  const tomorrow = today ? new Date(Date.parse(today) + 86_400_000).toISOString().slice(0, 10) : "";
-  const adviceDate = data ? formatServiceDate(data.local_service_date).split(" ")[0] : "";
-  const departureTitle = !departure ? "还没有建议出发时间"
-    : current?.local_service_date === tomorrow ? `${departure < "12:00" ? "明早" : "明天"} ${departure} 出发`
-    : current?.local_service_date !== today ? `${adviceDate} 建议 ${departure} 出发`
+  const advisoryPending = advisory.loading || (!data && !advisory.error);
+  const now = new Date();
+  const timestamp = now.getTime();
+  const today = plan ? serviceDateInTimeZone(now, plan.timezone) : "";
+  const scheduledToday = plan && plan.enabled && plan.weekdays.includes(serviceWeekday(today))
+    && (!plan.effective_from || plan.effective_from <= today);
+  // A matching advisory may carry a one-day arrival override even after its route expires.
+  const todayAdvice = data && plan && data.local_service_date === today && data.plan_revision === plan.revision
+    ? data : null;
+  const targetTimestamp = todayAdvice ? Date.parse(todayAdvice.target_arrival_at) : NaN;
+  const todayPassed = plan && scheduledToday && (Number.isFinite(targetTimestamp)
+    ? targetTimestamp <= timestamp
+    : localTimeInTimeZone(now, plan.timezone) >= plan.arrival_local_time);
+  const departure = data && plan ? formatInTimeZone(data.recommended_departure_at, plan.timezone, false) : "";
+  const current = plan?.enabled && data && !advisory.error && departure && data.local_service_date >= today
+    && Date.parse(data.target_arrival_at) > timestamp && !(Date.parse(data.expires_at) <= timestamp)
+    && advisoryApplicability(data, plan.revision, timestamp).applicable ? data : null;
+
+  const adviceDate = current?.local_service_date;
+  const departureTitle = adviceDate === addServiceDays(today, 1) ? `${departure < "12:00" ? "明早" : "明天"} ${departure} 出发`
+    : adviceDate && adviceDate !== today ? `${formatServiceDate(adviceDate).split(" ")[0]} 建议 ${departure} 出发`
     : `建议 ${departure} 出发`;
-  const inactiveTitle = {
-    changed: "通勤设置改了，需要重新查路线",
-    expired: "上次的路线已经过期了",
-    history: `这是 ${adviceDate} 的路线`,
-    unavailable: "这次没查到路线",
-    current: "",
-  };
-  const target = current && plan ? formatInTimeZone(current.target_arrival_at, plan.timezone, false) : "";
+  const needsRoute = !current && scheduledToday && !todayPassed;
+  const readError = needsRoute && advisory.error && !noAdvisory;
+  const inactiveTitle = !plan?.enabled ? "通勤计划已停用"
+    : todayPassed ? "今天的通勤时间已过"
+    : !scheduledToday ? "今天没有通勤安排"
+    : readError ? "路线没加载出来" : "暂无最新路线";
+  const detailDate = adviceDate || (needsRoute ? today : null);
+  const target = plan ? formatInTimeZone((current ?? todayAdvice)?.target_arrival_at, plan.timezone, false) : "";
   const eta = current?.ai_analysis?.used_duration_seconds ?? current?.eta_seconds ?? null;
   const arrival = current && plan ? timeAfter(current.recommended_departure_at, eta, plan.timezone) : "";
   const resultBits: string[] = [];
@@ -95,11 +109,6 @@ export function TodayCommuteCard() {
             <CloudSun size={15} strokeWidth={1.5} aria-hidden="true" />
             {plan?.name || "通勤"}
           </span>
-          {signedIn && plan ? (
-            <Link href={`/me/commute/${plan.id}`} className="today-commute__head-link">
-              详情
-            </Link>
-          ) : null}
         </div>
 
         {state === "loading" ? (
@@ -146,7 +155,7 @@ export function TodayCommuteCard() {
           <>
             <div className="today-commute__work">
               <span>到达</span>
-              <b>{current ? target || plan.arrival_local_time : plan.arrival_local_time}</b>
+              <b>{target || plan.arrival_local_time}</b>
               <span className="today-commute__plan-meta">
                 {weekdayText(plan.weekdays)} · {commuteModeLabel(plan.transport_mode)}
               </span>
@@ -160,11 +169,11 @@ export function TodayCommuteCard() {
               <div>出发地：{plan.origin.label}<br />目的地：{plan.destination.label}</div>
             </details>
 
-            {advisory.loading ? (
+            {advisoryPending ? (
               <p className="today-commute__body">正在读取通勤建议…</p>
             ) : null}
 
-            {!advisory.loading && current ? (
+            {!advisoryPending && current ? (
               <>
                 <p className="today-commute__time">{departureTitle}</p>
                 {resultBits.length > 0 ? (
@@ -175,50 +184,23 @@ export function TodayCommuteCard() {
                   <span>{weatherText(current)}</span>
                 </p>
                 <p className="today-commute__note">按常规路况估算的。</p>
-                <div className="today-commute__foot">
-                  <Link href={`/me/commute/${plan.id}`} className="today-commute__link">
-                    查看通勤详情
-                  </Link>
-                  <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
-                    调整计划
-                  </Link>
-                </div>
               </>
             ) : null}
 
-            {!advisory.loading && !current && applicability ? (
+            {!advisoryPending ? (
               <>
-                <p className="today-commute__title">{inactiveTitle[applicability.reason]}</p>
+                {!current ? <p className="today-commute__title">{inactiveTitle}</p> : null}
                 <div className="today-commute__foot">
-                  <Link href={`/me/commute/${plan.id}`} className="today-commute__link">
-                    去查路线
-                  </Link>
-                  <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
-                    调整计划
-                  </Link>
-                </div>
-              </>
-            ) : null}
-
-            {!advisory.loading && !current && !applicability && noAdvisory ? (
-              <>
-                <p className="today-commute__title">还没查过路线</p>
-                <div className="today-commute__foot">
-                  <Link href={`/me/commute/${plan.id}`} className="today-commute__link">
-                    去查路线
-                  </Link>
-                  <Link href="/me/commute" className="today-commute__link today-commute__link--muted">
-                    调整计划
-                  </Link>
-                </div>
-              </>
-            ) : null}
-
-            {!advisory.loading && !current && !applicability && advisory.error && !noAdvisory ? (
-              <>
-                <p className="today-commute__title">路线没加载出来</p>
-                <div className="today-commute__foot">
-                  <button type="button" className="link-button" onClick={advisory.reload}>再试一次</button>
+                  {readError ? (
+                    <button type="button" className="link-button" onClick={advisory.reload}>再试一次</button>
+                  ) : (
+                    <Link
+                      href={`/me/commute/${plan.id}${detailDate ? `?service_date=${detailDate}` : ""}`}
+                      className="today-commute__link"
+                    >
+                      {needsRoute ? "去查路线" : "查看通勤"}
+                    </Link>
+                  )}
                 </div>
               </>
             ) : null}

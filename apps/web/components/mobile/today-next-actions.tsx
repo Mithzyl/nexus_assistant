@@ -22,16 +22,17 @@ const emptyMessage = {
 const todoReasons: Record<string, string> = {
   deadline_risk: "这件事可能来不及做完。可以先处理，或改个截止时间。",
   needs_deadline: "原先关联的日程已不可用。请重新设定截止时间。",
-  needs_duration: "填一下大概要多久，就能判断现在做不做得完。",
+  needs_duration: "",
   needs_availability: "还不知道你什么时候有空，暂时无法建议开始时间。",
   fits_window: "照预计耗时，现在可以做完。",
 };
 
-/** Use the server's recommendation state while retaining its warning about travel time. */
+/** Omit the duration prompt where there is no editor, while retaining travel warnings. */
 function recommendationReason(item: TodayAction): string {
   const label = item.kind === "todo" ? todoReasons[item.state] : undefined;
-  if (!label) return item.reason;
-  return item.reason.includes("上述判断不含出行") ? `${label} 路上的时间另算。` : label;
+  if (label === undefined) return item.reason;
+  const travelWarning = item.reason.includes("上述判断不含出行") ? "路上的时间另算。" : "";
+  return [label, travelWarning].filter(Boolean).join(" ");
 }
 
 /** Keep the recommendation independent of the Today timeline and discard cancelled reads. */
@@ -121,11 +122,12 @@ export function TodayNextActions({ onReschedule, onCapture, unfinishedScheduleHr
       : null;
     const disabled = pending || retry.current !== null || error !== null;
     const canComplete = item.actions.includes("complete") && item.kind === "todo";
+    const reason = recommendationReason(item);
     return (
       <div className="card card--tight" key={`${item.kind}:${item.record_id}`}>
         <p className="card-title">{item.state === "departure_due" ? "现在该出发 · " : ""}{item.title}</p>
         {label ? <p className="caption">建议出发 {label}{item.destination ? ` · ${item.destination}` : ""}</p> : null}
-        <p className="caption">{recommendationReason(item)}</p>
+        {reason ? <p className="caption">{reason}</p> : null}
         {canComplete || item.actions.includes("reschedule") ? (
           <div className="action-row">
             {canComplete ? (
