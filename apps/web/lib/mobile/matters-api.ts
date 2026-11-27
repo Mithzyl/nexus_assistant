@@ -9,6 +9,7 @@ import {
   type DraftConfirmResponse,
   type DraftPatchInput,
   type FollowUpExecutionRead,
+  type EmbeddedCard,
   type FollowUpPatchInput,
   type FollowUpRead,
   type InitialDeleteResponse,
@@ -57,6 +58,11 @@ export function listMatters(
 
 export function getMatter(matterId: string, signal?: AbortSignal): Promise<MatterDetail> {
   return apiRequest<MatterDetail>(pa(`/matters/${id(matterId)}`), { signal });
+}
+
+/** Read the latest progress card separately from individual follow-up executions. */
+export function getMatterProgressCard(matterId: string): Promise<{ version: number; card: EmbeddedCard | null }> {
+  return apiRequest(pa(`/matters/${id(matterId)}/progress-card`));
 }
 
 export function listMatterChanges(

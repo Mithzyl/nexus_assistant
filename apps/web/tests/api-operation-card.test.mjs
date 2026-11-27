@@ -22,6 +22,7 @@ function loadTypeScriptModule(url) {
   const module = { exports: {} };
   const factory = runInNewContext(`(function(require, module, exports) { ${outputText}\n})`, {}, { filename });
   factory((name) => {
+    if (name === "./amap-map") return { AmapMapCanvas: () => null };
     if (name.endsWith(".module.css")) return { default: {} };
     if (name === "@/lib/mobile/format") return loadTypeScriptModule(new URL("../lib/mobile/format.ts", import.meta.url));
     return require(name);
@@ -74,4 +75,49 @@ test("failed final answers only offer editing after confirmed non-write", () => 
     assert.equal(html.includes("创建评审日程"), state !== "not_applied");
     assert.equal(html.includes("查一下结果"), state === "uncertain");
   }
+});
+
+/** Render route text and its default icon when a saved measurement lacks geometry. */
+test("route without shape or picture is readable with no map action", () => {
+  const card = {
+    card_type: "timeline_route", kind: "info", status: "info", title: "当天怎么走",
+    blocks: [{ type: "timeline", items: [{ title: "步行 8 分钟到中山路站" }] }],
+  };
+  const html = renderToStaticMarkup(createElement(ApiOperationCard, { context: { cards: [card] } }));
+  assert.match(html, /步行 8 分钟到中山路站/);
+  assert.match(html, /<svg/);
+  assert.doesNotMatch(html, /查看路线地图/);
+});
+
+/** Render populated progress groups and one nested route, even without media. */
+test("progress renders current sections and its single text time line", () => {
+  const card = {
+    card_type: "long_task_progress", kind: "info", status: "info", title: "搬家进展", blocks: [],
+    payload: {
+      latest_changes: ["车队可在周五到场"], next_decisions: ["选择上午或下午"],
+      embedded_card: { card_type: "timeline_route", title: "搬家步骤",
+        blocks: [{ type: "timeline", items: [{ title: "整理书箱" }] }] },
+    },
+  };
+  const html = renderToStaticMarkup(createElement(ApiOperationCard, { context: { cards: [card] } }));
+  assert.match(html, /新变化.*车队可在周五到场/);
+  assert.match(html, /等你拍板.*选择上午或下午/);
+  assert.match(html, /搬家步骤.*整理书箱/);
+  assert.doesNotMatch(html, /正在关注/);
+});
+
+/** Render a location-only initial group and leave other group details hidden until selected. */
+test("map lists groups and falls back to text when the selected group has no points", () => {
+  const group = (group_id, label, title, distance_meters) => ({
+    group_id, label, distance_meters, shape: { segments: [] }, markers: [],
+    blocks: [{ type: "timeline", items: [{ title }] }],
+  });
+  const card = { kind: "info", status: "info", title: "周末路线", card_type: "multi_route_map", blocks: [],
+    payload: { groups: [group("0","周六","中山路站", null), group("1","周日","柳江公园", 900)] } };
+  const html = renderToStaticMarkup(createElement(ApiOperationCard, { context: { cards: [card] } }));
+  assert.match(html, /aria-pressed="true"/);
+  assert.match(html, /0.9 公里/);
+  assert.match(html, /中山路站/);
+  assert.doesNotMatch(html, /柳江公园/);
+  assert.doesNotMatch(html, /地图仅标出已知地点/);
 });

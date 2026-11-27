@@ -29,6 +29,7 @@ import {
   createTodo,
   deleteMatter,
   getMatter,
+  getMatterProgressCard,
   getToday,
   initialDeleteMatter,
   intakeMatterProgress,
@@ -54,7 +55,7 @@ import {
 } from "@/lib/mobile/matter-draft.mjs";
 import { useAuth, useUI } from "./providers";
 import { MatterDraftSheet } from "./matter-draft-sheet";
-import { ApiOperationCard } from "./api-operation-card";
+import { ApiOperationCard, EmbeddedResponseCard } from "./api-operation-card";
 import { MatterFollowUps } from "./matter-follow-ups";
 import { MatterSupplementComposer } from "./matter-supplement-composer";
 import { MatterSupplementReplySheet } from "./matter-supplement-reply-sheet";
@@ -189,6 +190,8 @@ export function MatterRealDetail({ id }: { id: string }) {
   const [nextStep, setNextStep] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
+  const [progressCard, setProgressCard] = useState<Awaited<ReturnType<typeof getMatterProgressCard>>["card"]>(null);
+  const [editingProgressCard, setEditingProgressCard] = useState(false);
   const [progressError, setProgressError] = useState<string | null>(null);
   const [progressPendingContext, setProgressPendingContext] =
     useState<IntakePendingContext>({});
@@ -243,11 +246,13 @@ export function MatterRealDetail({ id }: { id: string }) {
     setError(null);
     setChangesLoading(true);
     setChangesError(null);
-    const [matterResult, changesResult, supplementsResult] = await Promise.allSettled([
+    const [matterResult, changesResult, supplementsResult, progressResult] = await Promise.allSettled([
       getMatter(id),
       listMatterChanges(id),
       listMatterSupplements(id),
+      getMatterProgressCard(id),
     ]);
+    setProgressCard(progressResult.status === "fulfilled" ? progressResult.value.card : null);
     if (matterResult.status === "fulfilled") {
       setMatter(matterResult.value);
     } else {
@@ -429,7 +434,8 @@ export function MatterRealDetail({ id }: { id: string }) {
   };
 
   /** Open the change-arrangement sheet with a clean operation history. */
-  const openChange = () => {
+  const openChange = (adjustProgress = false) => {
+    setEditingProgressCard(adjustProgress);
     setProgressError(null);
     setProgressPendingContext({});
     setProgressContinuationRunId(null);
@@ -474,7 +480,7 @@ export function MatterRealDetail({ id }: { id: string }) {
         setProgressPendingContext({});
         progressOperation.current = null;
         setProgressAnswer({ question: text, result });
-        if (result.pending_context?.execution_result) await load();
+        if (result.pending_context?.execution_result || editingProgressCard) await load();
         return;
       }
       if (result.draft) {
@@ -770,7 +776,7 @@ export function MatterRealDetail({ id }: { id: string }) {
       fallbackHref="/matters"
       action={
         <div className="matter-heading-actions">
-          <button type="button" className="link-button" onClick={openChange}>
+          <button type="button" className="link-button" onClick={() => openChange()}>
             改变安排
           </button>
           <button
@@ -803,6 +809,12 @@ export function MatterRealDetail({ id }: { id: string }) {
             </>
           ) : null}
         </section>
+
+        {progressCard?.card_type === "long_task_progress" ? (
+          <EmbeddedResponseCard card={progressCard} onAdjust={matter.status === "active" || matter.status === "waiting" ? () => openChange(true) : undefined} />
+        ) : null}
+
+        <Link className="link-button" href={`/me/attachments?matter=${encodeURIComponent(matter.matter_id)}`}>事项图片</Link>
 
         <div className="matter-detail-layout">
           <div className="matter-detail-main">
@@ -1122,7 +1134,7 @@ export function MatterRealDetail({ id }: { id: string }) {
                 type="button"
                 className="btn btn--secondary"
                 style={{ width: "100%", marginTop: 10 }}
-                onClick={openChange}
+                onClick={() => openChange()}
               >
                 改变安排
               </button>
@@ -1170,7 +1182,9 @@ export function MatterRealDetail({ id }: { id: string }) {
       <ProgressSheet
         open={progressOpen}
         title={matter.title}
-        note="说清楚要改哪一场、改成什么，助手会直接执行并返回结果。"
+        heading={editingProgressCard ? "调整进度卡" : "改变安排"}
+        initialText={editingProgressCard && progressCard ? `请更新本事项的「${progressCard.title}」进度卡：` : ""}
+        note={editingProgressCard ? "告诉助手哪些进展需要更新。" : "说清楚要改哪一场、改成什么，助手会直接执行并返回结果。"}
         stayOpenOnSubmit
         busy={busy === "progress"}
         error={progressError}
@@ -1192,7 +1206,7 @@ export function MatterRealDetail({ id }: { id: string }) {
             );
           },
         }))]}
-        submitLabel="改变安排"
+        submitLabel={editingProgressCard ? "交给助手" : "改变安排"}
         onClose={() => {
           setProgressOpen(false);
           setProgressError(null);
@@ -1402,6 +1416,9 @@ export function MatterRealDetail({ id }: { id: string }) {
               </p>
             </div>
             <ApiOperationCard context={progressAnswer.result.pending_context ?? {}} />
+            {progressAnswer.result.pending_context?.progress_card_status === "version_changed" ? (
+              <p className="caption" role="status">进度已更新，请查看最新内容。</p>
+            ) : null}
             <button
               type="button"
               className="btn btn--primary"

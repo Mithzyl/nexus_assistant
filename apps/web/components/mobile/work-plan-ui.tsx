@@ -101,6 +101,7 @@ export function ConflictSheet({
   );
 }
 
+/** Collect a scoped change or progress-card adjustment without submitting a prefill. */
 export function ProgressSheet({
   open,
   title,
@@ -111,6 +112,8 @@ export function ProgressSheet({
   busy = false,
   error = null,
   submitLabel = "保存进展到预览",
+  heading = "改变安排",
+  initialText = "",
   choices = [],
 }: {
   open: boolean;
@@ -122,6 +125,8 @@ export function ProgressSheet({
   busy?: boolean;
   error?: string | null;
   submitLabel?: string;
+  heading?: string;
+  initialText?: string;
   choices?: Array<{
     id: string;
     title: string;
@@ -131,10 +136,10 @@ export function ProgressSheet({
 }) {
   const [text, setText] = useState("");
   useEffect(() => {
-    if (open) setText("");
-  }, [open]);
+    if (open) setText(initialText);
+  }, [open, initialText]);
   return (
-    <Sheet title="改变安排" open={open} onClose={onClose}>
+    <Sheet title={heading} open={open} onClose={onClose}>
       <div className="m-stack-12">
         <p className="caption" style={{ margin: 0 }}>
           {title} · {note}
@@ -176,7 +181,7 @@ export function ProgressSheet({
         <button
           type="button"
           className="btn btn--primary"
-          disabled={!text.trim() || busy}
+          disabled={!text.trim() || text.trim() === initialText.trim() || busy}
           onClick={() => {
             if (!text.trim()) return;
             onSubmit(text);

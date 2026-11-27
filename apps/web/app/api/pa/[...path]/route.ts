@@ -20,6 +20,7 @@ const ALLOWED_ROOTS = new Set([
   "memory",
   "data-sources",
   "content",
+  "image-attachments",
   "commute-plans",
   "checks",
   "advisories",
@@ -82,9 +83,15 @@ async function proxy(request: NextRequest, segments: string[]) {
   }
 
   const method = request.method.toUpperCase();
-  let body: ArrayBuffer | undefined;
-  if (!["GET", "HEAD"].includes(method)) {
-    body = await request.arrayBuffer();
+  const isImageUpload = method === "POST" && segments.length === 1 && segments[0] === "image-attachments";
+  const requestBody: RequestInit & { duplex?: "half" } = {};
+  if (isImageUpload && request.body) {
+    const matterId = request.headers.get("x-matter-id");
+    if (matterId) headers["x-matter-id"] = matterId;
+    requestBody.body = request.body;
+    requestBody.duplex = "half";
+  } else if (!["GET", "HEAD"].includes(method)) {
+    requestBody.body = await request.arrayBuffer();
   }
 
   let upstream: Response;
@@ -92,7 +99,7 @@ async function proxy(request: NextRequest, segments: string[]) {
     upstream = await fetch(target, {
       method,
       headers,
-      body,
+      ...requestBody,
       cache: "no-store",
       redirect: "manual",
       signal: request.signal,
@@ -114,6 +121,13 @@ async function proxy(request: NextRequest, segments: string[]) {
   const retryAfter = upstream.headers.get("retry-after");
   if (retryAfter) responseHeaders.set("Retry-After", retryAfter);
   responseHeaders.set("Cache-Control", "no-store");
+  if (segments[0] === "image-attachments") {
+    for (const name of ["cache-control", "content-disposition", "content-security-policy",
+      "cross-origin-resource-policy", "x-content-type-options"]) {
+      const value = upstream.headers.get(name);
+      if (value) responseHeaders.set(name, value);
+    }
+  }
   if (method === "HEAD") {
     return new Response(null, { status: upstream.status, headers: responseHeaders });
   }

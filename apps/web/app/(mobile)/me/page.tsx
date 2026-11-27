@@ -10,6 +10,7 @@ import {
   CircleHelp,
   Database,
   FileText,
+  Image,
   FlaskConical,
   Lightbulb,
   Lock,
@@ -198,6 +199,8 @@ export default function MePage() {
             title="内容来源"
             detail="已同步的日历、提醒与笔记"
           />
+          <Row href="/me/attachments" icon={<Image size={14} strokeWidth={1.5} />} title="我的图片"
+            detail="上传图片，查看缩略图和原图" />
           <Row
             href="/me/sources/import"
             icon={<FileText size={14} strokeWidth={1.5} />}

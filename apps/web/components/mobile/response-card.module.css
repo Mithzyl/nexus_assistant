@@ -27,3 +27,110 @@
 .connector { margin: 0 0 0 26px; padding: 12px 0 12px 18px; border-left: 1px solid var(--m-line); color: var(--m-fog); font-size: 12px; }
 .link { display: inline-block; margin-top: 10px; color: var(--m-fog); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 420px) { .card { padding: 16px; } .thumbnail, .thumbnail img { width: 70px; } .thumbnail img { height: 76px; } .stop { padding: 13px; } }
+
+.routeIcon {
+  display: grid;
+  flex: 0 0 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--wash, #e9f0f3);
+  color: #38586b;
+}
+
+.progressGroup h4,
+.embedded h4 {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.progressGroup ul {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.embedded {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line, #dce4e8);
+  padding-top: 10px;
+}
+
+.routeTimeline {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.routeTimeline > li {
+  position: relative;
+}
+
+.routeTimeline > li:not(:last-child)::before {
+  position: absolute;
+  content: "";
+  inset: 36px auto -12px 17px;
+  border-left: 1px solid var(--m-line);
+}
+
+.routeTimeline .stop {
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+.routeDescription {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin: 6px 0 0 50px;
+  color: var(--m-fog);
+  font-size: 13px;
+}
+
+.routeTimeline .stopTitle h4 {
+  overflow-wrap: anywhere;
+}
+
+.progressGroup h4,
+.embedded > h4 {
+  font-weight: 650;
+}
+
+.routeGroups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.routeGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--m-line);
+  border-radius: 100px;
+  background: transparent;
+  padding: 5px 12px;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.routeGroup[aria-pressed="true"] {
+  border-color: currentColor;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  font-weight: 650;
+}
+
+.routeSwatch {
+  flex: 0 0 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}

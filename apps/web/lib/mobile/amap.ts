@@ -46,6 +46,10 @@ export interface AMapNamespace {
       center?: [number, number];
       zoom?: number;
       viewMode?: "2D" | "3D";
+      dragEnable?: boolean;
+      scrollWheel?: boolean;
+      touchZoom?: boolean;
+      keyboardEnable?: boolean;
     },
   ) => AMapMap;
   Marker: new (options: {

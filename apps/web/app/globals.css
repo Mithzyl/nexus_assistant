@@ -1675,8 +1675,8 @@ a {
 .place-map-marker--saved { background: var(--m-green); }
 .place-map-marker--origin { background: var(--m-fog-deep); }
 .place-map-marker--destination { background: var(--m-red); }
-.place-map-marker--origin > span,
-.place-map-marker--destination > span {
+.place-map-marker--origin > span:first-child,
+.place-map-marker--destination > span:first-child {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -3269,3 +3269,38 @@ details.commute-conclusion__meta { display: block; }
 
 /* 纠正/回答对话框里的原内容：过长时在卡片内滚动。 */
 .supplement-reply-context { max-height: 168px; overflow: auto; }
+
+.composer__image {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  height: 40px;
+  color: var(--m-fog);
+  border-radius: 10px;
+}
+
+.composer__image:hover,
+.composer__image:focus-visible {
+  background: var(--m-fog-soft);
+}
+
+.place-map-marker:has(.place-map-marker-label) {
+  position: relative;
+}
+
+.place-map-marker > .place-map-marker-label {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 128px;
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: #fffdf9;
+  color: #25424b;
+  box-shadow: 0 1px 4px #0003;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}

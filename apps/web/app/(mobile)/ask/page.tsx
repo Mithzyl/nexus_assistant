@@ -8,6 +8,7 @@ import {
   Cloud,
   CheckCircle2,
   Copy,
+  ImagePlus,
   WifiOff,
   XCircle,
 } from "lucide-react";
@@ -1298,6 +1299,9 @@ function AccountAskPage() {
       ) : null}
 
       <div className="composer">
+        {state === "signedIn" ? <Link href="/me/attachments" className="composer__image" aria-label="上传图片">
+          <ImagePlus size={20} />
+        </Link> : null}
         <textarea
           ref={inputRef}
           className="composer__field"

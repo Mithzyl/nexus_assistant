@@ -202,6 +202,7 @@ export interface CommuteDayState {
   arrival_local_time: string;
   schedule?: MatterSchedule | null;
   route?: RouteEstimate | null;
+  timeline_card?: EmbeddedCard | null;
   applied?: boolean | null;
   replayed?: boolean | null;
   change_id?: string | null;
@@ -445,6 +446,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
+  rawBody?: Blob;
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
@@ -463,7 +465,7 @@ export async function apiRequest<T>(
       ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(options.headers || {}),
     },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.rawBody ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
     credentials: "same-origin",
     cache: "no-store",
     signal: options.signal,
@@ -1021,13 +1023,39 @@ export type ResponseBlock =
   | { type: "fields"; items: ResponseField[] }
   | ({ type: "image" } & ResponseImage)
   | { type: "timeline"; items: ResponseTimelineItem[] };
+export interface MapRouteGroup {
+  group_id: string;
+  label: string;
+  distance_meters: number | null;
+  shape: RouteShape;
+  markers: Array<RoutePoint & { label: string; coordinate_system: RouteSegment["coordinate_system"] }>;
+  blocks: ResponseBlock[];
+}
+
 export interface EmbeddedCard {
   kind: "result" | "plan" | "info"; title: string; subtitle?: string;
   status: "completed" | "failed" | "unknown" | "suggestion" | "info";
   blocks: ResponseBlock[];
+  card_id?: string;
+  card_type?: "timeline_route" | "long_task_progress" | "multi_route_map";
+  version?: number;
+  updated_at?: string;
+  payload?: {
+    shape?: RouteShape;
+    groups?: MapRouteGroup[];
+    origin?: RouteEndpoint;
+    destination?: RouteEndpoint;
+    detail_href?: string;
+    completed_items?: string[];
+    watching_items?: string[];
+    latest_changes?: string[];
+    next_decisions?: string[];
+    embedded_card?: EmbeddedCard | null;
+  };
 }
 
 export interface IntakePendingContext {
+  progress_card_status?: "saved" | "unchanged" | "version_changed" | "matter_unavailable" | "references_changed";
   write_state?: "applied" | "not_applied" | "uncertain";
   applied_receipts?: { operation_id: string; summary: string }[];
   /** An explicit empty array suppresses cards; older responses without a list may display their execution receipt. */
@@ -1267,7 +1295,7 @@ export interface RouteEndpoint extends RoutePoint {
 }
 
 export interface RouteSegment {
-  kind: "driving" | "walking" | "transit";
+  kind: CommuteTransportMode;
   label: string | null;
   coordinate_system: "gcj02" | "wgs84" | "unknown";
   points: RoutePoint[];

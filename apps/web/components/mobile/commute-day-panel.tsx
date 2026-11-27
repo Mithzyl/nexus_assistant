@@ -26,6 +26,7 @@ import { formatDuration } from "@/lib/mobile/format";
 import { conflictReasonText } from "@/lib/mobile/matter-draft.mjs";
 import { newOperationKey } from "@/lib/mobile/matters-api";
 import { Pill } from "./ui";
+import { EmbeddedResponseCard } from "./api-operation-card";
 
 const STATUS_LABEL: Record<CommuteDayState["status"], string> = {
   upcoming: "待出发",
@@ -278,7 +279,7 @@ export function CommuteDayPanel({
                   : "这一天还没排"}
               </b>
             </div>
-            <div className="commute-config__row">
+            {!day.timeline_card ? <div className="commute-config__row">
               <span>路线</span>
               <b>
                 {day.route?.status === "available"
@@ -291,8 +292,9 @@ export function CommuteDayPanel({
                     ? "暂时算不出"
                     : "还没测算"}
               </b>
-            </div>
+            </div> : null}
           </div>
+          {day.timeline_card ? <EmbeddedResponseCard card={day.timeline_card} /> : null}
 
           {conflict ? (
             <div className="notice notice--amber">

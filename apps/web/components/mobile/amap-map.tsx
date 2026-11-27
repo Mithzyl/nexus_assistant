@@ -20,20 +20,23 @@ export interface AmapPoint extends MapEndpoint {
 }
 
 export interface AmapRouteSegment {
-  kind: "driving" | "walking" | "transit";
+  kind: "driving" | "walking" | "transit" | "bicycling" | "electrobike";
   label: string | null;
   coordinateSystem: "gcj02" | "wgs84" | "unknown";
   points: Array<{ latitude: number; longitude: number }>;
 }
 
 /** Build the small HTML marker used for candidates and route endpoints. */
-function markerContent(point: AmapPoint, index: number): string {
+function markerContent(point: AmapPoint, index: number, showLabel: boolean): string {
   const selected = point.selected ? " place-map-marker--selected" : "";
   if (point.kind === "candidate") {
     return `<span class="place-map-marker place-map-marker--candidate${selected}" aria-hidden="true">${index + 1}</span>`;
   }
   const kind = point.kind === "destination" ? "end" : point.kind;
-  return `<span class="place-map-marker place-map-marker--${kind}${selected}" aria-hidden="true"><span></span></span>`;
+  const label = document.createElement("span");
+  label.className = "place-map-marker-label";
+  label.textContent = point.label;
+  return `<span class="place-map-marker place-map-marker--${kind}${selected}" aria-hidden="true"><span></span>${showLabel ? label.outerHTML : ""}</span>`;
 }
 
 /** Reserve extra map padding when a route sheet follows the bottom controls. */
@@ -53,6 +56,8 @@ export function AmapMapCanvas({
   purpose,
   pickMode = false,
   focusCenter = null,
+  routeColor,
+  passive = false,
   onPointSelect,
   onCenterChange,
   onStatusChange,
@@ -62,6 +67,8 @@ export function AmapMapCanvas({
   purpose: "candidate" | "route";
   pickMode?: boolean;
   focusCenter?: [number, number] | null;
+  routeColor?: string;
+  passive?: boolean;
   onPointSelect?: (point: AmapPoint) => void;
   onCenterChange?: (latitude: number, longitude: number) => void;
   onStatusChange?: (status: "loading" | "ready" | "error") => void;
@@ -119,6 +126,7 @@ export function AmapMapCanvas({
           center: initialCenter,
           zoom: 15,
           viewMode: "2D",
+          ...(passive ? { dragEnable: false, touchZoom: false, scrollWheel: false, keyboardEnable: false } : {}),
         });
         mapRef.current = map;
         setAmap(loaded);
@@ -141,7 +149,7 @@ export function AmapMapCanvas({
       mapRef.current?.destroy();
       mapRef.current = null;
     };
-  }, []);
+  }, [passive]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -198,7 +206,7 @@ export function AmapMapCanvas({
             position: [point.longitude, point.latitude],
             title: point.label,
             anchor: point.kind === "destination" ? "bottom-center" : "center",
-            content: markerContent(point, index),
+            content: markerContent(point, index, passive),
             zIndex: point.selected ? 120 : 100,
           }),
       );
@@ -217,7 +225,7 @@ export function AmapMapCanvas({
             path: segment.points.map(
               (point) => [point.longitude, point.latitude] as [number, number],
             ),
-            strokeColor: walking ? "#3f7355" : segment.kind === "transit" ? "#9a6b2f" : "#3c5f73",
+            strokeColor: routeColor ?? (walking ? "#3f7355" : segment.kind === "transit" ? "#9a6b2f" : "#3c5f73"),
             strokeWeight: 6,
             strokeOpacity: 0.9,
             strokeStyle: walking ? "dashed" : "solid",
@@ -244,7 +252,7 @@ export function AmapMapCanvas({
     } else {
       map.setFitView(overlays, false, boundsPadding(purpose), 15);
     }
-  }, [amap, pickMode, points, purpose, routeSegments]);
+  }, [amap, passive, pickMode, points, purpose, routeColor, routeSegments]);
 
   return (
     <div className="amap-panel">
