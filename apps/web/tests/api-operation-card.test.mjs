@@ -23,6 +23,7 @@ function loadTypeScriptModule(url) {
   const factory = runInNewContext(`(function(require, module, exports) { ${outputText}\n})`, {}, { filename });
   factory((name) => {
     if (name === "./amap-map") return { AmapMapCanvas: () => null };
+    if (name === "./route-timeline" || name === "./response-fields") return loadTypeScriptModule(new URL(name + ".tsx", url));
     if (name.endsWith(".module.css")) return { default: {} };
     if (name === "@/lib/mobile/format") return loadTypeScriptModule(new URL("../lib/mobile/format.ts", import.meta.url));
     return require(name);
@@ -120,4 +121,43 @@ test("map lists groups and falls back to text when the selected group has no poi
   assert.match(html, /中山路站/);
   assert.doesNotMatch(html, /柳江公园/);
   assert.doesNotMatch(html, /地图仅标出已知地点/);
+});
+
+/** Keep legacy dated trips readable without migrating any saved fields. */
+test("dated travel history shows date, separate categories, overnight chips and bare transitions", () => {
+  const legacy = { kind: "plan", status: "suggestion", title: "周末出行", blocks: [{
+    type: "timeline", items: [
+      { title: "柳州到佛山", time: "12/26 周六", category: "出发", description: "抵达后逛岭南天地。宿禅城。" },
+      { title: "12/28 周一 · 佛山到中山", category: "转场+游玩", connector: "约一小时车程",
+        description: "参观孙中山故里；附近有宿舍。", fields: [
+          { label: "住宿地点", value: "中山" }, { label: "已订票", value: true },
+        ] },
+    ],
+  }] };
+  const html = renderToStaticMarkup(createElement(ApiOperationCard, { context: { cards: [legacy] } }));
+  assert.equal((html.match(/data-route-node/g) ?? []).length, 2);
+  assert.match(html, /data-weekend="true">12\/26 周六/);
+  assert.match(html, /data-weekend="false">12\/28 周一/);
+  assert.match(html, /data-route-transition="true"[\s\S]+?约一小时车程/);
+  assert.match(html, />转场<.*>游玩</);
+  assert.match(html, /住 禅城.*住 中山/);
+  assert.match(html, /附近有宿舍/);
+  assert.match(html, /已订票<\/dt><dd>是/);
+  assert.doesNotMatch(html, /宿禅城|<dt>住宿地点|12\/28 周一 ·/);
+});
+
+/** Legacy business timelines and untrusted image URLs must not pick up the itinerary treatment. */
+test("only recognized itineraries opt into new layout and trusted thumbnails", () => {
+  const card = { kind: "plan", status: "suggestion", title: "考勤历史", blocks: [{
+    type: "timeline", items: [{ title: "工作", time: "1/7" }, { title: "会议", time: "1/8" }],
+  }] };
+  assert.doesNotMatch(renderToStaticMarkup(createElement(ApiOperationCard, { context: { cards: [card] } })), /data-route-node/);
+  const explicit = { ...card, card_type: "timeline_route", blocks: [{ type: "timeline", items: [
+    { title: "游玩", image: { src: "https://unverified.invalid/photo.jpg", alt: "外部图片" } },
+    { title: "保存的图片", time: "12/28 周一 08:30", image: { src: "/image-attachments/example-id/original", alt: "行程资料" } },
+  ] }] };
+  const html = renderToStaticMarkup(createElement(ApiOperationCard, { context: { cards: [explicit] } }));
+  assert.doesNotMatch(html, /unverified.invalid/);
+  assert.match(html, /\/api\/pa\/image-attachments\/example-id\/thumbnail/);
+  assert.match(html, />08:30</);
 });

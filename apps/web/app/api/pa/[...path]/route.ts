@@ -21,6 +21,7 @@ const ALLOWED_ROOTS = new Set([
   "data-sources",
   "content",
   "image-attachments",
+  "markdown-attachments",
   "commute-plans",
   "checks",
   "advisories",
@@ -83,11 +84,14 @@ async function proxy(request: NextRequest, segments: string[]) {
   }
 
   const method = request.method.toUpperCase();
-  const isImageUpload = method === "POST" && segments.length === 1 && segments[0] === "image-attachments";
+  const isAttachmentUpload = method === "POST" && segments.length === 1 &&
+    ["image-attachments", "markdown-attachments"].includes(segments[0]);
   const requestBody: RequestInit & { duplex?: "half" } = {};
-  if (isImageUpload && request.body) {
+  if (isAttachmentUpload && request.body) {
     const matterId = request.headers.get("x-matter-id");
     if (matterId) headers["x-matter-id"] = matterId;
+    const filename = request.headers.get("x-attachment-filename");
+    if (segments[0] === "markdown-attachments" && filename) headers["x-attachment-filename"] = filename;
     requestBody.body = request.body;
     requestBody.duplex = "half";
   } else if (!["GET", "HEAD"].includes(method)) {
@@ -121,7 +125,7 @@ async function proxy(request: NextRequest, segments: string[]) {
   const retryAfter = upstream.headers.get("retry-after");
   if (retryAfter) responseHeaders.set("Retry-After", retryAfter);
   responseHeaders.set("Cache-Control", "no-store");
-  if (segments[0] === "image-attachments") {
+  if (["image-attachments", "markdown-attachments"].includes(segments[0])) {
     for (const name of ["cache-control", "content-disposition", "content-security-policy",
       "cross-origin-resource-policy", "x-content-type-options"]) {
       const value = upstream.headers.get(name);

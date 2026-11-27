@@ -1,3 +1,4 @@
+import type { InputAttachment } from "./input-attachments";
 import type { CommuteBundleState } from "@/components/mobile/commute-bundle-panel";
 /**
  * Browser-side PA client contract.
@@ -899,6 +900,7 @@ export interface DraftCommunication {
 }
 
 export interface DraftPayload {
+  attachments?: InputAttachment[];
   commute?: CommuteBundleState;
   commute_revision?: {status:string; target_arrival_at?:string; buffer_minutes?:number; route?:RouteEstimate};
   commute_plan_cancellations?: {plan_id:string;name:string;revision:number}[];
@@ -1055,6 +1057,9 @@ export interface EmbeddedCard {
 }
 
 export interface IntakePendingContext {
+  attachments?: InputAttachment[];
+  attachment_notice?: string;
+  attachment_excerpt?: boolean;
   progress_card_status?: "saved" | "unchanged" | "version_changed" | "matter_unavailable" | "references_changed";
   write_state?: "applied" | "not_applied" | "uncertain";
   applied_receipts?: { operation_id: string; summary: string }[];

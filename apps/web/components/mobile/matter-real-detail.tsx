@@ -11,6 +11,7 @@ import type {
   MatterIntakeResponse,
   MatterChange,
   MatterDetail,
+  MatterDraft,
   MatterReminder,
   MatterSchedule,
   MatterSupplement,
@@ -58,6 +59,7 @@ import { MatterDraftSheet } from "./matter-draft-sheet";
 import { ApiOperationCard, EmbeddedResponseCard } from "./api-operation-card";
 import { MatterFollowUps } from "./matter-follow-ups";
 import { MatterSupplementComposer } from "./matter-supplement-composer";
+import { MatterAttachmentIntake } from "./matter-attachment-intake";
 import { MatterSupplementReplySheet } from "./matter-supplement-reply-sheet";
 import type { SupplementReplyTarget } from "./matter-supplement-reply-sheet";
 import { MatterSupplementList } from "./matter-supplement-list";
@@ -325,6 +327,12 @@ export function MatterRealDetail({ id }: { id: string }) {
       setSupplementLoadingMore(false);
     }
   };
+
+  /** Show a prepared attachment draft and pull the latest saved progress into this matter. */
+  const attachmentIntakeFinished = useCallback((result: { draft?: MatterDraft | null }) => {
+    if (result.draft) setEditingDraft(result.draft);
+    void load();
+  }, [load]);
 
   useEffect(() => {
     if (state !== "loading" && state !== "anonymous") void load();
@@ -815,6 +823,9 @@ export function MatterRealDetail({ id }: { id: string }) {
         ) : null}
 
         <Link className="link-button" href={`/me/attachments?matter=${encodeURIComponent(matter.matter_id)}`}>事项图片</Link>
+        {state === "signedIn" ? <MatterAttachmentIntake key={matter.matter_id} matterId={matter.matter_id}
+          canOrganize={matter.status === "active" || matter.status === "waiting"}
+          onFinished={attachmentIntakeFinished} /> : null}
 
         <div className="matter-detail-layout">
           <div className="matter-detail-main">

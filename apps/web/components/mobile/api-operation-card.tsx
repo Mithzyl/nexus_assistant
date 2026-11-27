@@ -2,25 +2,12 @@
 
 import { useId, useMemo, useState } from "react";
 import { Footprints, MapPin } from "lucide-react";
+import { isLegacyRouteItinerary, RouteTimeline } from "./route-timeline";
 import { AmapMapCanvas, type AmapPoint } from "./amap-map";
 import type { EmbeddedCard, MapRouteGroup, ResponseBlock, ResponseField, ResponseImage, IntakePendingContext } from "@/lib/mobile/api";
+import { Fields } from "./response-fields";
 import { formatDateTime } from "@/lib/mobile/format";
 import styles from "./response-card.module.css";
-
-/** Format a scalar according to the standard display hint rather than a business field name. */
-function displayValue(field: ResponseField): string {
-  if (field.value === null) return "未设置";
-  if (typeof field.value === "boolean") return field.value ? "是" : "否";
-  const value = String(field.value);
-  if (field.format === "datetime") return formatDateTime(value);
-  if (field.format === "number" && typeof field.value === "number") return new Intl.NumberFormat("zh-CN").format(field.value);
-  return value;
-}
-
-/** Render generic labels and values in their model-provided order. */
-function Fields({ items }: { items: ResponseField[] }) {
-  return <dl className={styles.fields}>{items.map((field, i) => <div key={i}><dt>{field.label}</dt><dd>{displayValue(field)}</dd></div>)}</dl>;
-}
 
 /** Show an image with an accessible description and a useful unavailable state. */
 function CardImage({ value, thumbnail = false }: { value: ResponseImage; thumbnail?: boolean }) {
@@ -35,12 +22,12 @@ function CardImage({ value, thumbnail = false }: { value: ResponseImage; thumbna
 }
 
 /** Render only the declared presentation primitives; cards cannot introduce executable UI. */
-function Block({ block, route = false }: { block: ResponseBlock; route?: boolean }) {
+function Block({ block, route = false, itinerary = false }: { block: ResponseBlock; route?: boolean; itinerary?: boolean }) {
   switch (block.type) {
     case "text": return <p className={styles.text}>{block.text}</p>;
     case "fields": return <Fields items={block.items} />;
     case "image": return <CardImage value={block} />;
-    case "timeline": return <ol className={route ? styles.routeTimeline : styles.timeline}>{block.items.map((item, i) => <li key={i}>
+    case "timeline": return itinerary ? <RouteTimeline items={block.items} /> : <ol className={route ? styles.routeTimeline : styles.timeline}>{block.items.map((item, i) => <li key={i}>
       {item.connector && i > 0 ? <p className={styles.connector}>{item.connector}</p> : null}
       <div className={styles.stop}>
         <div className={styles.stopHeading}>
@@ -149,7 +136,7 @@ function MatterProgressCard({ card, onAdjust }: { card: EmbeddedCard; onAdjust?:
       {embedded && (embedded.card_type === "timeline_route" || embedded.card_type === "multi_route_map") ? <div className={styles.embedded}>
         <h4>{embedded.title}</h4>
         {embedded.payload?.groups?.length ? <MultiRouteMap groups={embedded.payload.groups} /> : <>
-          {embedded.blocks.map((block, i) => <Block key={i} block={block} route />)}
+          {embedded.blocks.map((block, i) => <Block key={i} block={block} itinerary />)}
           <TimelineMap payload={embedded.payload} />
         </>}
       </div> : null}
@@ -161,19 +148,20 @@ function MatterProgressCard({ card, onAdjust }: { card: EmbeddedCard; onAdjust?:
 export function EmbeddedResponseCard({ card, onAdjust }: { card: EmbeddedCard; onAdjust?: () => void }) {
   if (card.card_type === "long_task_progress" && card.payload) return <MatterProgressCard card={card} onAdjust={onAdjust} />;
   const route = card.card_type === "timeline_route";
+  const itinerary = route || isLegacyRouteItinerary(card);
   const mapGroups = card.card_type === "multi_route_map" ? card.payload?.groups : undefined;
   const status = { completed: "已完成", failed: "未完成", unknown: "待核对", suggestion: "建议安排", info: "参考信息" }[card.status];
   const titleIncludesStatus = card.status === "completed" && /已完成|已保存|已创建|已更新|已取消|已删除/.test(card.title)
     || card.status === "failed" && /失败|未完成|没能/.test(card.title)
     || Boolean(status && card.title.includes(status));
-  return <article className={styles.card} aria-label={card.title} data-status={card.status}>
+  return <article className={itinerary ? styles.itineraryCard : styles.card} aria-label={card.title} data-status={card.status}>
     <header className={styles.header}>
       <h3>{card.title}</h3>
-      {!route && !mapGroups?.length && !titleIncludesStatus && (card.kind !== "result" || card.status !== "completed") ? <span className={styles.badge}>{status}</span> : null}
+      {!itinerary && !mapGroups?.length && !titleIncludesStatus && (card.kind !== "result" || card.status !== "completed") ? <span className={styles.badge}>{status}</span> : null}
     </header>
-    {card.subtitle ? <p className={styles.muted}>{card.subtitle}</p> : null}
+    {card.subtitle ? <p className={itinerary ? styles.itinerarySubtitle : styles.muted}>{card.subtitle}</p> : null}
     {mapGroups?.length ? <MultiRouteMap groups={mapGroups} /> : (
-      <div className={styles.blocks}>{card.blocks.map((block, i) => <Block key={i} block={block} route={route} />)}</div>
+      <div className={styles.blocks}>{card.blocks.map((block, i) => <Block key={i} block={block} itinerary={itinerary} />)}</div>
     )}
     {route ? <TimelineMap payload={card.payload} /> : null}
     {route && card.payload?.detail_href ? <a className={styles.link} href={card.payload.detail_href}>查看事项</a> : null}

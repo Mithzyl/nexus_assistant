@@ -1,5 +1,8 @@
 "use client";
 
+import { AttachmentPicker, AttachmentPreviews, SelectedAttachments, attachmentDropHandlers, useInputAttachments } from "@/components/mobile/input-attachments";
+import { sameAttachmentReferences, type AttachmentReference } from "@/lib/mobile/input-attachments";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -8,7 +11,6 @@ import {
   Cloud,
   CheckCircle2,
   Copy,
-  ImagePlus,
   WifiOff,
   XCircle,
 } from "lucide-react";
@@ -68,6 +70,7 @@ interface IntakeRequestKey {
   text: string;
   key: string;
   continuationRunId: string | null;
+  attachments?: AttachmentReference[];
   ignorePendingReply?: boolean;
   dismissedReplyRunId?: string | null;
 }
@@ -346,6 +349,8 @@ function AccountAskPage() {
   const restoredComposerKey = useRef<string | null>(null);
   const intakeAnswerStorageKey = accountKey("pa.web.intakeAnswers", user?.user_id ?? null);
   const composerStorageKey = accountKey("pa.web.ask.composer", user?.user_id ?? null);
+  const attachments = useInputAttachments(state === "signedIn" ? composerStorageKey + ".attachments" : null);
+  const clearAcceptedAttachments = attachments.clear;
   const intakeRequestStorageKey = accountKey("pa.web.ask.intakeRequest", user?.user_id ?? null);
   const dismissedReplyStorageKey = accountKey("pa.web.ask.ignorePendingReply", user?.user_id ?? null);
   const latestReply = serverIntakeResults.find((item) => item.reply_state === "awaiting_reply");
@@ -510,6 +515,7 @@ function AccountAskPage() {
             setRecoveryRunId(result.local_run_id);
             if (["answer", "needs_clarification", "draft"].includes(result.outcome)) {
               const submitted = intakeKey.current.text;
+              clearAcceptedAttachments(intakeKey.current.attachments ?? []);
               setDraft((value) => value.trim() === submitted ? "" : value);
               if (readSession<string>(composerStorageKey, "").trim() === submitted) writeSession(composerStorageKey, "");
               intakeKey.current = null;
@@ -548,10 +554,10 @@ function AccountAskPage() {
       controller.abort();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [composerStorageKey, dismissedReplyStorageKey, intakeRequestStorageKey, processing, refreshServerIntake, state, trackedKey]);
+  }, [clearAcceptedAttachments, composerStorageKey, dismissedReplyStorageKey, intakeRequestStorageKey, processing, refreshServerIntake, state, trackedKey]);
 
   const hasPendingCapture = serverIntakeResults.some(
-    (item) => item.entry_mode === "async_capture" && item.outcome === "processing",
+    (item) => item.outcome === "processing" && (item.entry_mode === "async_capture" || Boolean(item.pending_context?.attachments?.length)),
   );
   useEffect(() => {
     if (!hasPendingCapture || state !== "signedIn") return;
@@ -595,7 +601,7 @@ function AccountAskPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newest?.phase, newest?.answer]);
 
-  const canSend = draft.trim().length > 0 && state === "signedIn" && !processing && !recovering &&
+  const canSend = (draft.trim().length > 0 || Boolean(attachments.items.length)) && state === "signedIn" && !processing && !recovering &&
     !dismissingReply;
 
   /** Dismiss the displayed clarification and treat the next typed submission as a new request. */
@@ -638,7 +644,7 @@ function AccountAskPage() {
     const skipPendingReply = retry ? Boolean(retry.ignorePendingReply) : !activeContinuation && ignorePendingReply;
     const dismissedReplyRunId = retry ? retry.dismissedReplyRunId
       : skipPendingReply && typeof dismissedReply === "string" ? dismissedReply : null;
-    if (!value || processing || recovering || dismissingReply) return;
+    if ((!value && !attachments.items.length) || processing || recovering || dismissingReply) return;
     if (state !== "signedIn") {
       setComposerError("登录后就能交给助手，内容先留着。");
       return;
@@ -656,26 +662,29 @@ function AccountAskPage() {
     setLiveTurn({ question: value, answer: "" });
     setDraft(original);
     writeSession(composerStorageKey, original);
-    if (
-      !intakeKey.current ||
-      intakeKey.current.text !== value ||
-      intakeKey.current.continuationRunId !== activeContinuation ||
-      Boolean(intakeKey.current.ignorePendingReply) !== skipPendingReply ||
-      (intakeKey.current.dismissedReplyRunId ?? null) !== (dismissedReplyRunId ?? null)
-    ) {
-      intakeKey.current = {
-        text: value,
-        key: newOperationKey("web-intake"),
-        continuationRunId: activeContinuation,
-        ignorePendingReply: skipPendingReply,
-        dismissedReplyRunId,
-      };
-    }
-    const requestKey = intakeKey.current;
-    setTrackedResult(null);
-    setTrackedKey(requestKey.key);
-    writeSession(intakeRequestStorageKey, requestKey);
     try {
+      const refs = text === undefined ? await attachments.upload() : [];
+      if (
+        !intakeKey.current ||
+        intakeKey.current.text !== value ||
+        !sameAttachmentReferences(intakeKey.current.attachments, refs) ||
+        intakeKey.current.continuationRunId !== activeContinuation ||
+        Boolean(intakeKey.current.ignorePendingReply) !== skipPendingReply ||
+        (intakeKey.current.dismissedReplyRunId ?? null) !== (dismissedReplyRunId ?? null)
+      ) {
+        intakeKey.current = {
+          text: value,
+          attachments: refs,
+          key: newOperationKey("web-intake"),
+          continuationRunId: activeContinuation,
+          ignorePendingReply: skipPendingReply,
+          dismissedReplyRunId,
+        };
+      }
+      const requestKey = intakeKey.current;
+      setTrackedResult(null);
+      setTrackedKey(requestKey.key);
+      writeSession(intakeRequestStorageKey, requestKey);
       const result = await streamIntakeMatter(
         value,
         requestKey.key,
@@ -684,6 +693,7 @@ function AccountAskPage() {
         (answer) => setLiveTurn({ question: value, answer }),
         skipPendingReply,
         dismissedReplyRunId,
+        refs,
       );
       if (
         (result.outcome === "answer" && result.answer) ||
@@ -696,6 +706,7 @@ function AccountAskPage() {
         }
         setTrackedKey(null);
         setTrackedResult(null);
+        clearAcceptedAttachments(refs);
         if (linkedReply) {
           setLinkedReply(null);
           window.history.replaceState(window.history.state, "", "/ask");
@@ -753,6 +764,10 @@ function AccountAskPage() {
         void refreshServerIntake();
         return;
       }
+      if (result.outcome === "processing" && refs.length) {
+        void refreshServerIntake();
+        return;
+      }
       if (result.outcome === "processing" || result.outcome === "unknown") {
         setOperationFailure(
           "结果待确认，请稍后查询。",
@@ -804,7 +819,7 @@ function AccountAskPage() {
       setLiveTurn(null);
     }
   }, [
-    activeReplyRunId, composerStorageKey, dismissingReply, dismissedReply, dismissedReplyStorageKey, draft,
+    activeReplyRunId, attachments, clearAcceptedAttachments, composerStorageKey, dismissingReply, dismissedReply, dismissedReplyStorageKey, draft,
     expiresAt, ignorePendingReply, intakeRequestStorageKey, linkedReply, processing, recovering,
     refreshServerIntake, selectedMemories, state, toast,
   ]);
@@ -863,7 +878,8 @@ function AccountAskPage() {
   const unifiedHistory = mergeIntakeHistory(
     serverIntakeResults.filter((item) => !(liveTurn && trackedResult?.local_run_id === item.local_run_id && item.outcome === "processing"))
       .map((item) => trackedResult?.local_run_id === item.local_run_id && item.outcome === "processing" ? trackedResult : item)
-      .filter((item) => item.outcome !== "draft" || item.confirm_status === "confirmed" || (item.target_lifecycle && item.target_lifecycle !== "active")),
+      .filter((item) => item.outcome !== "draft" || item.confirm_status === "confirmed" ||
+        Boolean(item.pending_context?.attachments?.length) || (item.target_lifecycle && item.target_lifecycle !== "active")),
     intakeAnswers,
   );
 
@@ -995,7 +1011,7 @@ function AccountAskPage() {
             const isFollowUp = source === "follow_up";
             return (
             <div key={key} ref={!liveTurn && index === unifiedHistory.length - 1 ? latestIntakeRef : undefined}>
-              {isFollowUp ? null : <div className="bubble-user">{question}</div>}
+              {isFollowUp || !question ? null : <div className="bubble-user">{question}</div>}
               <div className={`card ask-message mt-10${isFailure ? " ask-message--failed" : ""}`}>
                 <div className="ask-message__meta">
                   {!isFailure && outcome === "answer" ? (
@@ -1025,6 +1041,9 @@ function AccountAskPage() {
                     </div>
                   ) : null}
 
+                  <AttachmentPreviews attachments={pendingContext?.attachments} />
+                  {pendingContext?.attachment_notice ? <p className="body-text">{pendingContext.attachment_notice}</p> : null}
+                  {pendingContext?.attachment_excerpt ? <p className="caption">文件较长，助手会按需继续阅读。你可以查看全文。</p> : null}
                   {answer ? <Markdown source={answer} /> : null}
                   {clarify ? <p className="body-text" style={{ margin: 0 }}>{clarify}</p> : null}
                   {serverRunId && pendingContext ? <ApiOperationCard context={pendingContext} /> : null}
@@ -1298,38 +1317,40 @@ function AccountAskPage() {
         </div>
       ) : null}
 
-      <div className="composer">
-        {state === "signedIn" ? <Link href="/me/attachments" className="composer__image" aria-label="上传图片">
-          <ImagePlus size={20} />
-        </Link> : null}
-        <textarea
-          ref={inputRef}
-          className="composer__field"
-          rows={1}
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setComposerError(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              if (canSend) void send();
-            }
-          }}
-          placeholder={state === "signedIn" ? "有什么事，直接告诉我…" : "登录后才能交给助手"}
-          aria-label="交给助手"
-          maxLength={4000}
-        />
-        <button
-          type="button"
-          className="composer__send"
-          disabled={!canSend}
-          onClick={() => void send()}
-          aria-label="发送"
-        >
-          {processing ? <span className="spinner" style={{ width: 15, height: 15 }} /> : <ArrowUp size={17} strokeWidth={2.4} />}
-        </button>
+      <div {...attachmentDropHandlers(attachments, state !== "signedIn" || processing || recovering)}>
+        <SelectedAttachments attachments={attachments} disabled={processing || recovering} />
+        <div className="composer">
+          {state === "signedIn" ? <AttachmentPicker attachments={attachments} disabled={processing || recovering} /> : null}
+          <textarea
+            ref={inputRef}
+            className="composer__field"
+            rows={1}
+            value={draft}
+            readOnly={processing || recovering}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setComposerError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                if (canSend) void send();
+              }
+            }}
+            placeholder={state === "signedIn" ? "有什么事，直接告诉我…" : "登录后才能交给助手"}
+            aria-label="交给助手"
+            maxLength={4000}
+          />
+          <button
+            type="button"
+            className="composer__send"
+            disabled={!canSend}
+            onClick={() => void send()}
+            aria-label="发送"
+          >
+            {processing ? <span className="spinner" style={{ width: 15, height: 15 }} /> : <ArrowUp size={17} strokeWidth={2.4} />}
+          </button>
+        </div>
       </div>
       </div>
 

@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { AttachmentPicker, SelectedAttachments, attachmentDropHandlers, useInputAttachments } from "./input-attachments";
+import { sameAttachmentReferences, type AttachmentReference } from "@/lib/mobile/input-attachments";
+import type { MatterIntakeResponse } from "@/lib/mobile/api";
 import { X } from "lucide-react";
 import { newOperationKey, requestTodayRefresh, submitCapture } from "@/lib/mobile/matters-api";
 
@@ -11,13 +14,17 @@ import { ApiError } from "@/lib/mobile/api";
 import { loginHref } from "@/lib/mobile/login-return.mjs";
 import { accountKey, CAPTURE_LOGIN_DRAFT_KEY, readSession, writeSession } from "@/lib/mobile/storage";
 
-/** Accept captured text and keep the sheet available for the next entry. */
+/** Accept text and files for background capture, or organize files within a single matter. */
 export function CaptureSheet({
   preset,
   onClose,
+  matterId,
+  onAccepted,
 }: {
   preset: "choose" | "say";
   onClose: () => void;
+  matterId?: string;
+  onAccepted?: (result: MatterIntakeResponse) => void;
 }) {
   const { state, user } = useAuth();
   const { enabled, captureDemo } = useDemo();
@@ -27,14 +34,16 @@ export function CaptureSheet({
   const [accepting, setAccepting] = useState(false);
   const [loginSaved, setLoginSaved] = useState(false);
   const [retrySend, setRetrySend] = useState(false);
-  const storageKey = accountKey("pa.web.capture.pending", user?.user_id ?? null);
+  const storageKey = accountKey(matterId ? `pa.web.matter-organize.${matterId}` : "pa.web.capture.pending", user?.user_id ?? null);
+  const attachments = useInputAttachments(state === "signedIn" && !enabled ? storageKey + ".attachments" : null, matterId);
+  const isEmpty = !text.trim() && !attachments.items.length;
 
   useEffect(() => {
     const resume = new URLSearchParams(window.location.search).get("capture") === "resume";
-    const restored = resume && state === "signedIn"
+    const restored = !matterId && resume && state === "signedIn"
       ? readSession<{ text: string } | null>(CAPTURE_LOGIN_DRAFT_KEY, null) : null;
     setText(restored?.text ?? readSession<{ text: string } | null>(storageKey, null)?.text ?? "");
-  }, [state, storageKey]);
+  }, [matterId, state, storageKey]);
   const title = preset === "say" ? "随手记一条" : "交给助手整理";
 
   useEffect(() => {
@@ -49,11 +58,11 @@ export function CaptureSheet({
     };
   }, [onClose]);
 
-  /** Retry the same saved text with its original key until the server acknowledges receipt. */
+  /** Retry the same text and references with their original key until acceptance. */
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const value = text.trim();
-    if (!value || accepting) return;
+    if (isEmpty || accepting || (matterId && !attachments.items.length)) return;
     if (value.length > 4000) {
       setError("这段有点长，最多 4000 个字。");
       return;
@@ -75,30 +84,36 @@ export function CaptureSheet({
       }
       return;
     }
-    const saved = readSession<{ text: string; key: string } | null>(storageKey, null);
-    const key = saved?.text.trim() === value ? saved.key : newOperationKey("web-capture");
-    writeSession(storageKey, { text, key });
+    const previous = readSession<{ text: string; key?: string; attachments?: AttachmentReference[] } | null>(storageKey, null);
+    writeSession(storageKey, { ...(previous?.text.trim() === value ? previous : {}), text });
     setAccepting(true);
     setError(null);
     try {
-      await submitCapture(value, key);
+      const refs = await attachments.upload();
+      const key = previous?.key && previous.text.trim() === value && sameAttachmentReferences(previous.attachments, refs)
+        ? previous.key : newOperationKey(matterId ? "web-matter-organize" : "web-capture");
+      writeSession(storageKey, { text, key, attachments: refs });
+      const result = await submitCapture(value, key, refs, matterId);
+      attachments.clear(refs);
       if (readSession<{ key: string } | null>(storageKey, null)?.key === key) {
         writeSession(storageKey, null);
       }
       const currentUrl = new URL(window.location.href);
-      if (currentUrl.searchParams.get("capture") === "resume") {
+      if (!matterId && currentUrl.searchParams.get("capture") === "resume") {
         writeSession(CAPTURE_LOGIN_DRAFT_KEY, null);
         currentUrl.searchParams.delete("capture");
         window.history.replaceState(window.history.state, "", currentUrl.pathname + currentUrl.search + currentUrl.hash);
       }
       setText((current) => current === text ? "" : current);
       setRetrySend(false);
-      toast("已记下，正在后台整理");
+      toast(result.outcome === "answer" && result.answer ? result.answer : "已收到，正在后台整理");
+      onAccepted?.(result);
       requestTodayRefresh();
     } catch (caught) {
       const uncertain = !(caught instanceof ApiError) || caught.status >= 500;
       setRetrySend(uncertain);
-      setError(uncertain ? "还没确认有没有发成功" : "这次没能发送，请检查后再试");
+      setError(caught instanceof ApiError && caught.status < 500 ? caught.message
+        : "这次还没确认发成功，内容还在，可以再试一次。");
     } finally {
       setAccepting(false);
     }
@@ -119,9 +134,9 @@ export function CaptureSheet({
             <X size={18} />
           </button>
         </div>
-        <form className="mt-16" onSubmit={submit}>
+        <form className="mt-16" onSubmit={submit} {...attachmentDropHandlers(attachments, accepting)}>
           <label className="field" htmlFor="capture-text">
-            <span className="field__label">输入或粘贴文字</span>
+            <span className="field__label">{matterId ? "给助手留一句话（可选）" : "输入文字或添加附件"}</span>
             <textarea
               id="capture-text"
               className="textarea"
@@ -137,9 +152,11 @@ export function CaptureSheet({
               autoFocus
             />
           </label>
+          {state === "signedIn" && !enabled ? <AttachmentPicker attachments={attachments} disabled={accepting} /> : null}
+          <SelectedAttachments attachments={attachments} disabled={accepting} />
           {error ? <p className="caption red" role="alert">{error}</p> : null}
           {loginSaved ? <a className="btn btn--primary" href={loginHref("/today?capture=resume")}>登录并发送</a> :
-            <PrimaryButton type="submit" disabled={!text.trim() || accepting}>
+            <PrimaryButton type="submit" disabled={isEmpty || accepting || Boolean(matterId && !attachments.items.length)}>
               {accepting ? "正在提交…" : retrySend ? "再试一次" : "发送给助手"}
             </PrimaryButton>}
         </form>

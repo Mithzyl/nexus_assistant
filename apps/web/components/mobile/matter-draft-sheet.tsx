@@ -1,4 +1,6 @@
 "use client";
+
+import { AttachmentPreviews } from "./input-attachments";
 import { CommuteBundlePanel } from "./commute-bundle-panel";
 
 /**
@@ -877,6 +879,7 @@ export function MatterDraftSheet({
 
   return (
     <Sheet title={mode === "create" && current?.payload.schedule ? "确认新日程" : sheetTitle(effectiveMode)} open={open} onClose={requestClose}>
+      <AttachmentPreviews attachments={current?.payload.attachments} />
       <div className="m-stack-12">
         <div className="draft-kind">
           <span className="draft-kind__label">待确认的安排</span>

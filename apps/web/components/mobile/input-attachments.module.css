@@ -1,0 +1,20 @@
+.picker { display: flex; align-items: center; gap: .2rem; flex: 0 0 auto; }
+.camera { display: none; }
+@media (pointer: coarse) { .camera { display: inline-flex; } }
+
+.files, .previews { padding: 0; margin: .4rem 0; list-style: none; }
+.files { display: flex; gap: .35rem; flex-wrap: wrap; }
+.selected { display: flex; align-items: center; gap: .25rem; min-width: 0; max-width: 100%;
+  background: var(--surface-soft, #edf3f5); color: #243846; border-radius: .65rem; padding: .1rem .35rem .1rem .6rem; }
+.selected span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remove { flex: 0 0 auto; display: grid; place-items: center; min-width: 32px; min-height: 32px;
+  color: inherit; border: 0; background: transparent; cursor: pointer; }
+.previews li { margin: .35rem 0; overflow-wrap: anywhere; }
+.photo { display: inline-flex; align-items: center; gap: .55rem; }
+.photo img { border-radius: .6rem; object-fit: cover; }
+.document { padding: .65rem; background: var(--surface-soft, #edf3f5); color: #243846; border-radius: .65rem; }
+.document p { margin: .35rem 0; }
+.document pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: .5rem 0 0;
+  max-height: 45vh; overflow: auto; }
+
+.selectedPhoto { object-fit: cover; border-radius: .3rem; flex: 0 0 auto; }

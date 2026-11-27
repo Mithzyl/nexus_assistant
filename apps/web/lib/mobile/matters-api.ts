@@ -1,5 +1,7 @@
 /** Real matter/draft/today client. All paths go through the same-origin proxy. */
 
+import type { AttachmentReference } from "./input-attachments";
+
 import {
   apiRequest,
   ApiError,
@@ -328,11 +330,13 @@ export function intakeMatter(
   });
 }
 
-/** Persist captured text before returning; the Assistant worker continues independently. */
-export function submitCapture(text: string, idempotencyKey: string): Promise<MatterIntakeResponse> {
-  return apiRequest<MatterIntakeResponse>(pa("/matters/intake"), {
+/** Accept a capture or matter attachment submission before its background work. */
+export function submitCapture(text: string, idempotencyKey: string, attachments: AttachmentReference[] = [],
+  matterId?: string): Promise<MatterIntakeResponse> {
+  return apiRequest<MatterIntakeResponse>(pa(matterId ? `/matters/${id(matterId)}/intake` : "/matters/intake"), {
     method: "POST",
-    body: { text, idempotency_key: idempotencyKey, entry_mode: "async_capture" },
+    body: { text, idempotency_key: idempotencyKey, entry_mode: matterId ? "sync_chat" : "async_capture",
+      ...(attachments.length ? { attachments } : {}) },
   });
 }
 
@@ -579,11 +583,13 @@ function readSseFrame(frame: string): { type: string; data: string } | null {
 export async function streamIntakeMatter(text: string, idempotencyKey: string,
   continuationRunId: string | null | undefined,
   memoryDisclosures: import("@/components/mobile/account-memory").SelectedMemory[],
-  onAnswer: (text: string) => void, ignorePendingReply = false, dismissedReplyRunId?: string | null): Promise<MatterIntakeResponse> {
+  onAnswer: (text: string) => void, ignorePendingReply = false, dismissedReplyRunId?: string | null,
+  attachments: AttachmentReference[] = []): Promise<MatterIntakeResponse> {
   const response = await fetch(pa("/matters/intake/stream"), {
     method: "POST", headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify({ text, idempotency_key: idempotencyKey, entry_mode: "sync_chat",
       continuation_run_id: continuationRunId, memory_disclosures: memoryDisclosures,
+      ...(attachments.length ? { attachments } : {}),
       ...(dismissedReplyRunId
         ? { ignore_pending_clarification: true, dismissed_reply_run_id: dismissedReplyRunId }
         : ignorePendingReply ? { ignore_pending_reply: true } : {}) }),
