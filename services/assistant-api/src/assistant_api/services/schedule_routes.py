@@ -156,7 +156,8 @@ async def validate_saved_route(db, user, schedule, row, *, at=None):
             != schedule_fingerprint(origin)
         ):
             return None, "origin_schedule_changed"
-    result["calculated_at"] = row.calculated_at
+    result["route_ref_id"] = row.route_result_id
+    result["calculated_at"] = ensure_aware(row.calculated_at)
     return result, None
 
 
@@ -340,6 +341,7 @@ async def detail_for_schedule(
         "reason_code": None,
         "message": None,
         "schedule_id": schedule_id,
+        "route_ref_id": result.get("route_ref_id"),
         "provider": result.get("provider"),
         "mode": result.get("mode"),
         "duration_seconds": result.get("duration_seconds"),

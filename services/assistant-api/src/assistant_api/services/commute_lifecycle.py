@@ -133,7 +133,7 @@ async def revision_draft(db, runtime, settings, user, run, parsed, text, *, orig
         origin_city=origin_city, destination_city=destination_city,
         origin_coordinate_system=route_origin.coordinate_system or 'gcj02',
         destination_coordinate_system=route_destination.coordinate_system or 'gcj02',
-        schedule_id=schedule.schedule_id if schedule else None)
+        schedule_id=schedule.schedule_id if schedule else None, include_notification_details=True)
     if route['status'] != 'available':
         draft.payload_json={**draft.payload_json,'commute_revision':{**draft.payload_json['commute_revision'],'status':'failed'}}
         await db.commit()

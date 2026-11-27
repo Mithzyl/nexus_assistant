@@ -41,7 +41,13 @@ async def read_day(db, runtime, user, plan_id, service_date):
     route=await schedule_routes.valid_for_schedule(db,user,schedule) if schedule else None
     if route and route.get('target_arrival_at') and matters._as_utc(datetime.fromisoformat(route['target_arrival_at'].replace('Z','+00:00')))!=target.astimezone(UTC):
         route=None
-    return {'plan_id':plan_id,'matter_id':plan.matter_id,'version':matter.version if matter else None,
+    timeline_card = None
+    if route and route.get("status") == "available":
+        from assistant_api.services.display_cards import timeline_content
+        timeline_card = timeline_content(
+            "当天怎么走", route=route, date_label=service_date.isoformat(),
+        )
+    return {'timeline_card': timeline_card, 'plan_id':plan_id,'matter_id':plan.matter_id,'version':matter.version if matter else None,
             'revision':plan.revision,'service_date':service_date,'timezone':plan.timezone,
             'status':status,'target_arrival_at':target,'arrival_local_time':clock,
             'schedule':matters._serialize_schedule(schedule) if schedule else None,'route':route}

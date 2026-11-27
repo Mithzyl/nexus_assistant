@@ -98,3 +98,11 @@ from assistant_api.models.follow_up import FollowUp, FollowUpExecution, Business
 from assistant_api.models.supplement import MatterSupplement, SupplementText
 
 __all__ += ["MatterSupplement", "SupplementText"]
+
+from assistant_api.models.display_card import DisplayCard
+
+__all__ += ["DisplayCard"]
+
+from assistant_api.models.image_attachment import ImageAttachment
+
+__all__ += ["ImageAttachment"]

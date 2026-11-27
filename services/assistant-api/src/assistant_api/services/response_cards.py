@@ -236,13 +236,13 @@ def validate_card_input(value, validator, index):
     raise ValueError(f'{path}: 不符合{error.validator}要求（{requirement}）。{hint}')
 
 
-def prepare_cards(values: list[dict], receipt: dict | None, results: dict | None = None) -> list[dict]:
+def prepare_cards(values: list[dict], receipt: dict | None, results: dict | None = None, *, index_offset: int = 0) -> list[dict]:
     """Validate the published input, bind real values and produce compatible output without modifying business data."""
     if len(values) > 6:
         raise ValueError('一次最多返回6张卡片')
     cards = []
     validator = Draft202012Validator(presentation_schema())
-    for index, value in enumerate(values):
+    for index, value in enumerate(values, start=index_offset):
         validate_card_input(value, validator, index)
         kind = value.get('kind', 'info')
         if kind == 'result':

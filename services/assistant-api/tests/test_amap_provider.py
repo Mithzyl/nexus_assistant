@@ -87,6 +87,7 @@ async def test_amap_place_and_transit_normalization_is_cached():
                                     {
                                         "walking": {
                                             "distance": "300",
+                                            "duration": "240",
                                             "steps": [
                                                 {
                                                     "polyline": (
@@ -100,6 +101,8 @@ async def test_amap_place_and_transit_normalization_is_cached():
                                             "buslines": [
                                                 {
                                                     "name": "地铁2号线",
+                                                    "departure_stop": {"name": "静安寺"},
+                                                    "arrival_stop": {"name": "人民广场"},
                                                     "polyline": (
                                                         "121.4460,31.2235;"
                                                         "121.4737,31.2304"
@@ -114,7 +117,15 @@ async def test_amap_place_and_transit_normalization_is_cached():
                                                 },
                                             ]
                                         },
-                                    }
+                                    },
+                                    {
+                                        "walking": {"distance": "200", "duration": "120"},
+                                        "bus": {"buslines": [{
+                                            "name": "12路(全线首末站--不可用于本站)",
+                                            "departure_stop": {"name": "人民广场东"},
+                                            "arrival_stop": {"name": "图书馆"},
+                                        }]},
+                                    },
                                 ],
                             }
                         ]
@@ -135,6 +146,8 @@ async def test_amap_place_and_transit_normalization_is_cached():
                                 "distance": "8500",
                                 "steps": [
                                     {
+                                        "road": "延安东路",
+                                        "distance": "8200",
                                         "polyline": (
                                             "121.4456,31.2231;"
                                             "121.4500,31.2260;"
@@ -197,12 +210,17 @@ async def test_amap_place_and_transit_normalization_is_cached():
     )
     assert first == second
     assert first.duration_seconds == 1500
-    assert first.walking_distance_meters == 300
-    assert first.transfer_count == 1
+    assert first.walking_distance_meters == 500
+    assert first.notification_details == {
+        "transit_lines": ["地铁2号线", "12路"],
+        "boarding_stop_name": "静安寺",
+        "alighting_stop_name": "图书馆",
+        "walking_duration_seconds": 360,
+    }
     assert first.fare_cny == 4.0
     assert first.fare_kind == "amap_transit_fare"
     assert first.timing_basis == "planned_time_not_live_forecast"
-    assert first.route_shape_status == "available"
+    assert first.route_shape_status == "partial"
     assert [segment.kind for segment in first.route_segments] == [
         "walking",
         "transit",
@@ -222,6 +240,7 @@ async def test_amap_place_and_transit_normalization_is_cached():
         target_arrival_at=NOW + timedelta(minutes=50),
     )
     assert driving.duration_seconds == 1200
+    assert driving.notification_details == {"main_road": "延安东路"}
     assert driving.fare_cny == 35.0
     assert driving.fare_kind == "amap_taxi_cost_estimate"
     assert driving.timing_basis == "provider_departure_time"

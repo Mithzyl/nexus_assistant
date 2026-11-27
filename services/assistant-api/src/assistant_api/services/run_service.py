@@ -826,6 +826,11 @@ async def _persist_result(
     if error and isinstance(error.get("error_code"), str):
         row.error_code = error["error_code"]
         payload["error_code"] = error["error_code"]
+    previous = row.result_json or {}
+    if final_text and previous.get("final_text") == final_text and previous.get("progress_card_status"):
+        payload["progress_card_status"] = previous["progress_card_status"]
+        if previous.get("progress_card_snapshot"):
+            payload["progress_card_snapshot"] = previous["progress_card_snapshot"]
     row.result_json = payload
     if row.status in TERMINAL_STATUSES:
         row.completed_at = row.completed_at or datetime.now(UTC)
@@ -833,6 +838,16 @@ async def _persist_result(
         from assistant_api.services.intake_replies import record_terminal_reply
 
         await record_terminal_reply(db, row, final_text)
+        flow = row.context_json.get("api_flow", {})
+        if flow.get("progress_proposal") and flow.get("trigger_source") == "chat" and not payload.get("progress_card_status"):
+            from assistant_api.services.display_cards import apply_progress, current_progress, published_card
+            from assistant_api.services.operation_intake import response_for
+            if response_for(row)["outcome"] == "answer":
+                saved = await apply_progress(db, row, source_mode="chat")
+                row.result_json = {**payload, "progress_card_status": saved}
+                if saved in {"saved", "unchanged"}:
+                    card = await current_progress(db, row.user_id, flow["matter_id"])
+                    row.result_json = {**row.result_json, "progress_card_snapshot": published_card(card)}
     await db.commit()
 
 

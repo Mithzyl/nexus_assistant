@@ -11,7 +11,9 @@ from assistant_api.core.observability import emit_event
 from assistant_api.models import CommuteAdvisory, CommuteCheck, CommuteInstance, CommutePlan, Matter, NotificationOutbox, User
 from assistant_api.models.bark import BarkReminderSetting
 from assistant_api.commute.services.scheduling import ensure_instance
-from assistant_api.commute.services.notification_content import instant, message, verified_boarding, weather_facts
+from assistant_api.commute.services.notification_content import (
+    LOCK_SCREEN_BODY_LIMIT, instant, message, verified_boarding, weather_facts,
+)
 
 # Reserve stable sequence values on the existing unique (plan, day, sequence)
 # key. Legacy, unstaged records used sequences 1 and 2.
@@ -189,7 +191,7 @@ async def queue_stage(db, settings, plan, instance, stage, snapshot, *, now, che
                     "plan_revision": plan.revision, "service_date": day.isoformat()}
         reason = "no_usable_route"
     title, body = message(plan, stage, snapshot, reason, previous)
-    if len(title) > 15 or len("".join(body.splitlines()[:2])) > 40 or len(body) > 100:
+    if len(title) > 15 or len(body) > LOCK_SCREEN_BODY_LIMIT:
         raise ValueError("Commute notification text exceeds its layout budget")
     payload = {"aps": {"alert": {"title": title, "body": body}}, "type": "commute_advisory",
                "plan_id": plan.plan_id, "local_service_date": day.isoformat(), "reason": reason,
@@ -268,6 +270,9 @@ async def save_snapshot(db, settings, plan, instance, schedule, route, *, weathe
         "target_arrival_at": target, "departure_at": ensure_aware(schedule.starts_at).isoformat(),
         "schedule_id": schedule.schedule_id, "saved_at": now.isoformat(),
         "duration_seconds": route["duration_seconds"], "mode": route.get("mode") or plan.transport_mode,
+        "distance_meters": route.get("distance_meters"),
+        "walking_distance_meters": route.get("walking_distance_meters"),
+        "route_details": route.get("notification_details"),
         "buffer_seconds": max(0, int((instant(target) - ensure_aware(schedule.starts_at)).total_seconds())
                               - route["duration_seconds"]),
         "boarding": verified_boarding(route.get("transit_boarding"), plan=plan,

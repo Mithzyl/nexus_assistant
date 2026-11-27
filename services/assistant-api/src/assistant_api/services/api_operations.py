@@ -150,7 +150,7 @@ class OperationCatalog:
         """Select business operations; authentication and recursive AI endpoints stay private."""
         self.document = app.openapi()
         self.operations: dict[str, PublishedOperation] = {}
-        excluded = ("/api/v1/auth", "/api/v1/memory", "/api/v1/data-sources", "/api/v1/sync", "/api/v1/calendar-subscription", "/api/v1/calendar/")
+        excluded = ("/api/v1/image-attachments", "/api/v1/auth", "/api/v1/memory", "/api/v1/data-sources", "/api/v1/sync", "/api/v1/calendar-subscription", "/api/v1/calendar/")
         for path, item in self.document["paths"].items():
             if not path.startswith('/api/v1/') or path.startswith(excluded) or '/intake' in path or '/memory' in path or path.startswith('/api/v1/asks'):
                 continue

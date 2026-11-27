@@ -20,11 +20,14 @@ from assistant_api.commute.providers.base import (
     ProviderTimeout,
     ProviderUnavailable,
     ReverseGeocodeResult,
+    RouteNotificationDetails,
     RoutePoint,
     RouteSegment,
+    RouteLeg,
     RouteShapeStatus,
     TRANSPORT_MODES,
     TRANSPORT_LABELS,
+    transit_line_label,
 )
 from assistant_api.commute.timeutil import ensure_aware
 
@@ -283,6 +286,7 @@ class AmapProvider:
                 duration=duration,
                 distance=distance,
                 route_segments=route_segments,
+                notification_details=self._road_details(path.get("steps")),
                 fare=taxi_cost,
                 fare_kind=(
                     "amap_taxi_cost_estimate" if taxi_cost is not None else None
@@ -307,6 +311,7 @@ class AmapProvider:
                                if len(points) >= 2 else (),
                 walking_distance=self._positive_int(path.get("distance")) if mode == "walking" else None,
                 timing_basis="static_route_estimate",
+                notification_details=self._road_details(path.get("steps")),
             )
         else:
             local = ensure_aware(request_depart_at).astimezone(
@@ -328,20 +333,15 @@ class AmapProvider:
             if not isinstance(transit, dict):
                 raise ProviderNoRoute("AMap returned no transit route", code="route_not_found")
             segments = transit.get("segments") or []
-            walking = sum(
-                self._positive_int((segment.get("walking") or {}).get("distance")) or 0
-                for segment in segments
-                if isinstance(segment, dict)
+            legs = self._transit_legs(segments)
+            walking = sum(leg.distance_meters or 0 for leg in legs if leg.segment.kind == "walking")
+            rides = [leg for leg in legs if leg.segment.kind == "transit"]
+            lines = [leg.segment.label for leg in rides if leg.segment.label]
+            route_segments = tuple(leg.segment for leg in legs if len(leg.segment.points) >= 2)
+            shape_status = (
+                "missing" if not route_segments else "partial"
+                if len(route_segments) != len(legs) else "available"
             )
-            lines = []
-            for segment in segments:
-                bus = segment.get("bus") or {}
-                for line in bus.get("buslines") or []:
-                    name = line.get("name")
-                    if name:
-                        lines.append(str(name))
-            route_segments, shape_status = self._transit_segments(segments)
-            boarding = self._first_boarding(segments)
             result = self._result(
                 mode=mode,
                 origin=origin,
@@ -353,9 +353,11 @@ class AmapProvider:
                 route_segments=route_segments,
                 route_shape_status=shape_status,
                 walking_distance=walking or None,
-                transfer_count=max(0, len(lines) - 1) if lines else None,
+                transfer_count=len(rides) - 1 if rides else None,
                 transfers_summary=" → ".join(lines[:5]) or None,
-                transit_boarding=boarding,
+                transit_boarding=self._first_boarding(rides),
+                notification_details=self._transit_notification_details(legs, rides),
+                transit_legs=legs,
                 fare=self._positive_float(transit.get("cost")),
                 fare_kind=(
                     "amap_transit_fare"
@@ -385,6 +387,8 @@ class AmapProvider:
         fare_kind: str | None = None,
         timing_basis: str | None = None,
         transit_boarding: dict | None = None,
+        notification_details: RouteNotificationDetails | None = None,
+        transit_legs: tuple[RouteLeg, ...] = (),
     ) -> EtaResult:
         """Normalize measured values, retaining missing geometry and honest time-estimate limits."""
         if duration is None:
@@ -413,7 +417,35 @@ class AmapProvider:
             route_segments=route_segments,
             route_shape_status=shape_status,
             transit_boarding=transit_boarding,
+            notification_details=notification_details,
+            transit_legs=transit_legs,
         )
+
+    def _road_details(self, steps) -> RouteNotificationDetails | None:
+        """Use the named road with the most measured distance, never infer from coordinates."""
+        distances: dict[str, int] = {}
+        for step in steps or []:
+            if not isinstance(step, dict):
+                continue
+            road = self._text(step.get("road_name")) or self._text(step.get("road"))
+            if road:
+                distance = self._positive_int(step.get("step_distance") or step.get("distance"))
+                distances[road] = distances.get(road, 0) + (distance or 0)
+        return {"main_road": max(distances, key=distances.__getitem__)} if distances else None
+
+    def _transit_notification_details(self, legs, rides) -> RouteNotificationDetails | None:
+        """Summarize the same selected legs used by the map and time line."""
+        details: RouteNotificationDetails = {}
+        walking_times = [leg.duration_seconds for leg in legs if leg.segment.kind == "walking"]
+        if walking_times and all(value is not None for value in walking_times):
+            details["walking_duration_seconds"] = sum(value for value in walking_times if value is not None)
+        if rides:
+            details.update(
+                transit_lines=[transit_line_label(leg.segment.label) for leg in rides if leg.segment.label],
+                boarding_stop_name=rides[0].departure_stop_name,
+                alighting_stop_name=rides[-1].arrival_stop_name,
+            )
+        return details or None
 
     def _driving_segments(self, steps) -> tuple[RouteSegment, ...]:
         """Combine ordered driving steps into one provider-returned road path."""
@@ -430,75 +462,58 @@ class AmapProvider:
             ),
         )
 
-    def _first_boarding(self, segments) -> dict | None:
-        """Identify the first boarding leg independently of drawing geometry."""
+    def _first_boarding(self, rides: list[RouteLeg]) -> dict | None:
+        """Keep the first selected service and its stop identities."""
+        if not rides or not rides[0].segment.label:
+            return None
+        first = rides[0]
+        return {
+            "provider": self.provider, "time_kind": "line_only",
+            "line_id": first.line_id, "line_name": first.segment.label,
+            "boarding_stop_id": first.departure_stop_id,
+            "alighting_stop_id": first.arrival_stop_id,
+        }
+
+    def _transit_legs(self, segments) -> tuple[RouteLeg, ...]:
+        """Use the first usable provider candidate for all facts, even without a polyline."""
+        legs = []
         for segment in segments:
             if not isinstance(segment, dict):
                 continue
-            lines = (segment.get("bus") or {}).get("buslines") or []
-            for line in lines:
-                if isinstance(line, dict) and (name := self._text(line.get("name"))):
-                    stop = line.get("departure_stop")
-                    stop = stop if isinstance(stop, dict) else {}
-                    return {
-                        "provider": self.provider, "time_kind": "line_only",
-                        "line_id": self._text(line.get("id")), "line_name": name,
-                        "boarding_stop_id": self._text(stop.get("id")),
-                        "alighting_stop_id": self._text((line.get("arrival_stop") or {}).get("id"))
-                        if isinstance(line.get("arrival_stop"), dict) else None,
-                    }
-        return None
-
-    def _transit_segments(
-        self, segments
-    ) -> tuple[tuple[RouteSegment, ...], RouteShapeStatus]:
-        """Keep walking and the selected bus line as separate provider paths."""
-
-        route_segments: list[RouteSegment] = []
-        missing_segments = 0
-        for segment in segments:
-            if not isinstance(segment, dict):
-                missing_segments += 1
-                continue
-            emitted = False
-            walking_points = self._step_points(
-                (segment.get("walking") or {}).get("steps")
-            )
-            if len(walking_points) >= 2:
-                route_segments.append(
-                    RouteSegment(
-                        kind="walking",
-                        label="步行",
-                        points=walking_points,
-                        coordinate_system=self.coordinate_system,
-                    )
-                )
-                emitted = True
-            buslines = (segment.get("bus") or {}).get("buslines") or []
-            for line in buslines:
+            walking = segment.get("walking")
+            if isinstance(walking, dict) and walking:
+                points = self._step_points(walking.get("steps"))
+                meters = self._positive_int(walking.get("distance"))
+                seconds = self._positive_int(walking.get("duration"))
+                if len(points) >= 2 or meters or seconds:
+                    legs.append(RouteLeg(RouteSegment("walking", "步行", points, self.coordinate_system),
+                                         meters, seconds))
+            bus = segment.get("bus")
+            candidates = bus.get("buslines") or [] if isinstance(bus, dict) else []
+            railway = segment.get("railway")
+            if not candidates and isinstance(railway, dict):
+                candidates = [railway]
+            for line in candidates:
                 if not isinstance(line, dict):
                     continue
+                label = self._text(line.get("name"))
                 points = self._polyline_points(line.get("polyline"))
-                if len(points) < 2:
+                if not label and len(points) < 2:
                     continue
-                route_segments.append(
-                    RouteSegment(
-                        kind="transit",
-                        label=self._text(line.get("name")),
-                        points=points,
-                        coordinate_system=self.coordinate_system,
-                    )
-                )
-                emitted = True
+                departure = line.get("departure_stop") or {}
+                arrival = line.get("arrival_stop") or {}
+                departure = departure if isinstance(departure, dict) else {}
+                arrival = arrival if isinstance(arrival, dict) else {}
+                legs.append(RouteLeg(
+                    RouteSegment("transit", label, points, self.coordinate_system),
+                    self._positive_int(line.get("distance")),
+                    self._positive_int(line.get("duration")),
+                    self._text(line.get("id")),
+                    self._text(departure.get("id")), self._text(departure.get("name")),
+                    self._text(arrival.get("id")), self._text(arrival.get("name")),
+                ))
                 break
-            if not emitted:
-                missing_segments += 1
-        if not route_segments:
-            return (), "missing"
-        return (
-            tuple(route_segments),
-            "partial" if missing_segments else "available",
-        )
+        return tuple(legs)
 
     def _step_points(self, steps) -> tuple[RoutePoint, ...]:
         points: list[RoutePoint] = []

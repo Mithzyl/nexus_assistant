@@ -517,6 +517,16 @@ async def generate_commute_day(plan_id: str, db: DatabaseSession, runtime: Commu
     return await generate_day(db,runtime,user,plan_id,service_date)
 
 
+def _commute_day_response(request: Request, state: dict) -> dict:
+    """Send full route geometry to clients and succinct saved route facts to the Agent."""
+    if not request.scope.get("assistant_execution_run_id"):
+        return state
+    output = {**state, "timeline_card": None}
+    if isinstance(output.get("route"), dict):
+        output["route"] = {key: value for key, value in output["route"].items() if key != "shape"}
+    return output
+
+
 @router.post('/commute-plans/{plan_id}/days/query', operation_id='get_commute_day',
     response_model=CommuteDayState,
     summary='读取指定日期通勤有效时间、原日程和是否已过期',
@@ -524,27 +534,27 @@ async def generate_commute_day(plan_id: str, db: DatabaseSession, runtime: Commu
     openapi_extra={'x-assistant':{'effect':'read','keywords':['修改通勤','通勤时间已过','明天通勤','通勤往后挪'], 'next':[
         {'method':'PATCH','path':'/api/v1/commute-plans/{plan_id}/days','purpose':'用户明确指定新到达时间后，一次完成重测和原日程更新，不修改长期配置。'},
         {'method':'POST','path':'/api/v1/commute-plans/{plan_id}/days/refresh','purpose':'现在立即获取该日期通勤测算，适用于前晚22点或当天更新。'}]}})
-async def get_commute_day(plan_id:str,payload:CommuteDayQuery,db:DatabaseSession,runtime:CommuteRuntimeDependency,user:CurrentUser):
+async def get_commute_day(request: Request,plan_id:str,payload:CommuteDayQuery,db:DatabaseSession,runtime:CommuteRuntimeDependency,user:CurrentUser):
     """Read an owned day selected by JSON criteria without provider calls or business writes."""
     from assistant_api.services.commute_day_commands import read_day
-    return await read_day(db,runtime,user,plan_id,payload.service_date)
+    return _commute_day_response(request, await read_day(db,runtime,user,plan_id,payload.service_date))
 
 
 @router.patch('/commute-plans/{plan_id}/days',operation_id='update_commute_day',response_model=CommuteDayState,
     summary='修改某一天通勤到达时间，立即重测并保存原日程',
     description='service_date与修改字段都放JSON body，路径只填plan_id。先get_commute_day取得version和revision，分别作为expected_matter_version、expected_plan_revision。只提交用户给出的arrival_local_time，后端计算车程、余量、出发及结束时间，原日程ID不变。一次调用已正式保存，不再确认。过去时间409，路线失败不修改正式记录；不把修改失败当新增。只有原来没有该日期日程时建立该日唯一实例。长期时间、其他日期和待办不变，后续检查使用当天覆盖时间。',
     openapi_extra={'x-assistant':{'effect':'write','keywords':['修改通勤','调整通勤到达时间','单日通勤']}})
-async def update_commute_day(plan_id:str,payload:CommuteDayChange,db:DatabaseSession,runtime:CommuteRuntimeDependency,settings:SettingsDependency,user:CurrentUser):
+async def update_commute_day(request: Request,plan_id:str,payload:CommuteDayChange,db:DatabaseSession,runtime:CommuteRuntimeDependency,settings:SettingsDependency,user:CurrentUser):
     """Execute the shared measured day command for Web and AI using one formal save."""
     from assistant_api.services.commute_day_commands import change_day
-    return await change_day(db,runtime,settings,user,plan_id,payload.service_date,payload)
+    return _commute_day_response(request, await change_day(db,runtime,settings,user,plan_id,payload.service_date,payload))
 
 
 @router.post('/commute-plans/{plan_id}/days/refresh',operation_id='refresh_commute_day',response_model=CommuteDayState,
     summary='立即获取指定日期通勤时间并保存，支持前晚22点更新',
     description='service_date与idempotency_key都放JSON body，路径只填plan_id。先读取get_commute_day；仅upcoming调用。按通勤计划的起终点、交通方式和该日到达时间重测，保存日程与路线；目标日无日程时可直接生成，首日日程可缺省。已有同一天安排保持ID，重复键复用结果。必要地点缺失时返回422 commute_location_incomplete，指明无效字段及未写入。前晚22点可测算明天，明确日期；status=past时应询问用户或后台安静结束。',
     openapi_extra={'x-assistant':{'effect':'write','keywords':['明天通勤','前晚22点','更新通勤时间','获取通勤时间']}})
-async def refresh_commute_day(plan_id:str,payload:CommuteDayRefresh,db:DatabaseSession,runtime:CommuteRuntimeDependency,settings:SettingsDependency,user:CurrentUser):
+async def refresh_commute_day(request: Request,plan_id:str,payload:CommuteDayRefresh,db:DatabaseSession,runtime:CommuteRuntimeDependency,settings:SettingsDependency,user:CurrentUser):
     """Remeasure and save an effective future day without changing its requested arrival."""
     from assistant_api.services.commute_day_commands import change_day
-    return await change_day(db,runtime,settings,user,plan_id,payload.service_date,payload,refresh=True)
+    return _commute_day_response(request, await change_day(db,runtime,settings,user,plan_id,payload.service_date,payload,refresh=True))

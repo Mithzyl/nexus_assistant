@@ -240,6 +240,23 @@ async def execution_is_current(db, request_key, *, lease_owner=None):
     return rule.state == 'enabled' and rule.version == execution.rule_version and matter is not None and not matter.deleted_at and matter.status in ('active','waiting')
 
 
+async def claim_progress_completion(db, execution_id, worker_id):
+    """Keep the lease and rule check in the same write transaction as the progress card."""
+    allowed_rule = select(FollowUp.follow_up_id).join(Matter, Matter.matter_id == FollowUp.matter_id).where(
+        FollowUp.follow_up_id == FollowUpExecution.follow_up_id,
+        FollowUp.user_id == FollowUpExecution.user_id,
+        FollowUp.state == "enabled", FollowUp.version == FollowUpExecution.rule_version,
+        Matter.user_id == FollowUpExecution.user_id, Matter.deleted_at.is_(None),
+        Matter.status.in_(("active", "waiting")),
+    ).exists()
+    claimed = await db.execute(update(FollowUpExecution).where(
+        FollowUpExecution.execution_id == execution_id, FollowUpExecution.state == "running",
+        FollowUpExecution.lease_owner == worker_id, FollowUpExecution.lease_expires_at > datetime.now(UTC),
+        allowed_rule,
+    ).values(lease_owner=worker_id).execution_options(synchronize_session=False))
+    return claimed.rowcount == 1
+
+
 async def continue_execution(db, user_id, parent_run_id, result):
     """Link a user's clarification answer back to the waiting background execution."""
     execution = await db.scalar(select(FollowUpExecution).where(FollowUpExecution.user_id == user_id, FollowUpExecution.local_run_id == parent_run_id, FollowUpExecution.state == 'waiting_user'))
@@ -316,6 +333,19 @@ async def worker_tick(app, *, now=None, worker_id='follow-up-worker'):
             await db.refresh(execution)
             if execution.lease_owner != worker_id:
                 return True
+            if result["outcome"] == "answer":
+                run = await db.get(NexusRun, result["local_run_id"])
+                flow = ((run.context_json or {}).get("api_flow") or {}) if run else {}
+                if (run and run.user_id == user.user_id and flow.get("follow_up_execution_id") == execution_id
+                        and flow.get("progress_proposal") and await claim_progress_completion(db, execution_id, worker_id)):
+                    from assistant_api.services.display_cards import apply_progress, current_progress, published_card
+                    saved = await apply_progress(db, run, source_mode="scheduled_follow_up")
+                    if saved:
+                        run.result_json = {**run.result_json, "progress_card_status": saved}
+                        if saved in {"saved", "unchanged"}:
+                            card = await current_progress(db, user.user_id, rule.matter_id)
+                            run.result_json = {**run.result_json, "progress_card_snapshot": published_card(card)}
+                        result = operation_intake.response_for(run)
             execution.local_run_id=result['local_run_id']
             execution.result_json=result
             execution.state={'needs_clarification':'waiting_user','answer':'succeeded','failed':'failed','unknown':'unknown','cancelled':'skipped'}.get(result['outcome'],'queued')

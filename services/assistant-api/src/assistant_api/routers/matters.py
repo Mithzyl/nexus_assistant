@@ -917,12 +917,16 @@ async def commute_estimate_endpoint(
 )
 async def commute_schedule_route(
     schedule_id: str,
+    request: Request,
     db: DatabaseSession,
     user: CurrentUser,
 ) -> dict:
     """Read one saved route without measuring again or mutating the schedule."""
 
-    return await schedule_routes.detail_for_schedule(db, user, schedule_id)
+    route = await schedule_routes.detail_for_schedule(db, user, schedule_id)
+    if request.scope.get("assistant_execution_run_id"):
+        route.pop("shape", None)
+    return route
 
 
 __all__ = ["router"]

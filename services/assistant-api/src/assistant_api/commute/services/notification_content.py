@@ -1,11 +1,22 @@
 """Project attributable route and forecast facts into a short Bark message."""
 
 from datetime import UTC, datetime
+from unicodedata import east_asian_width
 from zoneinfo import ZoneInfo
 
 from assistant_api.commute.advice import evaluate_weather
+from assistant_api.commute.providers.base import transit_line_label
 
 MOBILITY = {"driving": "驾车", "walking": "步行", "bicycling": "骑行", "electrobike": "电动车", "transit": "公交"}
+# Use the narrow end of the observed range, measured in half-width characters.
+LOCK_SCREEN_LINE_WIDTH = 32
+LOCK_SCREEN_BODY_LIMIT = 70
+CHANGE_LABELS = {
+    "severe_weather": ("天气有变", "新增雨雪或雷雨风险"),
+    "new_rain_risk": ("下雨提醒", "新增降雨风险"),
+    "boarding_changed": ("路线有变", "推荐线路已变"),
+    "boarding_time_changed": ("到站有变", "预计到站时间有变"),
+}
 
 
 def weather_facts(result, *, plan, start, target, now, settings):
@@ -78,56 +89,104 @@ def verified_boarding(boarding, *, plan, day, now):
     return result
 
 
+def lock_screen_width(text: str) -> int:
+    """Approximate iPhone lock-screen text width in half-width characters."""
+    return sum(2 if east_asian_width(char) in {"F", "W", "A"} else 1 for char in text)
+
+
+def _minutes(seconds: int) -> int:
+    """Keep positive durations visible even when they round below a minute."""
+    return max(1, round(seconds / 60)) if seconds > 0 else 0
+
+
+def _distance(meters: int | None) -> str:
+    """Render a measured distance without adding a placeholder when it is missing."""
+    if not meters:
+        return ""
+    return f"{meters}米" if meters < 1000 else f"{round(meters / 1000, 1):g}公里"
+
+
+def _route_choices(snapshot, stage, reason, clock):
+    """Offer route text from most to least specific without truncating station names."""
+    details = snapshot.get("route_details") or {}
+    boarding = snapshot.get("boarding") or {}
+    line = transit_line_label(boarding.get("line_name") or "")
+    lines = details.get("transit_lines") or ([line] if line else [])
+    mode = snapshot.get("mode")
+    if not lines:
+        travel = MOBILITY.get(mode, "通勤") + _distance(snapshot.get("distance_meters"))
+        road = details.get("main_road")
+        return [f"{travel}｜经{' '.join(road.split())}", travel] if road else [travel]
+
+    names = "转".join(" ".join(name.split()) for name in lines)
+    prefix = "改乘" if reason == "boarding_changed" else "乘"
+    travel = prefix + names
+    origin = " ".join((details.get("boarding_stop_name") or "").split())
+    destination = " ".join((details.get("alighting_stop_name") or "").split())
+    stops = f"{origin}→{destination}" if origin and destination else (
+        f"{origin}上车" if origin else f"{destination}下车" if destination else ""
+    )
+    choices = [f"{travel}（{stops}）"] if stops else []
+    if len(lines) == 1 and line == lines[0]:
+        if stage != "evening" and reason != "evening_fallback" and boarding.get("predicted_boarding_at"):
+            choices.append(f"{line}预计{clock(boarding['predicted_boarding_at'])}到站")
+        elif boarding.get("scheduled_boarding_at"):
+            choices.append(f"参考{line}{clock(boarding['scheduled_boarding_at'])}班次")
+        elif boarding.get("station_first_at"):
+            choices.append(f"{line}首班{clock(boarding['station_first_at'])}")
+    choices.append(travel)
+    if len(lines) > 1:
+        choices.append(f"{prefix}{' '.join(lines[0].split())}后换乘")
+    return choices
+
+
 def message(plan, stage, snapshot, reason, previous=None):
-    """Keep times and actions in the first two lines without guessing a transit time."""
+    """Fit the route, time or change, and weather into at most four estimated visible rows."""
     zone = ZoneInfo(plan.timezone)
+
     def clock(value):
         """Render an instant in the user's plan timezone."""
         return instant(value).astimezone(zone).strftime("%H:%M")
-    target = clock(snapshot["target_arrival_at"])
+
     departure = snapshot.get("departure_at")
-    label = "今早" if reason == "first_usable_plan" else {"evening": "明早", "morning": "今早", "recheck": "改"}[stage]
     if not departure:
-        return "暂未算出今早出发时间", f"目标{target}到｜路线暂缺\n出门前请查看当天通勤"
+        return "暂未算出今早出发时间", "暂未查到路线\n出门前请查看当天通勤"
+
     hhmm = clock(departure)
+    label = "今早" if reason == "first_usable_plan" else {"evening": "明早", "morning": "今早", "recheck": "改"}[stage]
     title = f"{label}{hhmm}出发"
-    weather = snapshot.get("weather") or {}
-    weather_hint = weather.get("hint") or "天气暂缺"
-    boarding = snapshot.get("boarding") or {}
-    line = (boarding.get("line_name") or "").split("(")[0].split("（")[0].strip()
-    line = " ".join(line.split())
-    if len(line) > 8:
-        line = line[:7] + "…"
-    travel = f"{'改乘' if reason == 'boarding_changed' else '乘'}{line}" if line else MOBILITY.get(snapshot.get("mode"), "通勤")
-    if stage != "evening" and boarding.get("predicted_boarding_at"):
-        travel = f"{line}预计{clock(boarding['predicted_boarding_at'])}到站"
-    elif boarding.get("scheduled_boarding_at"):
-        travel = f"参考{line}{clock(boarding['scheduled_boarding_at'])}班次"
-    elif boarding.get("station_first_at"):
-        travel = f"{line}首班{clock(boarding['station_first_at'])}"
-    if reason == "evening_fallback" and boarding.get("predicted_boarding_at") and not boarding.get("scheduled_boarding_at"):
-        travel = f"乘{line}"
-    if snapshot.get("duration_seconds") and not line:
-        travel += f"约{round(snapshot['duration_seconds'] / 60)}分"
-    if reason == "evening_fallback":
-        title = f"暂按{hhmm}出发"
-        second = f"今早未更新｜{weather_hint}"
-    else:
-        second = weather_hint
-    first = f"{travel}｜{target}到"
-    if len(first) + len(second) > 40:
-        second = ("今早未更新｜" if reason == "evening_fallback" else "") + (
-            "注意雨雪" if weather.get("severe") else "带伞" if weather.get("rain_risk") else "查看天气")
-    extra = (f"按{target}到达倒推出发时间。全程约{round(snapshot['duration_seconds'] / 60)}分钟，"
-             f"另留{round(snapshot['buffer_seconds'] / 60)}分钟缓冲。")
-    if snapshot.get("saved_at") and reason != "evening_fallback":
-        extra += f"路线于{clock(snapshot['saved_at'])}测算。"
-    if previous and reason == "departure_earlier":
-        extra = f"原定{clock(previous['departure_at'])}出发。{extra}"
+    buffer = f"缓冲{_minutes(snapshot.get('buffer_seconds', 0))}分"
+    duration = snapshot.get("duration_seconds")
+    timing = f"全程{_minutes(duration)}分+{buffer}" if duration else buffer
+    details = snapshot.get("route_details") or {}
+    walking = details.get("walking_duration_seconds")
+    walking_distance = _distance(snapshot.get("walking_distance_meters"))
+    if walking or (walking_distance and snapshot.get("mode") != "walking"):
+        walk = f"步行约{_minutes(walking)}分" if walking else f"含步行{walking_distance}"
+        if lock_screen_width(f"{walk}｜{timing}") <= LOCK_SCREEN_LINE_WIDTH:
+            timing = f"{walk}｜{timing}"
+
+    if reason == "departure_earlier" and previous and previous.get("departure_at"):
+        advanced = _minutes(int((instant(previous["departure_at"]) - instant(departure)).total_seconds()))
+        title = f"改{hhmm}出发（提前{advanced}分）"
+        if len(title) > 15:
+            title = f"{hhmm}出发·提前{advanced}分"
+        timing = f"原定{clock(previous['departure_at'])}｜{buffer}"
+    elif reason in CHANGE_LABELS:
+        change_title, change = CHANGE_LABELS[reason]
+        title = f"{change_title}·{hhmm}出发"
+        timing = f"{change}｜{buffer}"
     elif reason == "evening_fallback":
-        extra = f"沿用昨晚{clock(snapshot['saved_at'])}测算。{extra}"
-    elif reason in ("severe_weather", "new_rain_risk", "boarding_changed", "boarding_time_changed"):
-        changes = {"severe_weather": "新增恶劣天气", "new_rain_risk": "新增降雨风险",
-                   "boarding_changed": "主力线路已调整", "boarding_time_changed": "到站预计时间有变"}
-        extra = changes[reason] + "。" + extra
-    return title, f"{first}\n{second}\n{extra}"
+        title = f"暂按{hhmm}出发"
+        timing = "今早未刷新｜昨晚方案"
+
+    weather = snapshot.get("weather") or {}
+    hint = " ".join((weather.get("hint") or "天气暂缺").split())
+    if lock_screen_width(hint) > LOCK_SCREEN_LINE_WIDTH:
+        hint = "注意雨雪" if weather.get("severe") else "带伞" if weather.get("rain_risk") else "出门前查看天气"
+    route_limit = LOCK_SCREEN_BODY_LIMIT - len(timing) - len(hint) - 2
+    # Reserve space for wrapping at words/punctuation, keeping the other rows intact.
+    route = next((choice for choice in _route_choices(snapshot, stage, reason, clock)
+                  if len(choice) <= route_limit and lock_screen_width(choice) <= 2 * LOCK_SCREEN_LINE_WIDTH - 4),
+                 f"{MOBILITY.get(snapshot.get('mode'), '通勤')}｜查看路线")
+    return title, f"{route}\n{timing}\n{hint}"

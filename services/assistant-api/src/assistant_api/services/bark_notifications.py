@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from assistant_api.commute.services.bark import BarkNotifier
 from assistant_api.core.observability import emit_event
-from assistant_api.models import NexusRun, User
+from assistant_api.models import DisplayCard, Matter, NexusRun, User
 from assistant_api.models.bark import BarkNotificationDelivery, BarkReminderSetting
 from assistant_api.models.base import as_utc
 from assistant_api.services.browser_push import due_events
@@ -33,6 +33,7 @@ class BarkNotification:
     body: str
     trigger_at: datetime
     reply_run_id: str | None = None
+    matter_id: str | None = None
 
 
 def _timed_occurrence(kind: str, resource_id: str, trigger_at: datetime) -> str:
@@ -56,6 +57,19 @@ async def _due_timed_notifications(
     ]
 
 
+async def _due_progress_notifications(db, user_id, since, now):
+    """Read new progress versions only for active, owned matters."""
+    rows = await db.scalars(select(DisplayCard).join(Matter, Matter.matter_id == DisplayCard.matter_id).where(
+        DisplayCard.user_id == user_id, Matter.user_id == user_id, Matter.deleted_at.is_(None),
+        Matter.status.in_(("active", "waiting")), DisplayCard.card_type == "long_task_progress",
+        DisplayCard.notify_at.between(since, now),
+    ))
+    return [BarkNotification(
+        f"matter-progress:{row.card_id}:{row.version}", "事项有新进展", "打开生活助手查看。",
+        as_utc(row.notify_at), matter_id=row.matter_id,
+    ) for row in rows]
+
+
 async def _due_notifications(
     db: AsyncSession, user_id: str, since: datetime, now: datetime,
 ) -> list[BarkNotification]:
@@ -73,6 +87,7 @@ async def _due_notifications(
         )
         for run_id, completed_at in replies
     )
+    notifications.extend(await _due_progress_notifications(db, user_id, since, now))
     return notifications
 
 
@@ -106,6 +121,10 @@ async def _claim(
             NexusRun.reply_expires_at > now,
         ))
         if not still_due:
+            return None
+    elif notification.matter_id:
+        due = await _due_progress_notifications(db, user_id, since, now)
+        if not any(item.occurrence == notification.occurrence for item in due):
             return None
     else:
         due = await _due_timed_notifications(db, user_id, since, now)
@@ -157,7 +176,10 @@ async def tick(app, *, now: datetime | None = None) -> int:
                 continue
             delivery_id, key, notification = claim
             reply_id = notification.reply_run_id
-            path = f"/ask?reply={quote(reply_id, safe='')}" if reply_id else "/today"
+            if notification.matter_id:
+                path = f"/matters/{quote(notification.matter_id, safe='')}"
+            else:
+                path = f"/ask?reply={quote(reply_id, safe='')}" if reply_id else "/today"
             notifier = BarkNotifier(
                 key, timeout_seconds=settings.bark_timeout_seconds, transport=app.state.bark_transport,
             )

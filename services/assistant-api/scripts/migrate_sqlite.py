@@ -207,6 +207,8 @@ async def init(database_url: str) -> None:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             await _ensure_table(conn)
+            await _record(conn, "0036_display_cards", "metadata:display_cards")
+            await _record(conn, "0037_image_attachments", "metadata:image_attachments")
             await _record(conn, VERSION, "metadata")
             await _record(conn, "0029_business_memory_applications", "metadata:business_memory_applications")
             await _record(conn, "0026_agent_response_receipts", "metadata:agent_response_receipts")
@@ -253,6 +255,8 @@ async def upgrade(database_url: str) -> None:
             await _record(conn, "0027_browser_push", "created missing browser push tables")
             await _record(conn, "0028_owned_memory", "created missing Assistant owned memory tables; no existing data moved or removed")
             await _record(conn, "0029_business_memory_applications", "created missing encrypted attribution table; no existing records changed")
+            await _record(conn, "0036_display_cards", "metadata:display_cards")
+            await _record(conn, "0037_image_attachments", "metadata:image_attachments")
             await _record(conn, VERSION, "upgrade")
     finally:
         await engine.dispose()

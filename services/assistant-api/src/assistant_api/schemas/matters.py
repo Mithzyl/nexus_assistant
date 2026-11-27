@@ -912,6 +912,7 @@ class MapPickResponse(PlacePointResponse):
 
 
 class ScheduledRouteRead(BaseModel):
+    route_ref_id: str | None = None
     status: Literal["available", "unverified"]
     reason_code: str | None = None
     message: str | None = None
@@ -1149,6 +1150,7 @@ class CommuteDayState(BaseModel):
     arrival_local_time: str
     schedule: ScheduleRead | None = None
     route: dict[str,Any] | None = None
+    timeline_card: dict[str,Any] | None = None
     applied: bool | None = None
     replayed: bool | None = None
     change_id: str | None = None

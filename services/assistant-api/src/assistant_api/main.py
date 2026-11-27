@@ -174,6 +174,10 @@ def create_app(
     from assistant_api.services.business_events import install_change_events
     install_change_events()
     app.include_router(follow_ups.router)
+    from assistant_api.routers import display_cards
+    app.include_router(display_cards.router)
+    from assistant_api.routers import image_attachments
+    app.include_router(image_attachments.router)
     from assistant_api.routers import records
     app.include_router(records.router)
     from assistant_api.routers import next_actions

@@ -8,6 +8,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
+from assistant_api.commute.services.notification_content import message, verified_boarding
 from assistant_api.commute.scheduler import scheduler_tick
 from assistant_api.commute.services.bark import BarkNotifier
 from assistant_api.commute.services.push import claim_outbox
@@ -21,6 +22,17 @@ from tests.commute_flow import create_plan
 ORIGIN = "https://example.invalid"
 EVENING = datetime(2026, 10, 25, 14, tzinfo=UTC)
 MORNING = datetime(2026, 10, 25, 22, 30, tzinfo=UTC)
+
+
+def assert_lock_screen_body(body):
+    """Approximate four 16-character lock-screen rows without cutting the original text."""
+    from unicodedata import east_asian_width
+
+    lines = body.splitlines()
+    assert len(lines) == 3 and all(lines) and len(body) <= 70
+    assert sum((sum(2 if east_asian_width(c) in "FWA" else 1 for c in line) + 31) // 32
+               for line in lines) <= 4
+    assert all(phrase not in body for phrase in ("08:00", "倒推", "测算", "路线于", "…"))
 
 
 async def setup(h, monkeypatch, responses=None):
@@ -48,10 +60,12 @@ async def setup(h, monkeypatch, responses=None):
     monkeypatch.setattr(h.eta, "available", True, raising=False)
     original = h.eta.fetch
     async def transit(**kwargs):
-        """Supply a measured route and only a fictitious line name, never live times."""
+        """Supply fixed transfer and stop facts, without live times."""
         result = await original(**kwargs)
         return replace(result, transit_boarding={"line_id": "4", "line_name": "4路（往测试站）",
-                                                "boarding_stop_id": "test-stop", "time_kind": "line_only"})
+                                                "boarding_stop_id": "test-stop", "time_kind": "line_only"},
+                       notification_details={"transit_lines": ["4路", "12路"], "boarding_stop_name": "市民广场",
+                                             "alighting_stop_name": "图书馆", "walking_duration_seconds": 360})
     monkeypatch.setattr(h.eta, "fetch", transit)
     plan = await create_plan(h, h.token_a, weekdays=[1], arrival_local_time="08:00",
                              check_local_time="06:30", transport_mode="transit")
@@ -84,14 +98,17 @@ async def test_evening_morning_recheck_are_independent(commute_harness, monkeypa
     assert await tick(h, MORNING + timedelta(minutes=20)) == 1
     assert await tick(h, MORNING + timedelta(minutes=30)) == 0
     assert [item["level"] for item in sent] == ["passive", "active", "timeSensitive"]
-    assert "原定" in sent[2]["body"]
+    assert sent[2]["title"].endswith("（提前12分）")
+    assert "原定" in sent[2]["body"].splitlines()[1] and "缓冲" in sent[2]["body"].splitlines()[1]
     for item in sent:
         assert item["url"] == f"{ORIGIN}/me/commute/{plan['id']}?service_date=2026-10-26"
-        assert "乘4路" in item["body"] and "带伞" in item["body"] and "08:00到" in item["body"]
+        assert item["body"].splitlines()[0] == "乘4路转12路（市民广场→图书馆）"
+        assert "带伞" in item["body"].splitlines()[2]
         assert "到站" not in item["body"] and "参考班次" not in item["body"]
         assert "subtitle" not in item and len(item["title"]) <= 15
-        assert len("".join(item["body"].splitlines()[:2])) <= 40 and len(item["body"]) <= 100
+        assert_lock_screen_body(item["body"])
         assert len(json.dumps(item, ensure_ascii=False).encode()) < 1024
+    assert "步行约6分" in sent[0]["body"].splitlines()[1]
     async with h.app.state.session_factory() as db:
         rows = (await db.scalars(select(NotificationOutbox).order_by(NotificationOutbox.reminder_sequence))).all()
         assert [row.notification_stage for row in rows] == ["evening", "morning", "recheck"]
@@ -112,13 +129,18 @@ async def test_morning_failure_and_first_valid_recovery(commute_harness, monkeyp
         await tick(h, EVENING)
     h.eta.fail = ProviderUnavailable("mock route down")
     await tick(h, MORNING)
-    assert ("今早未更新" in sent[-1]["body"]) if preview else ("暂未算出" in sent[-1]["title"])
+    if preview:
+        assert "今早未刷新" in sent[-1]["body"] and "昨晚方案" in sent[-1]["body"]
+        assert "乘4路转12路" in sent[-1]["body"]
+    else:
+        assert "暂未算出" in sent[-1]["title"] and "08:00" not in sent[-1]["body"]
     h.eta.fail = None
     await tick(h, MORNING + timedelta(minutes=10))
     assert len(sent) == 2
     if not preview:
         assert sent[-1]["level"] == "timeSensitive"
-        assert "08:00到" in sent[-1]["body"] and "07:20" in sent[-1]["title"]
+        assert "07:20" in sent[-1]["title"]
+        assert_lock_screen_body(sent[-1]["body"])
 
 
 @pytest.mark.asyncio
@@ -144,7 +166,8 @@ async def test_manual_change_replaces_pending_and_skip_cancels(commute_harness, 
     async with h.app.state.session_factory() as db:
         row = await db.scalar(select(NotificationOutbox))
         assert row.status == "pending" and row.notification_stage == "morning"
-        assert "08:15到" in row.payload_json["aps"]["alert"]["body"]
+        assert row.payload_json["notification_snapshot"]["target_arrival_at"] == "2026-10-26T00:15:00+00:00"
+        assert "08:15" not in row.payload_json["aps"]["alert"]["body"]
         advisory_id = row.advisory_id
     skipped = await h.client.post(f"/api/v1/advisories/{advisory_id}/actions",
         headers={**auth(h.token_a), "Idempotency-Key": "skip-staged-notice"},
@@ -190,7 +213,6 @@ async def test_bark_rejection_and_unknown_keep_logs_and_accepted_baseline(commut
 def test_boarding_sources_and_lock_screen_lengths(kind, expected, omits):
     """Only a valid real-time observation can produce a real-time clock label."""
     from types import SimpleNamespace
-    from assistant_api.commute.services.notification_content import message, verified_boarding
 
     plan = SimpleNamespace(timezone="Asia/Shanghai")
     service_date = datetime(2026, 10, 26).date()
@@ -212,8 +234,56 @@ def test_boarding_sources_and_lock_screen_lengths(kind, expected, omits):
         "weather": {"hint": "12℃｜小雨，带伞"},
     }, None)
     assert expected in body.splitlines()[0] and omits not in body.splitlines()[0]
-    assert len(title) <= 15 and len("".join(body.splitlines()[:2])) <= 40
-    assert len(body) <= 100 and "08:00到" in body and "带伞" in body
+    assert len(title) <= 15 and "带伞" in body.splitlines()[2]
+    assert_lock_screen_body(body)
+
+
+@pytest.mark.parametrize(("details", "expected_route"), [
+    ({"transit_lines": ["4路"], "boarding_stop_name": "白沙站", "alighting_stop_name": "图书馆"},
+     "乘4路（白沙站→图书馆）"),
+    ({"transit_lines": ["4路", "12路"], "boarding_stop_name": "很长的起点站" * 8,
+      "alighting_stop_name": "很长的终点站" * 8}, "乘4路转12路"),
+    ({"transit_lines": ["地铁环城超长线路" * 8, "12路"]}, "公交｜查看路线"),
+    ({}, "乘4路"),
+])
+def test_transit_copy_keeps_real_names_or_omits_overlong_details(details, expected_route):
+    """Use measured walking distance if time is missing and drop long names as whole facts."""
+    from types import SimpleNamespace
+
+    title, body = message(SimpleNamespace(timezone="Asia/Shanghai"), "evening", {
+        "mode": "transit",
+        "departure_at": "2026-10-26T07:15:00+08:00",
+        "target_arrival_at": "2026-10-26T08:00:00+08:00",
+        "saved_at": "2026-10-25T22:00:00+08:00",
+        "duration_seconds": 1980, "buffer_seconds": 720,
+        "walking_distance_meters": 600,
+        "boarding": {"line_name": "4路（全线终点--非下车站）"},
+        "route_details": details, "weather": {"hint": "11℃｜小雨，带伞"},
+    }, None)
+    assert title == "明早07:15出发"
+    assert body.splitlines() == [expected_route, "含步行600米｜全程33分+缓冲12分", "11℃｜小雨，带伞"]
+    assert_lock_screen_body(body)
+
+
+@pytest.mark.parametrize(("mode", "distance", "road", "expected_route"), [
+    ("driving", 8400, "沿江路", "驾车8.4公里｜经沿江路"),
+    ("walking", 600, None, "步行600米"),
+    ("bicycling", 1500, "滨江东路", "骑行1.5公里｜经滨江东路"),
+    ("electrobike", None, None, "电动车"),
+])
+def test_non_transit_copy_shows_only_measured_distance_and_road(mode, distance, road, expected_route):
+    """Show the selected mode and known route facts without repeating a walking-only distance."""
+    from types import SimpleNamespace
+
+    _, body = message(SimpleNamespace(timezone="Asia/Shanghai"), "morning", {
+        "mode": mode,
+        "departure_at": "2026-10-26T07:15:00+08:00",
+        "duration_seconds": 1980, "buffer_seconds": 720,
+        "distance_meters": distance, "walking_distance_meters": distance if mode == "walking" else None,
+        "route_details": {"main_road": road}, "weather": {"hint": "11℃｜添衣"},
+    }, None)
+    assert body.splitlines() == [expected_route, "全程33分+缓冲12分", "11℃｜添衣"]
+    assert_lock_screen_body(body)
 
 
 @pytest.mark.asyncio
@@ -252,7 +322,8 @@ async def test_actionable_rain_or_line_change_without_time_shift(commute_harness
         async def changed_route(**kwargs):
             """Switch the primary line without changing the estimate."""
             current = await first(**kwargs)
-            return replace(current, transit_boarding={**current.transit_boarding, "line_id": "12", "line_name": "12路"})
+            return replace(current, transit_boarding={**current.transit_boarding, "line_id": "12", "line_name": "12路"},
+                           notification_details={"transit_lines": ["12路"]})
         monkeypatch.setattr(h.eta, "fetch", changed_route)
     await tick(h, MORNING + timedelta(minutes=10))
     assert len(sent) == 3 and sent[-1]["level"] == "timeSensitive"

@@ -67,8 +67,9 @@ async def estimate(
     origin_basis: str = "user_confirmed",
     origin_schedule_id: str | None = None,
     schedule_id: str | None = None,
+    include_notification_details: bool = False,
 ) -> dict:
-    """Measure the exact requested mode, preserving unavailable states and time-estimate limitations."""
+    """Measure the requested mode; attach private notification facts only for saved commute revisions."""
 
     if getattr(runtime.eta, "provider", None) == "amap" and (
         origin_coordinate_system != "gcj02"
@@ -135,6 +136,8 @@ async def estimate(
         "transfer_count": result.transfer_count,
         "transfers_summary": result.transfers_summary,
         "transit_boarding": result.transit_boarding,
+        **({"notification_details": result.notification_details}
+           if include_notification_details and result.notification_details else {}),
         "fare_cny": result.fare_cny,
         "fare_kind": result.fare_kind,
         "fare_notice": (
@@ -168,6 +171,16 @@ async def estimate(
             "basis": "destination_schedule" if schedule_id else "user_confirmed",
             "schedule_id": schedule_id,
         },
+        **({"legs": [
+            {
+                "kind": leg.segment.kind, "label": leg.segment.label,
+                "distance_meters": leg.distance_meters, "duration_seconds": leg.duration_seconds,
+                "line_id": leg.line_id, "departure_stop_id": leg.departure_stop_id,
+                "departure_stop_name": leg.departure_stop_name, "arrival_stop_id": leg.arrival_stop_id,
+                "arrival_stop_name": leg.arrival_stop_name,
+            }
+            for leg in result.transit_legs
+        ]} if result.transit_legs else {}),
         "shape": {
             "status": result.route_shape_status,
             "segments": [

@@ -17,7 +17,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from assistant_api.core.errors import ConflictError, ForbiddenError, NotFoundError
-from assistant_api.models import AgentResponseReceipt, NexusRun, User
+from assistant_api.models import AgentResponseReceipt, DisplayCard, NexusRun, User
 from assistant_api.services.api_operations import OperationCall, OperationCatalog, OperationDecision, execute_call, resolve_result_references
 from assistant_api.services import response_cards
 
@@ -73,7 +73,31 @@ def parse_proposal(text):
     return OperationDecision.model_validate_json(value).model_dump(mode='json',exclude_none=True)
 
 
-def final_projection(text, flow):
+def project_reply_cards(cards, flow, progress_card=None):
+    """Resolve saved references solely from cards snapshotted during this run."""
+    if not any(set(card) in ({"card_id"}, {"show_progress_card"}) for card in cards):
+        return response_cards.prepare_cards(cards, flow.get("visible_result"), results=flow.get("results"))
+    result = []
+    for index, card in enumerate(cards):
+        if set(card) == {"show_progress_card"}:
+            if card["show_progress_card"] is not True or not flow.get("progress_proposal"):
+                raise ValueError("只有已通过校验的本次进度提案可请求展示主卡。")
+            if progress_card:
+                result.append(progress_card)
+            continue
+        if set(card) != {"card_id"}:
+            result.extend(response_cards.prepare_cards([card], flow.get("visible_result"),
+                                                     results=flow.get("results"), index_offset=index))
+            continue
+        identifier = card["card_id"]
+        snapshot = flow.get("display_cards", {}).get(identifier) if isinstance(identifier, str) else None
+        if not snapshot:
+            raise ValueError("请引用本次成功保存的卡片编号。")
+        result.append(snapshot)
+    return result
+
+
+def final_projection(text, flow, progress_card=None):
     """Project optional cards, text and choices without forcing a presentation or executing business operations."""
     decision = OperationDecision.model_validate_json(text).model_dump(mode='json', exclude_none=True)
     pending = {'execution_result': flow['visible_result']} if flow.get('visible_result') else {}
@@ -86,11 +110,11 @@ def final_projection(text, flow):
                 'pending_context': {**pending, 'cards': [], 'choices': decision.get('choices', []),
                                     'capture_conflict': conflict}}
     if decision['decision'] == 'answer':
-        pending['cards'] = response_cards.prepare_cards(decision.get('cards', []), flow.get('visible_result'), results=flow.get('results'))
+        pending['cards'] = project_reply_cards(decision.get('cards', []), flow, progress_card)
         return {'outcome': 'answer', 'answer': decision['answer'], 'clarify': None, 'pending_context': pending}
     if decision['decision'] in {'ask_user', 'clarify'}:
         cards=decision.get('cards', [])
-        pending['cards']=response_cards.prepare_cards(cards,flow.get('visible_result'),results=flow.get('results'))
+        pending['cards']=project_reply_cards(cards, flow)
         return {'outcome': 'needs_clarification', 'answer': None, 'clarify': decision['question'],
                 'pending_context': {**pending, 'choices': decision.get('choices', [])}}
     raise ValueError('终答只能是answer或ask_user。')
@@ -128,7 +152,8 @@ def validation_feedback(error, stage):
         message = 'JSON 或结果引用嵌套过深，请减少层级。'
     else:
         message = str(error)[:700]
-    suffix = ('卡片需使用 title 和 blocks，区块 type 为 text、fields、image 或 timeline；'
+    suffix = ('旧卡使用 title 和 blocks，区块 type 为 text、fields、image 或 timeline；'
+              '本次已保存的分段路线卡只填 card_id。'
               'result 卡片的业务字段使用真实成功结果引用，未保存不得展示为已完成。'
               if stage == 'cards' else
               'call 提供 operation_id 和接口规定的完整参数；answer 提供 answer；'
@@ -344,6 +369,14 @@ async def process_response(db, app, payload):
                                                            *data['components']['schemas']]))
         data['guidance'] = ('定义已提供；自行决定业务调用、获取其他定义或回答。相同完整定义在本Agent继续有效，不重复解析。'
                             '本次返回的更新定义及共享结构替代同名旧说明；参数错误本身不要求重取未变化的定义。')
+    if business["status"] == "succeeded" and operation.operation_id in {"save_timeline_route_card", "save_multi_route_map_card"}:
+        from assistant_api.services.display_cards import published_card
+        card = await db.get(DisplayCard, business["data"]["card_id"])
+        if not card or card.user_id != user.user_id or card.source_run_id != root.local_run_id:
+            return await finish(db, root, receipt, flow, outcome(identity, "unknown", "暂时无法核对已保存的卡片。"))
+        flow.setdefault("display_cards", {})[card.card_id] = published_card(card)
+    if business["status"] == "succeeded" and operation.operation_id == "propose_matter_progress_card":
+        flow["progress_proposal"] = actual.body
     flow.setdefault('results', {})[str(flow['step'])] = copy.deepcopy(business)
     flow['visible_result'] = business
     flow['step'] += 1
@@ -363,6 +396,11 @@ async def process_response(db, app, payload):
                   'proposed_summary': call.summary}
         flow['receipts'].append(result)
         return await finish(db, root, receipt, flow, outcome(identity, 'succeeded', result=result))
+    if operation.operation_id in {"save_timeline_route_card", "save_multi_route_map_card", "propose_matter_progress_card"} and business["http_status"] in {404, 409, 422}:
+        error = (business.get("data") or {}).get("error") or {}
+        return await finish(db, root, receipt, flow, outcome(identity, "failed",
+            error.get("message") or "卡片未保存，请检查编号、版本及参数。",
+            code=error.get("code") or "card_input_invalid"))
     if business['http_status'] in {401, 403, 404}:
         return await finish(db, root, receipt, flow, outcome(identity, 'rejected', '业务对象不存在或无权执行。', code='business_access_denied'))
     error=(business.get('data') or {}).get('error',{}) if isinstance(business.get('data'),dict) else {}

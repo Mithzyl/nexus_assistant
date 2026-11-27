@@ -128,6 +128,21 @@ class TransitBoarding(TypedDict, total=False):
     delay_seconds: int
 
 
+class RouteNotificationDetails(TypedDict, total=False):
+    """Provider facts for a commute reminder, independent of map geometry."""
+
+    transit_lines: list[str]
+    boarding_stop_name: str | None
+    alighting_stop_name: str | None
+    walking_duration_seconds: int
+    main_road: str
+
+
+def transit_line_label(name: str) -> str:
+    """Display the line name without the provider's parenthetical direction."""
+    return " ".join(name.split("(", 1)[0].split("（", 1)[0].split())
+
+
 @dataclass(frozen=True)
 class EtaResult:
     provider: str
@@ -147,6 +162,8 @@ class EtaResult:
     route_segments: tuple["RouteSegment", ...] = ()
     route_shape_status: RouteShapeStatus = "missing"
     transit_boarding: TransitBoarding | None = None
+    notification_details: RouteNotificationDetails | None = None
+    transit_legs: tuple["RouteLeg", ...] = ()
 
 
 @dataclass(frozen=True)
@@ -161,6 +178,20 @@ class RouteSegment:
     label: str | None
     points: tuple[RoutePoint, ...]
     coordinate_system: str = "gcj02"
+
+
+@dataclass(frozen=True)
+class RouteLeg:
+    """Facts from one selected walking or transit leg, including optional geometry."""
+
+    segment: RouteSegment
+    distance_meters: int | None = None
+    duration_seconds: int | None = None
+    line_id: str | None = None
+    departure_stop_id: str | None = None
+    departure_stop_name: str | None = None
+    arrival_stop_id: str | None = None
+    arrival_stop_name: str | None = None
 
 
 @dataclass(frozen=True)

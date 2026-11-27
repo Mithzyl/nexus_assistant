@@ -36,7 +36,8 @@ def _response_for(row: NexusRun) -> dict:
                   'pending_context': {'execution_result': flow['visible_result']} if flow.get('visible_result') else {}}
         if row.status == 'succeeded':
             try:
-                result.update(final_projection(run_service.answer_text(row) or '', flow))
+                result.update(final_projection(run_service.answer_text(row) or '', flow,
+                                               (row.result_json or {}).get('progress_card_snapshot')))
             except ValueError:
                 result.update(outcome='failed', error={'code': 'final_output_invalid', 'message': '最终结果格式无效。', 'retryable': False})
         elif row.status in {'failed', 'cancelled', 'unknown'}:
@@ -50,6 +51,9 @@ def _response_for(row: NexusRun) -> dict:
             and isinstance(receipt['data'].get('operation_id'), str)
             and receipt['data']['operation_id']
         )
+        progress_status = (row.result_json or {}).get("progress_card_status")
+        if progress_status:
+            result["pending_context"]["progress_card_status"] = progress_status
         if memory_operation_ids:
             result['pending_context']['memory_operation_ids'] = list(memory_operation_ids)
         return result
@@ -403,6 +407,13 @@ async def prepare_context(request, db, user, *, text, idempotency_key, entry_mod
             'entry_mode': entry_mode, 'capture_review_id': capture_review_id,
             'ignore_pending_reply': ignore_pending_reply, 'trigger_source': request.source, 'matter_id': matter_id, 'follow_up_id': request.follow_up_id, 'follow_up_execution_id': request.follow_up_execution_id, 'lease_owner': request.lease_owner, 'receipts': [], 'write_tracking': True, 'step': 0, 'state': 'preparing_memory', 'request_key': idempotency_key,
             'memory_prefetch':{'status':'pending','confirmed_empty':False,'cache_valid':False},'memory_sources':[]}
+    if matter_id:
+        from assistant_api.services.display_cards import current_progress
+        progress = await current_progress(db, user.user_id, matter_id)
+        if progress:
+            history.append({"selected_progress_card_id": progress.card_id})
+        if request.source == "follow_up":
+            flow["progress_start_version"] = progress.version if progress else 0
     catalog = OperationCatalog(request.app)
     from assistant_api.commute.runtime import route_capabilities
     flow['route_capabilities'] = route_capabilities(request.app.state.commute_runtime)
@@ -454,6 +465,9 @@ def workflow_configuration(context: dict) -> dict:
         {'bootstrap_operations': definitions,
          'schema_location': 'user_request.operation_index是一级简要目录，api_operations及components.schemas是本轮已提供的调用定义。definition_scope=parameters表示保留完整请求参数，简化响应说明，可以直接调用。'},
         ensure_ascii=False))
+    instructions += ("\n分段行程或事项进展需要卡片时，从目录按需取卡片接口说明；普通问答和单条日程不用取。"
+                     "只用真实编号。保存时间轴或多路线地图后，可在终答cards中用只含card_id的对象引用；普通旧卡仍按card_schema。"
+                     "只有用户要求整理事项进展或已授权的跟进需要汇总时，才读取该事项主卡并按版本提出展示更新。展示提案不修改待办、日程或事项。")
     instructions += ('\n原始完整JSON正文交由Assistant同步处理；读取返回的实际结果后在同一个Agent继续。'
                      '先阅读operation_index中的简要说明、uri和effect，自行判断需要哪些接口；方法和路径在完整定义中。'
                      '索引已经直接包含在本Agent首轮消息中，看到索引不增加请求，不强制发起search或解析。'
