@@ -271,6 +271,24 @@ class ScheduleRead(BaseModel):
     deleted_at: UtcDateTime | None = None
 
 
+class TodaySavedCommuteRouteRead(BaseModel):
+    """Display the measured trip without implying it is still fresh."""
+
+    duration_seconds: int
+    mode: TransportMode | None = None
+    transfers_summary: str | None = None
+
+
+class TodayCommuteRead(BaseModel):
+    """Link an owned daily schedule to the commute that generated it."""
+
+    plan_id: str
+    service_date: date
+    origin_label: str
+    destination_label: str
+    saved_route: TodaySavedCommuteRouteRead | None = None
+
+
 class TodayRouteRead(BaseModel):
     status: Literal["available", "unverified", "unavailable"]
     reason_code: str | None = None
@@ -280,6 +298,8 @@ class TodayRouteRead(BaseModel):
     mode: TransportMode | None = None
     fetched_at: UtcDateTime | None = None
     origin_basis: Literal["user_confirmed", "previous_schedule"] | None = None
+    origin_known: bool | None = None
+    commute: TodayCommuteRead | None = None
 
 
 class TodayScheduleRead(ScheduleRead):

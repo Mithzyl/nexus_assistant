@@ -4607,7 +4607,7 @@ async def create_edit_draft(
 async def today_view(
     db: AsyncSession, user: User, *, day: date, timezone: str
 ) -> dict:
-    """Read one local day plus every still-unacknowledged due reminder."""
+    """Read one local day, including commute display facts and still-unacknowledged due reminders."""
 
     zone = ZoneInfo(timezone)
     starts = datetime.combine(day, time.min, tzinfo=zone).astimezone(UTC)
@@ -4778,6 +4778,7 @@ async def today_view(
         "origin_basis": None,
     }
     schedule_items = []
+    route_contexts = await schedule_routes.today_route_contexts(db, user, schedules)
     for row in schedules:
         item = _serialize_schedule(row)
         item["matter_title"] = (
@@ -4785,9 +4786,7 @@ async def today_view(
             if row.matter_id and row.matter_id in matters
             else None
         )
-        linked, route_reason = await schedule_routes.validation_for_schedule(
-            db, user, row
-        )
+        linked, route_reason, origin_known, commute = route_contexts[row.schedule_id]
         item["route"] = (
             {
                 "status": "available",
@@ -4811,6 +4810,7 @@ async def today_view(
                 ),
             }
         )
+        item["route"].update(origin_known=origin_known, commute=commute)
         schedule_items.append(item)
     reminder_items = []
     for row in reminders:

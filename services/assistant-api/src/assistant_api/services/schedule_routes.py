@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from assistant_api.commute.timeutil import ensure_aware
 from assistant_api.core.errors import NotFoundError
-from assistant_api.models import ScheduleEvent, ScheduleRouteResult, User
+from assistant_api.models import CommuteInstance, CommutePlan, ScheduleEvent, ScheduleRouteResult, User
 
 PLANNED_RESULT_MAX_AGE = 24 * 60 * 60
 LIVE_RESULT_MAX_AGE = 15 * 60
@@ -157,6 +158,112 @@ async def validate_saved_route(db, user, schedule, row, *, at=None):
             return None, "origin_schedule_changed"
     result["calculated_at"] = row.calculated_at
     return result, None
+
+
+def _commute_service_date(plan: CommutePlan, schedule: ScheduleEvent) -> date | None:
+    """Accept the exact generated source key or the plan's designated first schedule."""
+    if schedule.matter_id != plan.matter_id:
+        return None
+    scope = f"commute:{plan.plan_id}"
+    source = schedule.source_external_id or ""
+    if schedule.source_scope_key == scope and source.startswith(f"{scope}:"):
+        try:
+            day = date.fromisoformat(source.removeprefix(f"{scope}:"))
+        except ValueError:
+            return None
+        return day if source == f"{scope}:{day.isoformat()}" else None
+    if schedule.schedule_id == plan.first_schedule_id:
+        return ensure_aware(schedule.starts_at).astimezone(ZoneInfo(plan.timezone)).date()
+    return None
+
+
+def _saved_commute_summary(result: dict) -> dict | None:
+    """Return display facts only from a successfully measured route."""
+    duration = result.get("duration_seconds")
+    if result.get("status") != "available" or type(duration) is not int or duration <= 0:
+        return None
+    return {
+        "duration_seconds": duration,
+        "mode": result.get("mode"),
+        "transfers_summary": result.get("transfers_summary"),
+    }
+
+
+def _matches_commute_endpoints(plan: CommutePlan, route: dict) -> bool:
+    """Recognize older route saves without a same-day notification snapshot."""
+    if route.get("mode") != plan.transport_mode or route.get("origin_schedule_id"):
+        return False
+    for role in ("origin", "destination"):
+        point = route.get(role)
+        if not isinstance(point, dict) or any(
+            point.get(field) != getattr(plan, f"{role}_{field}")
+            for field in ("latitude", "longitude")
+        ):
+            return False
+        if point.get("coordinate_system") != (getattr(plan, f"{role}_coordinate_system") or "gcj02"):
+            return False
+    return True
+
+
+async def today_route_contexts(db, user, schedules):
+    """Batch-load owned plan and route records; preserve freshness and project commute history separately."""
+    ids = [schedule.schedule_id for schedule in schedules]
+    if not ids:
+        return {}
+    scoped_ids = {(s.source_scope_key or "").removeprefix("commute:") for s in schedules
+                  if (s.source_scope_key or "").startswith("commute:")}
+    saved = {row.schedule_id: row for row in await db.scalars(select(ScheduleRouteResult).where(
+        ScheduleRouteResult.user_id == user.user_id, ScheduleRouteResult.schedule_id.in_(ids)))}
+    plans = list(await db.scalars(select(CommutePlan).where(
+        CommutePlan.user_id == user.user_id,
+        or_(CommutePlan.plan_id.in_(scoped_ids), CommutePlan.first_schedule_id.in_(ids)))))
+    plans_by_scope = {f"commute:{plan.plan_id}": plan for plan in plans}
+    first_plans = {plan.first_schedule_id: plan for plan in plans if plan.first_schedule_id}
+    associations = {}
+    for schedule in schedules:
+        plan = plans_by_scope.get(schedule.source_scope_key) or first_plans.get(schedule.schedule_id)
+        day = _commute_service_date(plan, schedule) if plan else None
+        if plan and day:
+            associations[schedule.schedule_id] = (plan, day)
+    snapshots = {}
+    if associations:
+        plan_ids = {plan.plan_id for plan, _ in associations.values()}
+        service_dates = {day for _, day in associations.values()}
+        snapshots = {(row.plan_id, row.local_service_date): row.notification_snapshot_json or {}
+                     for row in await db.scalars(select(CommuteInstance).where(
+                         CommuteInstance.user_id == user.user_id, CommuteInstance.plan_id.in_(plan_ids),
+                         CommuteInstance.local_service_date.in_(service_dates)))}
+
+    contexts = {}
+    for schedule in schedules:
+        route = saved.get(schedule.schedule_id)
+        linked, reason = await validate_saved_route(db, user, schedule, route)
+        original = route.result_json if route and isinstance(route.result_json, dict) else {}
+        origin = original.get("origin")
+        origin_known = bool(isinstance(origin, dict) and origin.get("latitude") is not None
+                            and origin.get("longitude") is not None)
+        commute = None
+        if association := associations.get(schedule.schedule_id):
+            plan, day = association
+            snapshot = snapshots.get((plan.plan_id, day), {})
+            same_measurement = (snapshot.get("schedule_id") == schedule.schedule_id
+                                and snapshot.get("plan_revision") == plan.revision
+                                and snapshot.get("duration_seconds") == original.get("duration_seconds"))
+            # The previous route may be shown as history only when it is still
+            # linked to this day; stale or mismatched routes stay unavailable.
+            historical = original if reason == "route_result_expired" and (
+                same_measurement or (not snapshot and _matches_commute_endpoints(plan, original))
+            ) else {}
+            commute = {
+                "plan_id": plan.plan_id,
+                "service_date": day,
+                "origin_label": plan.origin_label,
+                "destination_label": schedule.location or plan.destination_label,
+                "saved_route": _saved_commute_summary(linked or historical),
+            }
+            origin_known = origin_known or bool(plan.origin_label)
+        contexts[schedule.schedule_id] = (linked, reason, origin_known, commute)
+    return contexts
 
 
 def unverified_message(reason_code: str) -> str:
